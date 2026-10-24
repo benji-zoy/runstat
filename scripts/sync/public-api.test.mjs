@@ -396,6 +396,37 @@ test('sauvegarde : suppression avec ré-authentification', async () => {
   assert.equal((await call('GET', '/backup/manifest', { token })).status, 404);
 });
 
+test('client du moteur contre ce serveur : sauvegarde chiffrée, deux appareils, rien de lisible côté NAS', async () => {
+  const { publicClient } = await import('#engine/backup/api.ts');
+  const { syncBackup } = await import('#engine/backup/sync.ts');
+  const { newDataKey, wrapKey, workKeys, unwrapKey } = await import('#engine/backup/crypto.ts');
+  const { MemoryStore } = await import('#engine/storage/memory.ts');
+  const { token } = await join_('dave');
+  // Navigateur simulé : origine de l'appli, une IP
+  const browserFetch = (url, init = {}) => fetch(url, { ...init, headers: { ...init.headers, Origin: APP, 'X-Real-IP': '198.51.100.200' } });
+  const client = publicClient(base, () => token, browserFetch);
+  const dataKey = newDataKey();
+  const header = { v: 1, wraps: [await wrapKey(dataKey, 'phrase de Dave', 'passphrase')] };
+  const keys = await workKeys(dataKey);
+  const phone = new MemoryStore({ 'athlete.json': '{"hrMax":188,"note":"secret de Dave"}', 'fit/9.fit': randomBytes(120_000) });
+  const r1 = await syncBackup({ raw: phone, api: client.backup, keys, account: 'dave', device: { id: 'tel', name: 'Téléphone' }, header });
+  assert.equal(r1.version, 1);
+  // Côté NAS : des tailles et des identifiants, rien de lisible
+  const stored = join(dir, 'dave', 'backup');
+  const all = readdirSync(join(stored, 'objects')).map((f) => readFileSync(join(stored, 'objects', f)).toString('latin1')).join('');
+  const manifest = readdirSync(join(stored, 'manifests')).map((f) => readFileSync(join(stored, 'manifests', f), 'utf8')).join('');
+  for (const secret of ['secret de Dave', 'hrMax', 'athlete.json', 'fit/9.fit']) assert.ok(!all.includes(secret) && !manifest.includes(secret), secret);
+
+  // Second appareil : passkey existante → session, phrase de passe → clé, restauration
+  const remote = await client.backup.getManifest();
+  const keys2 = await workKeys(await unwrapKey(remote.header.wraps, 'phrase de Dave'));
+  const laptop = new MemoryStore();
+  const r2 = await syncBackup({ raw: laptop, api: client.backup, keys: keys2, account: 'dave', device: { id: 'pc', name: 'Portable' } });
+  assert.equal(r2.downloaded, 2);
+  assert.equal(new TextDecoder().decode(await laptop.read('athlete.json')), '{"hrMax":188,"note":"secret de Dave"}');
+  await assert.rejects(() => unwrapKey(remote.header.wraps, 'mauvaise phrase'), /incorrecte/);
+});
+
 // ---------- relais ----------
 
 test('relais Google : secret ajouté côté serveur, échanges prévus seulement, réponse filtrée', async () => {

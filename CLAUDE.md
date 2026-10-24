@@ -34,7 +34,7 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
   tracés, santé COROS sur les fixtures fictives de `scripts/sync/fixtures/` ; `strava-connect.test.mjs` : connexion Strava, fetch bouchonné ;
   `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, invitations, file, migration ; `oauth-connect.test.mjs` :
   connexion COROS et Google, fetch bouchonné ; `public-api.test.mjs` : CORS, passkeys ES256/RS256, sessions et ré-authentification,
-  sauvegarde cloisonnée et versionnée, relais, limites), `npm run spike -- coros | google` (dumps bruts).
+  sauvegarde cloisonnée et versionnée, relais, limites, aller-retour chiffré du client du moteur contre le vrai serveur), `npm run spike -- coros | google` (dumps bruts).
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
@@ -116,7 +116,40 @@ les données après 7 jours sans visite, sauf appli installée). `fit-file-parse
   `npx ng build -c pages && node scripts/pages-postbuild.mjs && node scripts/serve-pages.mjs` (config `runstat-pages`, http://localhost:4320/runstat/).
 - `.github/workflows/pages.yml` (main seulement, actions épinglées par SHA, `npm ci`, droits minimaux) : tests, build avec
   `--define RUNSTAT_NAS_ORIGINS=…` (variable du dépôt, liste d'adresses Funnel → `KNOWN_NAS`), CSP, publication. Mise en service (avec
-  l'accord du propriétaire) : variable `RUNSTAT_NAS_ORIGINS`, Settings › Pages › Source « GitHub Actions ».
+  l'accord du propriétaire) : variable `RUNSTAT_NAS_ORIGINS`, Settings › Pages › Source « GitHub Actions », puis variable
+  `RUNSTAT_PAGES=true` (sans elle, le workflow ne publie pas : `main` ne casse pas tant que Pages n'est pas activé). La valeur de
+  `--define` est une expression JS : une chaîne JSON encodée deux fois (`'RUNSTAT_NAS_ORIGINS="[\"http://localhost:8789\"]"'`) ; un tableau
+  nu donne `KNOWN_NAS` vide (écran « Serveur inconnu »).
+
+### Sauvegarde chiffrée et multi-appareils (`src/engine/backup/`, `core/account.service.ts`, `pages/join.ts`)
+Compte d'un proche local-first sur le NAS qui l'a invité (API publique, voir Comptes › Accès public). Le serveur ne voit que des
+identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appareil.
+- `crypto.ts` (WebCrypto) : clé de données aléatoire (32 octets) enveloppée en AES-GCM par une clé PBKDF2-SHA256 de la phrase de passe
+  (sel 16 octets, **600 000 itérations au moins, imposé côté client** quoi que dise l'en-tête), et par le code de secours facultatif
+  (Crockford base32, 24 caractères, tirets et casse ignorés). Changer de phrase de passe ou de code = réenvelopper la même clé. Clés de travail
+  (HKDF) non extractibles : `enc` (AES-GCM) et `mac` (HMAC). Objet : identifiant = HMAC du clair (vérifié après déchiffrement),
+  IV ‖ chiffré, données associées `rs-obj-v1|id` ; manifeste : `rs-manifest-v1|compte|version` (ni rejouable sous une autre version,
+  ni d'un autre compte). `WrongPassphrase`, `TamperedData`.
+- `sync.ts`, `syncBackup` : envoie les fichiers de `raw` modifiés, télécharge ceux des autres appareils, fusionne, puis `PUT` du manifeste
+  avec `If-Match` (412 → relecture et nouvelle fusion, 4 essais). Fusion par fichier : horloge de Lamport, appareil pour départager,
+  suppression = pierre tombale (pas d'horloge murale ; même fichier modifié sur deux appareils : le dernier écrit gagne). Fichiers de
+  moins de 256 Kio regroupés en paquets de 4 Mio au plus. Anti-retour : plus haute version vue gardée dans `backup-index.json`, un manifeste
+  plus ancien est refusé (`Rollback`) ; manifeste le plus récent illisible → dernier lisible. Non sauvegardé : `fit-derived/`,
+  `local-state.json`, `backup-index.json`, `missing-details.txt` (reconstruits). Restaurer = synchroniser un stockage vide, puis `rebuild`.
+- `account.service.ts` (IndexedDB `runstat-account` : NAS, jeton de session, appareil, clés de travail ; jamais la phrase de passe ni la
+  clé de données) : `join` (invitation + passkey), `login` (passkey), `redeemLink` (lien de connexion), `create`, `unlock` (phrase ou code
+  de secours), `changePassphrase`, `newRecoveryCode`, `deviceLink` (ré-authentification par passkey), `logout` (session révoquée, données
+  gardées sur l'appareil). Sauvegarde automatique 5 s après chaque reconstruction (`LocalService.onRebuilt`).
+- Parcours : `/rejoindre#nas=…&code=…` (NAS hors `KNOWN_NAS` → écran « Serveur inconnu » qui affiche l'hôte ; consentement santé,
+  RGPD art. 9.2.a ; passkey ; phrase de passe proposée par `core/passphrase.ts`, 6 mots parmi 256 ; code de secours affiché une fois),
+  `/connexion` (passkey + adresse du NAS) ou `/connexion#nas=…&lien=…` (lien de 15 min créé dans « Compte et sauvegarde »), puis phrase de
+  passe et restauration. Fragment effacé de l'adresse dès sa lecture. Bouton nuage de l'en-tête : `ui/forms/account-form.ts`.
+- Vérifier le parcours en local : `users/users.json` de test (un propriétaire hébergé, un compte `local`), `server.mjs --no-schedule` avec
+  `RUNSTAT_APP_URL=http://localhost:4320/runstat/`, `RUNSTAT_PUBLIC_URL=http://localhost:8789`, `RUNSTAT_APP_ORIGINS=http://localhost:4320` ;
+  invitation par `POST http://localhost:8788/api/admin/invitations` (en-têtes `Tailscale-User-Login` du propriétaire et `X-RunStat: sync`) ;
+  build Pages servi sur 4320 ; passkey simulée en remplaçant `navigator.credentials` par du JS (clé ECDSA P-256, attestation `none`) ;
+  « second appareil » = bases IndexedDB effacées. Supprimer `users/` ensuite. Le test `public-api.test.mjs` fait le même aller-retour
+  (client du moteur contre le vrai serveur) sans navigateur.
 
 ## Saisie depuis le site (`scripts/sync/entries.mjs`, `core/entries.service.ts`, `ui/forms/`)
 

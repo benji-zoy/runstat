@@ -2,7 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { DATE_RESULT, InvalidEntry, validateAthlete, validateGoals, validateResult, validateSources } from '../../engine/entries';
 import { fileKey } from '../../engine/sources';
 import { indexedDbStorage } from '../../engine/storage/indexeddb';
-import type { Storage } from '../../engine/storage/types';
+import type { KeyedStore, Storage } from '../../engine/storage/types';
 import type { ArchiveImport } from '../../engine/archive/strava-archive';
 import { EntryError } from './entry-error';
 import type { CorosData } from './models';
@@ -23,6 +23,8 @@ export class LocalService {
   /** Calcul en cours (reconstruction ou import) */
   readonly busy = signal(false);
   readonly lastError = signal<string | null>(null);
+  /** Appelé après chaque calcul réussi (sauvegarde automatique, core/account.service.ts) */
+  onRebuilt?: () => void;
   private storage?: Promise<Storage>;
   private worker?: Worker;
   private seq = 0;
@@ -32,6 +34,11 @@ export class LocalService {
 
   private store(): Promise<Storage> {
     return (this.storage ??= indexedDbStorage());
+  }
+
+  /** Zone des données brutes (sauvegarde chiffrée) */
+  async raw(): Promise<KeyedStore> {
+    return (await this.store()).raw as KeyedStore;
   }
 
   async snapshot(): Promise<CorosData | null> {
@@ -126,7 +133,10 @@ export class LocalService {
       if (!p) return;
       if (data.progress != null) return p.onProgress?.(data.progress);
       this.pending.delete(data.id);
-      if (data.ok) p.resolve(data.result);
+      if (data.ok) {
+        p.resolve(data.result);
+        this.onRebuilt?.();
+      }
       else {
         this.lastError.set(data.error ?? 'erreur inconnue');
         p.reject(new EntryError([data.error ?? 'Calcul impossible']));

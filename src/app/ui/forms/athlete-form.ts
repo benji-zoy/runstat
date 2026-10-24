@@ -105,7 +105,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
         @if (form.controls.activities.value === 'strava') {
           @if (local) {
           <p class="hint field wide">Synchro automatique de Strava depuis cet appareil : bientôt. En attendant, importe ton archive ;
-            elle est lue sur l'appareil, rien n'est envoyé.</p>
+            elle est lue sur l'appareil et n'est jamais envoyée.</p>
         } @else {
           <div class="field wide">Synchro Strava
             <span class="hint">{{ stravaConnection() }}</span>

@@ -1,7 +1,8 @@
 # Appli publique (local-first, sans données) sur GitHub Pages : tests, construction `pages`, CSP, publication.
 # Le chiffrement de bout en bout ne vaut que ce que vaut ce build : actions épinglées par SHA, npm ci, droits minimaux,
 # publication depuis main seulement (branche protégée).
-# Variable du dépôt RUNSTAT_NAS_ORIGINS : adresses publiques (Funnel) des NAS connus, séparées par des virgules.
+# Variables du dépôt : RUNSTAT_NAS_ORIGINS (adresses publiques Funnel des NAS connus, séparées par des virgules) ;
+# RUNSTAT_PAGES = true une fois Settings › Pages réglé sur « GitHub Actions » (sans elle : tests et construction seulement).
 name: Appli publique
 
 on:
@@ -38,12 +39,15 @@ jobs:
           json=$(node -e 'console.log(JSON.stringify(JSON.stringify((process.env.RUNSTAT_NAS_ORIGINS||"").split(",").map(s=>s.trim()).filter(Boolean).map(s=>new URL(s).origin))))')
           npx ng build -c pages --define "RUNSTAT_NAS_ORIGINS=$json"
           node scripts/pages-postbuild.mjs dist/runstat-pages/browser
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - if: vars.RUNSTAT_PAGES == 'true'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: vars.RUNSTAT_PAGES == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist/runstat-pages/browser
 
   deploy:
+    if: vars.RUNSTAT_PAGES == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:

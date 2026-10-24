@@ -1,5 +1,6 @@
 // Après `ng build -c pages` (appli publique, GitHub Pages) : politique de sécurité du contenu en balise meta (Pages ne permet
-// pas d'en-têtes HTTP), puis 404.html = index.html (routes Angular servies par la page d'erreur de Pages).
+// pas d'en-têtes HTTP), puis 404.html = index.html (routes Angular servies par la page d'erreur de Pages), et nouvelle
+// empreinte d'index.html dans ngsw.json (sinon le service worker refuse la coquille et passe en mode dégradé).
 // RUNSTAT_NAS_ORIGINS : adresses publiques des NAS (Funnel), séparées par des virgules, seules joignables avec les services
 // appelés depuis l'appareil. Usage : node scripts/pages-postbuild.mjs [dist/runstat-pages/browser]
 import { createHash } from 'node:crypto';
@@ -49,4 +50,11 @@ html = html.replace('<head>', `<head>\n  <meta http-equiv="Content-Security-Poli
 if (/\son[a-z]+="/.test(html)) throw new Error('gestionnaire d’événement en ligne : bloqué par la CSP');
 writeFileSync(file, html);
 writeFileSync(join(dir, '404.html'), html);
+// Le service worker vérifie l'empreinte (SHA-1) de chaque fichier de la coquille : index.html vient de changer
+const ngswFile = join(dir, 'ngsw.json');
+const ngsw = JSON.parse(readFileSync(ngswFile, 'utf8'));
+const key = Object.keys(ngsw.hashTable).find((k) => k.endsWith('/index.html'));
+if (!key) throw new Error('index.html absent de ngsw.json');
+ngsw.hashTable[key] = createHash('sha1').update(html).digest('hex');
+writeFileSync(ngswFile, JSON.stringify(ngsw, null, 2));
 console.log(`CSP posée (${inline.length} script en ligne, ${nas.length} NAS connu${nas.length > 1 ? 's' : ''}), 404.html écrit.`);

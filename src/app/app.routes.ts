@@ -77,6 +77,9 @@ export const routes: Routes = [
   { path: 'performance', title: 'Performance · RunStat', loadComponent: () => import('./pages/performance').then((m) => m.PerformancePage) },
   { path: 'courses', title: 'Courses · RunStat', loadComponent: () => import('./pages/goals').then((m) => m.GoalsPage) },
   { path: 'souvenirs', title: 'Souvenirs · RunStat', loadComponent: () => import('./pages/memories').then((m) => m.MemoriesPage) },
+  // Appli publique (local-first) : invitation et connexion d'un autre appareil, hors des espaces
+  { path: 'rejoindre', title: 'Rejoindre · RunStat', data: { mode: 'rejoindre' }, loadComponent: () => import('./pages/join').then((m) => m.JoinPage) },
+  { path: 'connexion', title: 'Connexion · RunStat', data: { mode: 'connexion' }, loadComponent: () => import('./pages/join').then((m) => m.JoinPage) },
   ...OLD_TABS.map((old) => ({ path: old, redirectTo: legacy(old) })),
   { path: '**', redirectTo: 'aujourdhui' },
 ];
