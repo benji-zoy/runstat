@@ -14,6 +14,7 @@ import { accountsLoader, resolveUser, runEnv, userPaths, validateUsers } from '.
 import { createApp } from './app.mjs';
 import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
+import { oauthConnectRoutes } from './oauth-connect.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '../..');
@@ -128,8 +129,10 @@ let servers;
 const base = {};
 
 function startApp(zone, accounts, queue) {
-  const strava = stravaConnectRoutes({ origins: ['https://nas.tailxxxx.ts.net'], log: silent });
-  const server = createServer(createApp({ zone, accounts, queue, strava, log: silent, quotaBytes: 50_000 }));
+  const origins = ['https://nas.tailxxxx.ts.net'];
+  const strava = stravaConnectRoutes({ origins, log: silent });
+  const oauth = oauthConnectRoutes({ origins, log: silent });
+  const server = createServer(createApp({ zone, accounts, queue, strava, oauth, log: silent, quotaBytes: 50_000 }));
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
@@ -232,6 +235,12 @@ test('API : gardes (en-tête du site, compte local-first, route inconnue, quota)
   assert.equal((await api('tailnet', '/api/goals', { login: 'carol@exemple.fr' })).status, 403);
   assert.equal((await api('tailnet', '/api/autre', { login: 'bob@exemple.fr' })).status, 404);
   assert.equal((await api('tailnet', '/pas-api', { login: 'bob@exemple.fr' })).status, 404);
+  // Connexions : compte obligatoire, navigations GET seulement
+  assert.equal((await api('tailnet', '/api/coros/connect')).status, 403);
+  assert.equal((await api('tailnet', '/api/google/connect', { login: 'bob@exemple.fr', method: 'POST' })).status, 405);
+  const nav = await fetch(`${base.tailnet}/api/coros/connect`, { redirect: 'manual', headers: { 'Tailscale-User-Login': 'bob@exemple.fr', Host: 'evil.example' } });
+  assert.equal(nav.status, 302);
+  assert.equal(nav.headers.get('location'), '/aujourdhui?coros=refus&raison=origine');
   // Compte plein (quota de 50 ko dans ce test) : nouvelle instance, taille mesurée après l'ajout du gros fichier
   writeFileSync(raw('bob', 'gros.bin'), Buffer.alloc(60_000));
   const accounts = accountsLoader(usersDir, null);
@@ -271,6 +280,10 @@ test('API : /api/me et administration réservée au propriétaire par le tailnet
   assert.equal(saved.status, 200);
   assert.ok(existsSync(join(usersDir, 'dave', 'data-raw')));
   assert.equal((statSync(join(usersDir, 'dave', 'secrets')).mode & 0o777).toString(8), '700');
+  // Droits explicites (ACL de DSM) : dossiers 755, users.json 644
+  assert.equal((statSync(join(usersDir, 'dave')).mode & 0o777).toString(8), '755');
+  assert.equal((statSync(join(usersDir, 'dave', 'data-raw')).mode & 0o777).toString(8), '755');
+  assert.equal((statSync(join(usersDir, 'users.json')).mode & 0o777).toString(8), '644');
   assert.equal((await json(await api('tailnet', '/api/me', { login: 'dave@exemple.fr' }))).body.id, 'dave');
   // Retiré : plus d'accès (ses données restent sur le disque)
   assert.equal((await api('tailnet', '/api/admin/users', { ...owner, body: USERS })).status, 200);
@@ -310,12 +323,16 @@ test('migration : à blanc sans rien toucher, puis déplacement sans perte, idem
     assert.ok(existsSync(join(dest, 'html/index.html')));
     assert.equal(existsSync(join(dest, 'data-raw')), false);
     assert.equal((statSync(join(dest, 'users/alice/secrets')).mode & 0o777).toString(8), '700');
+    assert.equal((statSync(join(dest, 'users')).mode & 0o777).toString(8), '755');
+    assert.equal((statSync(join(dest, 'users/alice')).mode & 0o777).toString(8), '755');
+    assert.equal((statSync(join(dest, 'users/users.json')).mode & 0o777).toString(8), '644');
     assert.equal((statSync(join(dest, 'users/alice/secrets/coros-tokens.json')).mode & 0o777).toString(8), '600');
     // users.json valide pour le service, login en minuscules
     const users = validateUsers(JSON.parse(readFileSync(join(dest, 'users/users.json'), 'utf8')));
     assert.deepEqual(users, [{ id: 'alice', name: 'Alice', role: 'owner', mode: 'hosted', logins: ['alice@exemple.fr'] }]);
     // Sauvegarde complète hors des volumes
     const backup = done.stdout.match(/Sauvegarde : .*\/(migration-[\d-]+)/)[1];
+    assert.equal((statSync(join(dest, backup)).mode & 0o777).toString(8), '700');
     assert.equal(readFileSync(join(dest, backup, 'data-raw/records.txt'), 'utf8'), 'activités');
     assert.ok(existsSync(join(dest, backup, 'secrets/coros-tokens.json')));
 

@@ -31,6 +31,10 @@ interface SyncStatus {
   stravaConnected?: boolean;
   /** « Prénom, athlète 123 » */
   stravaAthlete?: string | null;
+  /** Jetons COROS et Google du compte, client Google de l'instance (scripts/sync/oauth-connect.mjs) */
+  corosConnected?: boolean;
+  googleConnected?: boolean;
+  googleClient?: boolean;
   /** Adresse du site pour la connexion Strava (SYNC_PUBLIC_ORIGINS, HTTPS d'abord), null sur le poste */
   stravaOrigin?: string | null;
 }
@@ -47,6 +51,21 @@ const STRAVA_RETURN: Record<string, string> = {
   origine: 'Connexion Strava : passe par l’adresse Tailscale',
   compte: 'Connexion Strava lancée depuis un autre compte : recommence depuis Réglages',
 };
+
+/** Retour de la connexion COROS ou Google (/aujourdhui?coros|google=ok|refus&raison=…, scripts/sync/oauth-connect.mjs) */
+const OTHER_RETURN: Record<string, (label: string) => string> = {
+  ok: (l) => `${l} connecté : synchro lancée`,
+  annule: (l) => `Connexion ${l} annulée`,
+  lien: (l) => `Lien ${l} expiré : recommence depuis Réglages`,
+  echange: (l) => `${l} a refusé l’échange : recommence depuis Réglages`,
+  enregistrement: (l) => `${l} a refusé d’enregistrer RunStat : réessaie plus tard`,
+  appli: (l) => `${l} : l’appli OAuth du propriétaire manque sur le NAS`,
+  origine: (l) => `Connexion ${l} : passe par l’adresse Tailscale`,
+  compte: (l) => `Connexion ${l} lancée depuis un autre compte : recommence`,
+};
+const CONNECT_LABELS = { strava: 'Strava', coros: 'COROS', google: 'Google Health' } as const;
+export type ConnectSource = keyof typeof CONNECT_LABELS;
+export const CONNECT_SOURCES = Object.keys(CONNECT_LABELS) as ConnectSource[];
 
 /** Clés de sync-state.json : source d'activités, puis source de santé (corosHealth : santé COROS) */
 const SOURCES = { coros: 'COROS', strava: 'Strava', google: 'Google Health', corosHealth: 'COROS santé' } as const;
@@ -137,10 +156,15 @@ export class SyncService {
     this.noticeTimer = setTimeout(() => this.notice.set(null), ms);
   }
 
-  /** Retour de Strava après « Connecter Strava » : message, puis suivi de la synchro lancée par le service */
-  stravaReturned(result: string, reason: string | null): void {
+  /** Retour d'une connexion (« Connecter Strava / COROS / Google ») : message, puis suivi de la synchro lancée par le service */
+  connectionReturned(source: ConnectSource, result: string, reason: string | null): void {
     const ok = result === 'ok';
-    this.say(STRAVA_RETURN[ok ? (reason ?? 'ok') : (reason ?? '')] ?? (ok ? STRAVA_RETURN['ok'] : 'Connexion Strava refusée'), 8000);
+    const label = CONNECT_LABELS[source];
+    const text =
+      source === 'strava'
+        ? (STRAVA_RETURN[ok ? (reason ?? 'ok') : (reason ?? '')] ?? (ok ? STRAVA_RETURN['ok'] : 'Connexion Strava refusée'))
+        : (OTHER_RETURN[ok ? 'ok' : (reason ?? '')]?.(label) ?? `Connexion ${label} refusée`);
+    this.say(text, 8000);
     if (ok) void this.followImport();
   }
 

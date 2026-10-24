@@ -20,12 +20,20 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 - Clients : `coros.mjs` (MCP HTTP sans session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture),
   `google-health.mjs` (API v4 ; filtres en snake_case `daily_resting_heart_rate.date`, contrairement à la doc).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
-- Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Ré-autorisation sur le poste :
-  `npm run auth -- coros | google` (Strava : depuis Réglages, voir Sources) (navigateur + loopback), puis copier le fichier de tokens dans `secrets/` du NAS.
-  Le refresh token COROS change à chaque renouvellement : un seul détenteur (le NAS), sinon l'autre est révoqué.
+- Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Connexion depuis le site, pour chaque compte :
+  Réglages › « Connecter COROS » / « Connecter Google » (`oauth-connect.mjs`, `GET /api/coros|google/connect` puis `/callback`, mêmes
+  gardes que Strava : state aléatoire lié au compte, 10 min, usage unique, `redirect_uri` = origine ts.net de `SYNC_PUBLIC_ORIGINS`, retour
+  `/aujourdhui?coros|google=ok|refus&raison=…`). COROS : client public enregistré dynamiquement pour cette adresse, PKCE ; client et jetons
+  écrits ensemble au retour seulement (jamais un client neuf à côté d'anciens jetons). Google : client OAuth « Web » du propriétaire
+  (`users/<propriétaire>/secrets/google-client.json`, transmis aux runs des proches par `RUNSTAT_GOOGLE_CLIENT`, jamais recopié) ; y
+  déclarer l'URI `https://<hôte ts.net>/api/google/callback` dans la console Google Cloud et, en mode test, ajouter chaque proche comme
+  testeur (jetons de 7 jours). Secours sur le poste : `npm run auth -- coros | google` (navigateur + loopback), puis copier les fichiers
+  de jetons dans `users/<id>/secrets/` du NAS. Le refresh token COROS change à chaque renouvellement : un seul détenteur (le NAS),
+  sinon l'autre est révoqué.
 - `npm run test:sync` (parseurs, fusions idempotentes, liste blanche, validation de la saisie ; `strava.test.mjs` : archive Strava,
   tracés, santé COROS sur les fixtures fictives de `scripts/sync/fixtures/` ; `strava-connect.test.mjs` : connexion Strava, fetch bouchonné ;
-  `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, file, migration), `npm run spike -- coros | google` (dumps bruts).
+  `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, file, migration ; `oauth-connect.test.mjs` :
+  connexion COROS et Google, fetch bouchonné), `npm run spike -- coros | google` (dumps bruts).
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
@@ -123,6 +131,8 @@ compte : écran « Bienvenue » (404 sur `data/coros.json`), puis Réglages et s
   `RUNSTAT_SNAPSHOT`, `RUNSTAT_SECRETS` ; tous les scripts lisent leurs dossiers par `scripts/paths.mjs`, qui **échoue** si l'une
   manque alors que `users.json` existe (jamais de repli sur les données du propriétaire). Secrets : `readSecret(nom, dossier)` et
   `writeSecret(nom, valeur, dossier)` ; le service passe le dossier du compte (connexion Strava faite dans son processus).
+- Droits explicites sur tout ce que le service et la migration créent (dossiers 755, `secrets` 700, JSON 644) : sur le NAS, les ACL
+  héritées de DSM ouvrent sinon les nouveaux dossiers et fichiers en écriture à tous (`rwxrwxrwx+`).
 - Quota par compte hébergé : `RUNSTAT_USER_QUOTA_MB` (2 Go), 507 au-delà (saisie, archive). Au démarrage, `server.mjs` refuse de
   tourner si `users/` existe sans `users.json` (nouveau YAML monté avant la migration).
 

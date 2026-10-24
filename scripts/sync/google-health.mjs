@@ -1,7 +1,9 @@
 // Client Google Health API v4 (lecture seule).
 // Client OAuth « Application Web » : JSON téléchargé depuis la console Google Cloud et copié dans
-// secrets/google-client.json, avec l'URI de redirection autorisée http://localhost:53683/callback.
-// (Un client « Application de bureau » marche aussi, sur un port quelconque.)
+// secrets/google-client.json du propriétaire, avec les URI de redirection autorisées http://localhost:53683/callback (poste)
+// et https://<hôte ts.net>/api/google/callback (Réglages › « Connecter Google », google-connect.mjs).
+// (Un client « Application de bureau » marche aussi sur le poste, sur un port quelconque, mais pas depuis le site.)
+import { existsSync, readFileSync } from 'node:fs';
 import { readSecret, writeSecret, ReauthRequired } from './secrets.mjs';
 import { pkce, loopbackCode } from './loopback.mjs';
 import { fetchRetry } from './retry.mjs';
@@ -14,8 +16,13 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly',
 ];
 
-function client() {
-  const raw = readSecret('google-client.json');
+/**
+ * Client OAuth : celui du compte (secrets/google-client.json), sinon celui du propriétaire (RUNSTAT_GOOGLE_CLIENT,
+ * posé par server.mjs pour les proches hébergés : un seul projet Google Cloud par instance). `file` : chemin explicite.
+ */
+export function client(dir, file = process.env.RUNSTAT_GOOGLE_CLIENT) {
+  let raw = readSecret('google-client.json', dir);
+  if (!raw && file && existsSync(file)) raw = JSON.parse(readFileSync(file, 'utf8'));
   const c = raw?.installed ?? raw?.web ?? raw;
   if (!c?.client_id) {
     throw new Error(
@@ -34,7 +41,7 @@ async function postToken(params) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-function saveTokens(body, previous) {
+function saveTokens(body, previous, dir) {
   const tokens = {
     access_token: body.access_token,
     refresh_token: body.refresh_token ?? previous?.refresh_token,
@@ -42,34 +49,29 @@ function saveTokens(body, previous) {
     scope: body.scope ?? previous?.scope,
     obtainedAt: body.refresh_token ? new Date().toISOString() : previous?.obtainedAt,
   };
-  writeSecret('google-tokens.json', tokens);
+  writeSecret('google-tokens.json', tokens, dir);
   return tokens;
 }
 
-/** Autorisation interactive sur le poste : ouvre le navigateur, récupère le code en loopback */
-export async function authorizeGoogle() {
-  const c = client();
-  const { verifier, challenge, state } = pkce();
-  const web = Boolean(readSecret('google-client.json')?.web);
-  const { code, redirect } = await loopbackCode({
-    ...(web && { port: 53683, path: '/callback', host: 'localhost' }),
+/** Adresse de consentement Google (hors ligne, PKCE) */
+export function authorizeUrl(c, { redirect, challenge, state }) {
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.search = new URLSearchParams({
+    client_id: c.client_id,
+    redirect_uri: redirect,
+    response_type: 'code',
+    scope: GOOGLE_SCOPES.join(' '),
+    access_type: 'offline',
+    prompt: 'consent',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
     state,
-    authorize: (redirect) => {
-      const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      url.search = new URLSearchParams({
-        client_id: c.client_id,
-        redirect_uri: redirect,
-        response_type: 'code',
-        scope: GOOGLE_SCOPES.join(' '),
-        access_type: 'offline',
-        prompt: 'consent',
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-        state,
-      });
-      return url.toString();
-    },
   });
+  return url.toString();
+}
+
+/** Échange du code (secret du client ajouté ici), jetons écrits dans `dir` ; renvoie les scopes seulement */
+export async function exchangeCode(c, { code, verifier, redirect, dir }) {
   const res = await postToken({
     grant_type: 'authorization_code',
     code,
@@ -80,11 +82,24 @@ export async function authorizeGoogle() {
   });
   if (res.status !== 200) {
     throw new Error(
-      `Échange du code Google : ${res.body.error} ${res.body.error_description ?? ''}`,
+      `Échange du code Google : ${res.body.error} ${res.body.error_description ?? ''}`.trim(),
     );
   }
   if (!res.body.refresh_token) throw new Error('Google n’a pas renvoyé de refresh token.');
-  const t = saveTokens(res.body);
+  return { scope: saveTokens(res.body, undefined, dir).scope };
+}
+
+/** Autorisation interactive sur le poste : ouvre le navigateur, récupère le code en loopback */
+export async function authorizeGoogle() {
+  const c = client();
+  const { verifier, challenge, state } = pkce();
+  const web = Boolean(readSecret('google-client.json')?.web);
+  const { code, redirect } = await loopbackCode({
+    ...(web && { port: 53683, path: '/callback', host: 'localhost' }),
+    state,
+    authorize: (redirect) => authorizeUrl(c, { redirect, challenge, state }),
+  });
+  const t = await exchangeCode(c, { code, verifier, redirect });
   console.log(`Google autorisé (scopes : ${t.scope}).`);
 }
 

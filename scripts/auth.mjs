@@ -1,5 +1,5 @@
-// Autorisation initiale d'une source (tokens écrits dans secrets/, ou RUNSTAT_SECRETS).
-// Usage : npm run auth -- coros    (device flow : marche aussi dans le conteneur du NAS)
+// Autorisation d'une source sur le poste, en secours de Réglages › « Connecter … » (tokens écrits dans secrets/, ou RUNSTAT_SECRETS).
+// Usage : npm run auth -- coros    (sur le poste : ouvre le navigateur, redirection loopback, PKCE)
 //         npm run auth -- google   (sur le poste : ouvre le navigateur, redirection loopback)
 //         npm run auth -- strava   (sur le poste, idem ; secrets/strava-client.json d'abord)
 import { authorizeCoros } from './sync/coros.mjs';
