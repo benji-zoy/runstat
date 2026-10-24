@@ -446,6 +446,12 @@ test('relais Google : secret ajouté côté serveur, échanges prévus seulement
   }
   assert.equal(googleCalls.length, 0);
   assert.equal((await call('POST', '/relay/google/token', { body: { grant_type: 'refresh_token', refresh_token: 'r' } })).status, 401);
+  // Identifiant du client (public) pour l'adresse de consentement : session exigée, jamais le secret
+  assert.equal((await call('GET', '/relay/google/client')).status, 401);
+  const client = await call('GET', '/relay/google/client', { token });
+  assert.equal(client.status, 200);
+  assert.ok(client.body.client_id && !JSON.stringify(client.body).includes('GSECRET'));
+  assert.deepEqual(client.body.redirects, [redirect]);
 
   const ok = await call('POST', '/relay/google/token', { token, body: { grant_type: 'authorization_code', code: '4/0Ab', code_verifier: verifier, redirect_uri: redirect } });
   assert.equal(ok.status, 200);

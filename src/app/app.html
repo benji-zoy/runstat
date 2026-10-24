@@ -30,6 +30,9 @@
             <span class="sync-notice" role="status">{{ n }}</span>
           }
         </button>
+      } @else if (sync.notice(); as n) {
+        <!-- Appli publique sans source connectée : message d'une connexion refusée, sans bouton de synchro -->
+        <span class="sync notice-anchor"><span class="sync-notice" role="status">{{ n }}</span></span>
       }
       @if (me.admin()) {
         <button type="button" class="icon-btn" (click)="usersForm.open()" title="Proches (comptes hébergés)" aria-label="Proches">

@@ -17,8 +17,12 @@ de travailler sur les données. Les objectifs, bilans, classements et réglages 
 `npm run nas -- push goals.json athlete.json results` (pris en compte au run suivant). FC max/repos ou seuils modifiés dans
 `athlete.json` → `build-fit --force` (empreinte `athleteFit` dans l'état ; poids, taille, `raceWeights` ne recalculent pas les FIT). État : `data-raw/sync-state.json` (dernier succès,
 dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/<type>/`. Logs : Container Manager.
-- Clients : `coros.mjs` (MCP HTTP sans session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture),
-  `google-health.mjs` (API v4 ; filtres en snake_case `daily_resting_heart_rate.date`, contrairement à la doc).
+- Clients et synchro dans le moteur (`src/engine/sync/`, les mêmes que sur l'appareil, voir Appli publique) : `coros.ts` (MCP HTTP sans
+  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `google.ts` (API v4 ; filtres en
+  snake_case `daily_resting_heart_rate.date`, contrairement à la doc ; jeton par un point injecté), `run-sources.ts` (`sourceSync` : une
+  synchro par source, `syncOne` pour « Affiner »), `http.ts` (`fetchRetry`, `ReauthRequired`, `RateLimited`, magasin de jetons `TokenStore`
+  avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
+  (jetons dans un dossier de secrets : `nodeTokens` de `secrets.mjs`, `savedAt` = date du fichier ; zone raw = `NodeStore`).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
 - Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Connexion depuis le site, pour chaque compte :
   Réglages › « Connecter COROS » / « Connecter Google » (`oauth-connect.mjs`, `GET /api/coros|google/connect` puis `/callback`, mêmes
@@ -84,8 +88,8 @@ pour tourner aussi dans le navigateur (local-first, phase 4) : `fit/` (`analyse(
 `NodeStore` côté Node (`scripts/node-storage.mjs`, écriture atomique). Aussi dans le moteur : `weather.ts` (Open-Meteo, `fetch`
 injecté ; `fetch-weather.mjs` n'est plus qu'une enveloppe), `archive/` (lecteur zip sur une source à accès direct, `Blob` du navigateur ou
 `fs.openAsBlob` de Node, `DecompressionStream` borné ; import de l'archive Strava, enveloppé par `strava-archive.mjs`), `entries.ts`
-(validation de la saisie, réexportée par `entries.mjs`), `pipeline/rebuild.ts` (reconstruction complète sur l'appareil). Restent en Node :
-clients API, `run.mjs`, `server.mjs`, `import-health.mjs`. Pas de `Blob.stream()` dans le moteur (absent de jsdom) : flux construits à la main.
+(validation de la saisie, réexportée par `entries.mjs`), `pipeline/rebuild.ts` (reconstruction complète sur l'appareil). Aussi `sync/` (clients des sources et
+synchro, voir Synchronisation). Restent en Node : `server.mjs`, `import-health.mjs`, les enveloppes (`run.mjs`, `*.mjs` des clients). Pas de `Blob.stream()` dans le moteur (absent de jsdom) : flux construits à la main.
 - Node exécute les `.ts` directement (**type stripping** de Node 24, sans build) : les scripts importent `#engine/…` (champ `imports`
   de `package.json`), le moteur importe avec l'extension `.ts` (`rewriteRelativeImportExtensions` côté Angular) et reste en syntaxe
   effaçable (pas d'enum, de namespace ni de propriété de paramètre : `npm run check:engine`). `src/engine/package.json` le déclare en ESM.
@@ -105,8 +109,8 @@ Pages sous `/runstat/`, `RUNSTAT_LOCAL` posé par `define`). En local-first, tou
 `raw` et `snapshot`), calculs par le moteur dans un Web Worker (`engine.worker.ts` : `rebuild`, import de l'archive Strava lue par
 morceaux, jamais envoyée), un calcul à la fois, reconstructions regroupées. `DataService` lit le snapshot local (aucun = écran
 « Bienvenue »), `EntriesService` valide avec `src/engine/entries.ts` (mêmes règles que le NAS) puis recalcule ; `available` (saisie) est
-vrai en local, `SyncService.available` (synchro des sources) faux tant que la synchro sur l'appareil n'existe pas (PR 6) ; les connexions
-COROS / Google / Strava des Réglages sont masquées. Météo Open-Meteo depuis le navigateur (hors ligne : snapshot quand même, erreur
+vrai en local, `SyncService.available` (bouton de synchro) dès qu'une source est connectée sur l'appareil (voir Synchro sur
+l'appareil). Météo Open-Meteo depuis le navigateur (hors ligne : snapshot quand même, erreur
 dans `local-state.json`). `navigator.storage.persist()` à la première saisie ; bandeau « écran d'accueil » sur iPhone (Safari efface
 les données après 7 jours sans visite, sauf appli installée). `fit-file-parser` et `buffer` sont des dépendances de l'appli (polyfill
 éprouvé dans le vrai bundle du worker ; versions verrouillées : un changement de version change l'analyse FIT).
@@ -120,6 +124,31 @@ les données après 7 jours sans visite, sauf appli installée). `fit-file-parse
   `RUNSTAT_PAGES=true` (sans elle, le workflow ne publie pas : `main` ne casse pas tant que Pages n'est pas activé). La valeur de
   `--define` est une expression JS : une chaîne JSON encodée deux fois (`'RUNSTAT_NAS_ORIGINS="[\"http://localhost:8789\"]"'`) ; un tableau
   nu donne `KNOWN_NAS` vide (écran « Serveur inconnu »).
+
+### Synchro des sources sur l'appareil (`core/device-sync.service.ts`, `pages/oauth-return.ts`)
+Le moteur de `src/engine/sync/` dans le navigateur (thread principal ; COROS, Strava, Google Health et l'hôte des FIT acceptent le CORS) :
+`sourceSync(raw, clients, { stage: false })` (pas de réponses brutes : sauvegarde plus légère), puis `rebuild` dans le worker, `fit-queue.txt`
+(COROS), rechargement. À l'ouverture si la dernière tentative date de plus d'une heure, et au bouton de l'en-tête (`SyncService` en local
+lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner avec le tracé » : `syncOne`.
+- Jetons dans la zone raw, `secrets/<nom>.json` (`fileTokenStore`, avec `savedAt`) : chiffrés dans la sauvegarde, donc suivent le compte.
+  Appli Strava de la personne (Client ID + Secret, `validateStravaApp` comme sur le NAS) gardée sur l'appareil, jamais envoyée au NAS.
+- **Appareil principal** (`sync-primary.json` : appareil, nom, époque, fusionné par la sauvegarde) : seul à renouveler les jetons (le
+  refresh token COROS et Strava change à chaque renouvellement). Renouvellement sous `navigator.locks` (`runstat-jeton-<nom>`, relecture des
+  jetons une fois le verrou pris) : avant, `account.sync()` (jetons et appareil principal les plus récents) puis vérification (sans
+  appareil principal, il le devient ; un autre → `NotPrimary`, rien n'est envoyé au serveur de jetons) ; après, sauvegarde aussitôt.
+  Sauvegarde verrouillée (phrase non saisie) ou session expirée : pas de renouvellement. Sans compte : appareil seul, direct. Synchros
+  sous le verrou `runstat-sources` (un onglet à la fois). Réglages › « Devenir l'appareil principal » : époque suivante, sauvegarde.
+  Se connecter à une source depuis un appareil en fait l'appareil principal.
+- OAuth depuis le navigateur, adresse de retour `<appli>connexion/<source>` (Réglages › « Connecter … », state + vérificateur PKCE dans
+  `sessionStorage`, usage unique, code retiré de l'adresse) : COROS par enregistrement dynamique (client « RunStat (appli) ») et PKCE,
+  échange direct ; Strava par l'appli de la personne (domaine de rappel : hôte de l'appli publique, `benji-zoy.github.io`), échange
+  direct (secret depuis l'appareil) ; Google seulement avec un compte : identifiant du client et adresses de retour par
+  `GET /relay/google/client`, échange et renouvellement par le relais (le propriétaire déclare `<appli>connexion/google` dans la console
+  Google Cloud). Retour vers `/aujourdhui?<source>=ok|refus&raison=…`, puis synchro.
+- Tests : `src/engine/sync/sync.spec.ts` (fetch bouchonné : COROS complet, quota FIT, listes blanches, rotation du jeton avec deux appels
+  simultanés, renouvellement refusé, pause « ré-autorisation » puis reprise, Strava et limite de débit, Google par le relais, « Affiner »),
+  `core/device-sync.service.spec.ts` (appareil principal, sauvegarde verrouillée, appli Strava, retour de connexion), `sync.test.mjs`
+  (`run.mjs` réel contre un MCP simulé : `COROS_MCP_URL`).
 
 ### Sauvegarde chiffrée et multi-appareils (`src/engine/backup/`, `core/account.service.ts`, `pages/join.ts`)
 Compte d'un proche local-first sur le NAS qui l'a invité (API publique, voir Comptes › Accès public). Le serveur ne voit que des
@@ -214,7 +243,7 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   versionnés (`If-Match: "v<n>"` / `If-None-Match: *`, 412 si périmé, 409 si des objets manquent) avec en-tête clair (dérivation,
   clé enveloppée) et blob chiffré ; manifestes et objets gardés 30 jours quel que soit leur nombre (le dernier toujours), ménage toutes
   les 6 h ; `DELETE /backup` = suppression douce (30 jours).
-- Relais : `POST /relay/google/token` seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
+- Relais : `POST /relay/google/token` et `GET /relay/google/client` (identifiant public du client et adresses de retour) seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
   avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte). Le reste se fait
   depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS
   (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement.

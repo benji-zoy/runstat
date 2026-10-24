@@ -80,6 +80,8 @@ export const routes: Routes = [
   // Appli publique (local-first) : invitation et connexion d'un autre appareil, hors des espaces
   { path: 'rejoindre', title: 'Rejoindre · RunStat', data: { mode: 'rejoindre' }, loadComponent: () => import('./pages/join').then((m) => m.JoinPage) },
   { path: 'connexion', title: 'Connexion · RunStat', data: { mode: 'connexion' }, loadComponent: () => import('./pages/join').then((m) => m.JoinPage) },
+  // Retour d'une autorisation COROS, Strava ou Google lancée depuis Réglages (synchro sur l'appareil)
+  { path: 'connexion/:source', title: 'Connexion · RunStat', loadComponent: () => import('./pages/oauth-return').then((m) => m.OAuthReturnPage) },
   ...OLD_TABS.map((old) => ({ path: old, redirectTo: legacy(old) })),
   { path: '**', redirectTo: 'aujourdhui' },
 ];

@@ -123,6 +123,10 @@
 .sync {
   position: relative;
 
+  &.notice-anchor {
+    align-self: stretch;
+  }
+
   &:disabled {
     cursor: progress;
   }

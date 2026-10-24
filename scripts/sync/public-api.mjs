@@ -16,6 +16,7 @@
 //   GET  /backup/manifest | /backup/manifests | /backup/manifests/<v> ; PUT /backup/manifest (If-Match: "v<n>" | If-None-Match: *)
 //   POST /backup/objects/missing { ids } ; PUT|GET /backup/objects/<id> ; DELETE /backup (ré-auth., suppression douce)
 //   POST /relay/google/token                            → échange ou renouvellement du jeton Google, secret du propriétaire ajouté ici
+//   GET  /relay/google/client                           → identifiant (public) du client Google, pour l'adresse de consentement
 // Journal : méthode, route type, statut, compte ; jamais de corps, de jeton, de code ni d'URL relayée.
 import { createWriteStream, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -357,6 +358,12 @@ export function createPublicApi({
 
   /** Jeton Google : secret client du propriétaire ajouté ici, seulement les échanges prévus, réponse filtrée */
   async function relayRoutes(req, res, path, ctx) {
+    if (req.method === 'GET' && path === '/relay/google/client') {
+      ctx.userId = session(req).user.id;
+      const client = googleClient();
+      if (!client) throw new HttpError(503, 'appli Google absente du serveur');
+      return { status: 200, body: { client_id: client.client_id, redirects: googleRedirects } };
+    }
     if (req.method !== 'POST' || path !== '/relay/google/token') throw new HttpError(404, 'introuvable');
     const { user } = session(req);
     ctx.userId = user.id;
