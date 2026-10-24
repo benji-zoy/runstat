@@ -2,7 +2,8 @@
 # Construit le site et le copie sur le NAS (conteneurs nginx et runstat-sync, voir deploy/).
 # Destination dans data-raw/nas.txt : `utilisateur@nas:/volume1/docker/runstat` (SSH)
 # ou `/Volumes/docker/runstat` (partage SMB monté).
-# Les données (html/data, data-raw, secrets) vivent sur le NAS : jamais écrasées ici (voir scripts/nas-data.sh).
+# Les données (users/, ou html/data, data-raw, secrets avant la migration) vivent sur le NAS : jamais écrasées ici
+# (voir scripts/nas-data.sh).
 cd "$(dirname "$0")/.." || exit 1
 
 dest=$(head -n 1 data-raw/nas.txt 2>/dev/null | tr -d '[:space:]')
@@ -39,7 +40,9 @@ done
 ssh_opts="ssh -o ControlMaster=auto -o ControlPath=/tmp/runstat-deploy-%r@%h -o ControlPersist=60"
 sync="rsync -rltp --chmod=a+rX --exclude=.DS_Store"
 
-$sync -e "$ssh_opts" deploy/docker-compose.yml deploy/nginx.conf "$dest/" || exit 1
+$sync -e "$ssh_opts" deploy/docker-compose.yml "$dest/" || exit 1
+# Configuration nginx (un dossier, monté sur /etc/nginx/conf.d) : relue au redémarrage du conteneur runstat
+$sync -e "$ssh_opts" --delete deploy/nginx/ "$dest/nginx/" || exit 1
 $sync -e "$ssh_opts" --delete --exclude=/data/ "$site/" "$dest/html/" || exit 1
 $sync -e "$ssh_opts" --delete "$app/" "$dest/app/" || exit 1
 echo "Déployé dans $dest (site : $(du -sh "$site" | cut -f1))."

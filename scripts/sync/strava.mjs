@@ -23,16 +23,17 @@ export const READ_PATHS = [/^\/athlete\/activities$/, /^\/activities\/\d+$/, /^\
 /** Limite de débit atteinte (429 ou quota des 15 min presque épuisé) : on s'arrête proprement */
 export class RateLimited extends Error {}
 
-function client() {
-  const c = readSecret('strava-client.json');
+/** `dir` : dossier de secrets d'un compte (server.mjs), sinon celui du run */
+function client(dir) {
+  const c = readSecret('strava-client.json', dir);
   if (!c?.client_id || !c?.client_secret) {
     throw new Error('secrets/strava-client.json absent : crée une appli sur strava.com/settings/api (client_id, client_secret).');
   }
   return c;
 }
 
-async function postToken(params) {
-  const c = client();
+async function postToken(params, dir) {
+  const c = client(dir);
   const res = await fetchRetry(`${OAUTH}/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -41,7 +42,7 @@ async function postToken(params) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-function saveTokens(body, previous) {
+function saveTokens(body, previous, dir) {
   const tokens = {
     access_token: body.access_token,
     // Le refresh token peut changer à chaque renouvellement : un seul détenteur (le NAS)
@@ -53,7 +54,7 @@ function saveTokens(body, previous) {
     athleteName: body.athlete?.firstname ?? previous?.athleteName,
     obtainedAt: body.athlete ? new Date().toISOString() : previous?.obtainedAt,
   };
-  writeSecret('strava-tokens.json', tokens);
+  writeSecret('strava-tokens.json', tokens, dir);
   return tokens;
 }
 
@@ -76,11 +77,11 @@ export function authorizeUrl(clientId, redirect, state) {
  * `scope` : scopes cochés par l'athlète, rendus par Strava dans la redirection (absents de la réponse du jeton).
  * Renvoie l'athlète seulement : les jetons ne sortent jamais de ce module.
  */
-export async function exchangeCode(code, scope) {
-  const res = await postToken({ code, grant_type: 'authorization_code' });
+export async function exchangeCode(code, scope, dir) {
+  const res = await postToken({ code, grant_type: 'authorization_code' }, dir);
   if (res.status !== 200 || !res.body.access_token || !res.body.refresh_token)
     throw new Error(`Échange du code Strava : HTTP ${res.status} ${res.body.message ?? ''}`.trim());
-  const t = saveTokens({ ...res.body, scope });
+  const t = saveTokens({ ...res.body, scope }, undefined, dir);
   return { athleteId: t.athleteId, athleteName: t.athleteName, scope: t.scope };
 }
 

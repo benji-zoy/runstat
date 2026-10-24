@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { InvalidEntry, readJsonFile, writeJsonAtomic } from './entries.mjs';
-import { readSecret, secretsDir, writeSecret } from './secrets.mjs';
+import { readSecret, writeSecret } from './secrets.mjs';
 import { authorizeUrl, exchangeCode } from './strava.mjs';
 
 export const STATE_TTL_MS = 10 * 60_000;
@@ -96,11 +96,11 @@ export function validateStravaClient(body) {
   return { client_id: id, client_secret: secret };
 }
 
-/** État Strava pour GET /api/sync : rien des jetons ni du secret, seulement leur présence et l'athlète */
-export function stravaStatus() {
+/** État Strava pour GET /api/sync : rien des jetons ni du secret, seulement leur présence et l'athlète. `dir` : secrets du compte */
+export function stravaStatus(dir) {
   const read = (name) => {
     try {
-      return readSecret(name);
+      return readSecret(name, dir);
     } catch {
       return null; // fichier en cours d'écriture
     }
@@ -123,37 +123,44 @@ const back = (res, ok, reason) =>
   redirect(res, `/aujourdhui?strava=${ok ? 'ok' : 'refus'}${reason ? `&raison=${reason}` : ''}`);
 
 /**
- * Routes de connexion. `raw` : dossier data-raw (sync-state.json) ; `onConnected` : lancé après une connexion réussie
- * (synchro) ; `log` : journal du service, jamais de jeton ni de code.
+ * Routes de connexion, pour le compte de la requête : `user` = { id, raw (data-raw : sync-state.json), secrets,
+ * onConnected (lancé après une connexion réussie : synchro) }. Le state est lié au compte : le retour de Strava n'écrit
+ * que chez celui qui a lancé la connexion. `log` : journal du service, jamais de jeton ni de code.
  */
-export function stravaConnectRoutes({ raw, origins = allowedOrigins(), store = new StateStore(), onConnected = () => {}, log = console }) {
+export function stravaConnectRoutes({ origins = allowedOrigins(), store = new StateStore(), log = console } = {}) {
   return {
     /** PUT /api/strava/client : nouvelle appli → les jetons de l'ancienne ne valent plus rien */
-    saveClient(body) {
+    saveClient(user, body) {
       const client = validateStravaClient(body);
-      const previous = readSecret(CLIENT);
-      writeSecret(CLIENT, client);
-      if (previous?.client_id && previous.client_id !== client.client_id) rmSync(join(secretsDir, TOKENS), { force: true });
-      return stravaStatus();
+      const previous = readSecret(CLIENT, user.secrets);
+      writeSecret(CLIENT, client, user.secrets);
+      if (previous?.client_id && previous.client_id !== client.client_id) rmSync(join(user.secrets, TOKENS), { force: true });
+      return stravaStatus(user.secrets);
     },
 
     /** GET /api/strava/connect */
-    connect(req, res) {
+    connect(user, req, res) {
       const origin = publicOrigin(req.headers, origins);
       if (!origin) {
         log.warn?.(`Strava : connexion refusée depuis un hôte hors liste (${req.headers['x-forwarded-host'] ?? req.headers.host ?? '?'})`);
         return back(res, false, 'origine');
       }
-      const client = readSecret(CLIENT);
+      const client = readSecret(CLIENT, user.secrets);
       if (!client?.client_id) return back(res, false, 'appli');
-      const state = store.create({ origin });
+      const state = store.create({ origin, userId: user.id });
       redirect(res, authorizeUrl(client.client_id, `${origin}${CALLBACK_PATH}`, state));
     },
 
     /** GET /api/strava/callback?code&state&scope (ou ?error=access_denied&state) */
-    async callback(req, res, url) {
+    async callback(user, req, res, url) {
       const q = url.searchParams;
-      if (!store.consume(q.get('state'))) return back(res, false, 'lien');
+      const pending = store.consume(q.get('state'));
+      if (!pending) return back(res, false, 'lien');
+      // Connexion lancée par un autre compte (lien transmis, ou session changée entre-temps) : rien n'est écrit
+      if (pending.userId !== user.id) {
+        log.warn?.(`Strava : retour de connexion refusé (compte ${user.id}, lancée par un autre compte)`);
+        return back(res, false, 'compte');
+      }
       if (q.get('error')) return back(res, false, 'annule');
       const code = q.get('code');
       const scope = q.get('scope') ?? '';
@@ -161,13 +168,13 @@ export function stravaConnectRoutes({ raw, origins = allowedOrigins(), store = n
       if (!/(^|,)activity:read(_all)?(,|$)/.test(scope)) return back(res, false, 'portee');
       let athlete;
       try {
-        athlete = await exchangeCode(code, scope);
+        athlete = await exchangeCode(code, scope, user.secrets);
       } catch (e) {
         log.error?.(`Strava : ${e.message}`);
         return back(res, false, 'echange');
       }
       // Jetons neufs : la source sort de pause tout de suite (run.mjs le ferait aussi d'après la date du fichier)
-      const stateFile = join(raw, 'sync-state.json');
+      const stateFile = join(user.raw, 'sync-state.json');
       try {
         const st = existsSync(stateFile) ? readJsonFile(stateFile, {}) : {};
         if (st.strava?.reauthSince) {
@@ -177,8 +184,8 @@ export function stravaConnectRoutes({ raw, origins = allowedOrigins(), store = n
       } catch (e) {
         log.error?.(`Strava : sync-state.json illisible (${e.message})`);
       }
-      log.log?.(`Strava connecté (athlète ${athlete.athleteId ?? '?'}, scopes : ${scope})`);
-      onConnected();
+      log.log?.(`Strava connecté pour ${user.id} (athlète ${athlete.athleteId ?? '?'}, scopes : ${scope})`);
+      user.onConnected?.();
       back(res, true, /activity:read_all/.test(scope) ? null : 'public');
     },
   };

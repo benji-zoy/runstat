@@ -26,6 +26,7 @@ import { gzipSync } from 'node:zlib';
 import * as coros from './coros.mjs';
 import * as google from './google-health.mjs';
 import { secretsDir, readSecret, ReauthRequired } from './secrets.mjs';
+import { rawDir } from '../paths.mjs';
 import { fetchRetry } from './retry.mjs';
 import * as pc from '#engine/parsers/coros.ts';
 import { DAILY_TYPES, healthFromGoogle, mergeHealth } from '#engine/parsers/google.ts';
@@ -36,7 +37,8 @@ import { importStravaArchive, stravaFile } from './strava-archive.mjs';
 import { ACTIVITY_ID, fileKey, readSources } from './sources.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const raw = join(root, 'data-raw');
+// Données de l'utilisateur du run (RUNSTAT_RAW posé par server.mjs, sinon data-raw/ du dépôt)
+const raw = rawDir();
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const fitOnly = args.includes('--fit') ? args[args.indexOf('--fit') + 1] : null;
@@ -98,7 +100,7 @@ writeFileSync(lockFile, String(process.pid));
  */
 async function runSource(name, tokenFile, fn, auth = name) {
   const s = (state[name] ??= {});
-  const tokens = join(secretsDir, tokenFile);
+  const tokens = join(secretsDir(), tokenFile);
   if (s.reauthSince) {
     const changed = existsSync(tokens) && statSync(tokens).mtimeMs > Date.parse(s.reauthSince);
     if (!changed) {

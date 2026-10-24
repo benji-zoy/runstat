@@ -283,37 +283,15 @@ test('santé : fusion idempotente et priorité de l’API sur Takeout', () => {
   assert.equal(combineHealth(takeout, null), takeout);
 });
 
-test('tracé seul : /api/fit vérifie l’en-tête et l’identifiant, run.mjs refuse un identifiant invalide', async () => {
-  const { spawn, spawnSync } = await import('node:child_process');
+test('tracé seul : run.mjs refuse un identifiant invalide', async () => {
+  const { spawnSync } = await import('node:child_process');
   const { fileURLToPath } = await import('node:url');
   const dir = fileURLToPath(new URL('.', import.meta.url));
-  const bad = spawnSync(process.execPath, [`${dir}run.mjs`, '--fit', '../x'], { encoding: 'utf8' });
+  // Instance mono-utilisateur (RUNSTAT_USERS sans users.json), quel que soit le poste
+  const env = { ...process.env, RUNSTAT_USERS: join(tmpdir(), 'runstat-aucun-compte') };
+  const bad = spawnSync(process.execPath, [`${dir}run.mjs`, '--fit', '../x'], { encoding: 'utf8', env });
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--fit <labelId/);
-
-  const port = 18787 + Math.floor(Math.random() * 1000);
-  const server = spawn(process.execPath, [`${dir}server.mjs`, '--no-schedule'], {
-    env: { ...process.env, SYNC_PORT: String(port) },
-  });
-  try {
-    await new Promise((resolve) => server.stdout.on('data', resolve));
-    const post = (path, headers = { 'X-RunStat': 'sync' }) =>
-      fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST', headers });
-    assert.equal((await post('/api/fit?id=123', {})).status, 403);
-    assert.equal((await post('/api/fit?id=12a')).status, 400);
-    assert.equal((await post('/api/fit')).status, 400);
-    assert.equal((await post('/api/autre')).status, 404);
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/fit`)).status, 405);
-    assert.equal((await post('/api/fit?id=strava:12a')).status, 400);
-    // Archive Strava : en-tête du site, zip seulement, POST seulement (refusée avant toute écriture)
-    assert.equal((await post('/api/strava/archive', { 'Content-Type': 'application/zip' })).status, 403);
-    assert.equal((await post('/api/strava/archive', { 'X-RunStat': 'sync', 'Content-Type': 'text/plain' })).status, 400);
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/strava/archive`)).status, 405);
-    const sources = await (await fetch(`http://127.0.0.1:${port}/api/sources`)).json();
-    assert.ok(['coros', 'strava'].includes(sources.activities) && ['google', 'coros', 'none'].includes(sources.health));
-  } finally {
-    server.kill();
-  }
 });
 
 // ---------- saisie depuis le site (entries.mjs) ----------

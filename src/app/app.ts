@@ -12,10 +12,12 @@ import { levelFor } from './core/badges';
 import { TABS, TAB_PARAMS } from './app.routes';
 import { IconComponent } from './ui/icon';
 import { AthleteFormComponent } from './ui/forms/athlete-form';
+import { UsersFormComponent } from './ui/forms/users-form';
+import { MeService } from './core/me.service';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AthleteFormComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AthleteFormComponent, UsersFormComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -24,6 +26,8 @@ export class App {
   protected readonly theme = inject(ThemeService);
   protected readonly sync = inject(SyncService);
   protected readonly pwa = inject(PwaService);
+  protected readonly me = inject(MeService);
+  protected readonly empty = this.store.empty;
   protected readonly data = this.store.data;
   protected readonly error = this.store.error;
   protected readonly tabs = TABS;

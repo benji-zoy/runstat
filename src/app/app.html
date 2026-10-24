@@ -31,6 +31,11 @@
           }
         </button>
       }
+      @if (me.admin()) {
+        <button type="button" class="icon-btn" (click)="usersForm.open()" title="Proches (comptes hébergés)" aria-label="Proches">
+          <app-icon name="users" />
+        </button>
+      }
       @if (sync.available()) {
         <button type="button" class="icon-btn" (click)="athleteForm.open()" title="Réglages (FC, poids…)" aria-label="Réglages">
           <app-icon name="settings" />
@@ -56,6 +61,15 @@
   }
   @if (error()) {
     <p class="card error">{{ error() }}</p>
+  } @else if (empty()) {
+    <section class="card empty-account">
+      <h2>Bienvenue{{ me.me()?.name ? ', ' + me.me()?.name : '' }}</h2>
+      <p>Ton compte n'a pas encore de données. Ouvre les Réglages : renseigne ta FC et ta morphologie, choisis tes sources
+        (COROS, Strava, santé), connecte-les, puis lance une synchro. Tes données restent dans ton dossier sur le NAS.</p>
+      @if (sync.available()) {
+        <button type="button" class="btn primary" (click)="athleteForm.open()">Ouvrir les Réglages</button>
+      }
+    </section>
   } @else if (data()) {
     <router-outlet />
   } @else {
@@ -71,6 +85,7 @@
 </footer>
 
 <app-athlete-form #athleteForm />
+<app-users-form #usersForm />
 
 <nav class="bottom" aria-label="Espaces">
   @for (t of mobileTabs; track t.path) {

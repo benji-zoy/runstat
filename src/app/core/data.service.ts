@@ -6,6 +6,8 @@ import { parseDay, startOfDay } from './stats';
 export class DataService {
   readonly data = signal<CorosData | null>(null);
   readonly error = signal<string | null>(null);
+  /** Compte sans données pour l'instant (nouveau compte hébergé : réglages et sources à renseigner, puis synchro) */
+  readonly empty = signal(false);
 
   /** Toutes les sorties, triées de la plus ancienne à la plus récente */
   readonly activities = computed(() => this.data()?.activities ?? []);
@@ -43,8 +45,14 @@ export class DataService {
   async load(): Promise<void> {
     try {
       const res = await fetch('data/coros.json', { cache: 'no-cache' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      this.data.set(await res.json());
+      // Servi par le NAS pour le compte de la requête : 404 = compte vide, 403 = pas de compte pour ce login
+      const json = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => null) : null;
+      if (res.status === 404 && json?.error) return this.empty.set(true);
+      if (res.status === 403 && json?.error) return this.error.set(`Accès refusé : ${json.error}.`);
+      if (!res.ok || !json) throw new Error(`HTTP ${res.status}`);
+      this.empty.set(false);
+      this.error.set(null);
+      this.data.set(json);
     } catch (e) {
       this.error.set(`Impossible de charger data/coros.json (${(e as Error).message}). Lance « npm run data ».`);
     }

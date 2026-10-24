@@ -3,14 +3,14 @@
 // Altitude des points de départ (API elevation, à 0,01° près) : data-raw/weather/elevation.json
 // Usage : node scripts/fetch-weather.mjs
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { rawDir, snapshotDir } from './paths.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dir = join(root, 'data-raw/weather');
+const raw = rawDir();
+const dir = join(raw, 'weather');
 mkdirSync(dir, { recursive: true });
 
-const { activities } = JSON.parse(readFileSync(join(root, 'public/data/coros.json'), 'utf8'));
+const { activities } = JSON.parse(readFileSync(join(snapshotDir(), 'coros.json'), 'utf8'));
 const HOURLY = 'temperature_2m,dew_point_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m';
 
 const groups = new Map();
@@ -86,7 +86,7 @@ if (toFetch.length) {
 
 // Prévisions pour les objectifs des 15 prochains jours (data-raw/goals.json) : lieu indiqué,
 // sinon la case de 0,1° où tu cours le plus souvent. Fichier séparé, pour ne pas mélanger prévision et archive.
-const goalsFile = join(root, 'data-raw/goals.json');
+const goalsFile = join(raw, 'goals.json');
 const goals = existsSync(goalsFile) ? JSON.parse(readFileSync(goalsFile, 'utf8')) : [];
 const home = [...groups.values()].sort((a, b) => b.dates.length - a.dates.length)[0];
 for (const g of goals) {

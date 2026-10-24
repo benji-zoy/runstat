@@ -1,16 +1,16 @@
 // Contrôle des tours Coros (data-raw/laps) : format, somme des temps ≈ durée de la sortie, distance ≈ distance.
 // Usage : node scripts/check-laps.mjs
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { rawDir, snapshotDir } from './paths.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { activities } = JSON.parse(readFileSync(join(root, 'public/data/coros.json'), 'utf8'));
+const lapsDir = join(rawDir(), 'laps');
+const { activities } = JSON.parse(readFileSync(join(snapshotDir(), 'coros.json'), 'utf8'));
 const byId = new Map(activities.map((a) => [a.id, a]));
 let ok = 0;
-for (const f of readdirSync(join(root, 'data-raw/laps')).filter((f) => f.endsWith('.json'))) {
+for (const f of readdirSync(lapsDir).filter((f) => f.endsWith('.json'))) {
   const id = f.replace('.json', '');
-  const laps = JSON.parse(readFileSync(join(root, 'data-raw/laps', f), 'utf8'));
+  const laps = JSON.parse(readFileSync(join(lapsDir, f), 'utf8'));
   const a = byId.get(id);
   if (laps.empty) { console.log(`${id} : vide`); continue; }
   const bad = laps.km.filter((l) => l.length !== 8 || l.some((x) => typeof x !== 'number'));

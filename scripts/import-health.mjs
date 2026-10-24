@@ -4,11 +4,11 @@
 // Usage : node scripts/import-health.mjs "<chemin vers Takeout/Google Health>"
 //         (le chemin est mémorisé dans data-raw/health-source.txt pour les imports suivants)
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { rawDir } from './paths.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const sourceFile = join(root, 'data-raw/health-source.txt');
+const raw = rawDir();
+const sourceFile = join(raw, 'health-source.txt');
 const src = process.argv[2] ?? (existsSync(sourceFile) ? readFileSync(sourceFile, 'utf8').trim() : null);
 if (!src || !existsSync(src)) {
   console.error('Indique le dossier « Google Health » de l’export Takeout : node scripts/import-health.mjs "<chemin>"');
@@ -140,7 +140,7 @@ const out = {
   days: Object.fromEntries(Object.entries(days).sort(([a], [b]) => a.localeCompare(b))),
   weight: [...weight.entries()].sort().map(([date, w]) => ({ date, kg: Math.round((w.reduce((a, b) => a + b, 0) / w.length) * 10) / 10 })),
 };
-writeFileSync(join(root, 'data-raw/health.json'), JSON.stringify(out));
+writeFileSync(join(raw, 'health.json'), JSON.stringify(out));
 const ds = Object.values(out.days);
 const count = (k) => ds.filter((d) => d[k] != null).length;
 console.log(

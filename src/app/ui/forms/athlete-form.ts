@@ -3,6 +3,7 @@ import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { EntriesService } from '../../core/entries.service';
 import { ScienceService } from '../../core/science.service';
 import { SyncService } from '../../core/sync.service';
+import { MeService } from '../../core/me.service';
 import { ActivitySource, Athlete, HealthSource } from '../../core/models';
 import { CITY_NAMES, DEFAULT_CITY } from '../../core/equivalences';
 import { FormDialogComponent, errorList, opt } from './form-dialog';
@@ -26,6 +27,12 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
   template: `
     <app-form-dialog heading="Réglages" [errors]="errors()" [busy]="entries.saving()" (save)="save()">
       <div class="fields" [formGroup]="form">
+        @if (me.me(); as m) {
+          @if (m.multi) {
+            <p class="hint field wide">Compte : <b>{{ m.name }}</b> ({{ m.id }}){{ m.role === 'owner' ? ', propriétaire' : '' }}.
+              Ces réglages et tes sources ne concernent que ton compte.</p>
+          }
+        }
         <label class="field">FC max (bpm) <input type="number" formControlName="hrMax" autofocus min="120" max="230" inputmode="numeric" required /></label>
         <label class="field">FC de repos (bpm) <input type="number" formControlName="hrRest" min="25" max="110" inputmode="numeric" required /></label>
         <label class="field">Seuil 1 (bpm)
@@ -155,6 +162,7 @@ export class AthleteFormComponent {
   protected readonly entries = inject(EntriesService);
   private readonly sci = inject(ScienceService);
   protected readonly sync = inject(SyncService);
+  protected readonly me = inject(MeService);
   protected readonly activitySources = ACTIVITY_SOURCES;
   protected readonly healthSources = HEALTH_SOURCES;
   protected readonly cities = CITY_NAMES;

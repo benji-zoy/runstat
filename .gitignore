@@ -50,3 +50,6 @@ Thumbs.db
 # Synchro automatique : secrets OAuth et réponses brutes des spikes
 /secrets
 /spike-output
+
+# Comptes de l'instance (multi-utilisateur, sur le NAS)
+/users
