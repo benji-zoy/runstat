@@ -1,21 +1,21 @@
-// Fichiers de secrets (clients OAuth, tokens) : dossier secrets/ à la racine (hors git),
-// ou RUNSTAT_SECRETS (volume Docker monté sur le NAS). Les tokens ne sont jamais affichés.
+// Fichiers de secrets (clients OAuth, tokens) : dossier de l'utilisateur du run (RUNSTAT_SECRETS, scripts/paths.mjs),
+// ou celui passé explicitement par le service (server.mjs sert plusieurs comptes dans un même processus).
+// Les tokens ne sont jamais affichés.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, chmodSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { secretsDir } from '../paths.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-export const secretsDir = process.env.RUNSTAT_SECRETS ?? join(root, 'secrets');
+export { secretsDir };
 
-export function readSecret(name) {
-  const file = join(secretsDir, name);
+export function readSecret(name, dir = secretsDir()) {
+  const file = join(dir, name);
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
 }
 
 /** Écriture atomique, lisible par le seul propriétaire */
-export function writeSecret(name, value) {
-  mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
-  const file = join(secretsDir, name);
+export function writeSecret(name, value, dir = secretsDir()) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = join(dir, name);
   writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2), { mode: 0o600 });
   renameSync(`${file}.tmp`, file);
   chmodSync(file, 0o600);

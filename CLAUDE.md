@@ -6,7 +6,8 @@ Interface en français. Node local : 24.14 → rester sur Angular 21 (le CLI 22 
 
 ## Synchronisation automatique (NAS, `scripts/sync/`)
 
-Le conteneur `runstat-sync` (NAS, `scripts/sync/server.mjs`) lance `scripts/sync/run.mjs` au démarrage, toutes les 3 h
+Le conteneur `runstat-sync` (NAS, `scripts/sync/server.mjs`) lance `scripts/sync/run.mjs` pour chaque compte hébergé (voir Comptes),
+un run à la fois (`queue.mjs`), au démarrage, toutes les 3 h
 et à la demande (bouton de l'en-tête, `core/sync.service.ts` → `/api/sync`, proxy nginx ; masqué sans ce service ; `POST /api/fit?id=` →
 `run.mjs --fit <id>` : le FIT d'une seule sortie puis build-fit + build-data, sans toucher à la fenêtre de synchro) : COROS (activités des derniers jours
 fusionnées dans `records.txt`, détails, forme, charge cumulée dans `load.txt`, FIT jusqu'au quota) et Google Health API
@@ -19,11 +20,12 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 - Clients : `coros.mjs` (MCP HTTP sans session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture),
   `google-health.mjs` (API v4 ; filtres en snake_case `daily_resting_heart_rate.date`, contrairement à la doc).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
-- Tokens dans `secrets/` (poste) ou le volume `/secrets` (NAS), jamais affichés. Ré-autorisation sur le poste :
+- Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Ré-autorisation sur le poste :
   `npm run auth -- coros | google` (Strava : depuis Réglages, voir Sources) (navigateur + loopback), puis copier le fichier de tokens dans `secrets/` du NAS.
   Le refresh token COROS change à chaque renouvellement : un seul détenteur (le NAS), sinon l'autre est révoqué.
 - `npm run test:sync` (parseurs, fusions idempotentes, liste blanche, validation de la saisie ; `strava.test.mjs` : archive Strava,
-  tracés, santé COROS sur les fixtures fictives de `scripts/sync/fixtures/` ; `strava-connect.test.mjs` : connexion Strava, fetch bouchonné), `npm run spike -- coros | google` (dumps bruts).
+  tracés, santé COROS sur les fixtures fictives de `scripts/sync/fixtures/` ; `strava-connect.test.mjs` : connexion Strava, fetch bouchonné ;
+  `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, file, migration), `npm run spike -- coros | google` (dumps bruts).
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
@@ -94,7 +96,49 @@ Formulaires dans un `<dialog>` commun (`ui/forms/form-dialog.ts`, Reactive Forms
 objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Classements : « Saisir »),
 réglages et sources (bouton de l'en-tête). Masqués sans service de synchro (`ng serve` ; avec le service local
 `node scripts/sync/server.mjs --no-schedule`, config `runstat-sync`, la config `runstat-api` de `.claude/launch.json` relaie `/api` par `proxy.conf.json`). Durées lues par `parseDuration` (`core/format.ts`).
-Pas d'authentification : quiconque atteint le site peut écrire (LAN + Tailscale), à revoir avant d'ouvrir à d'autres personnes.
+Chaque saisie ne touche que le compte de la requête (voir Comptes). Sans `users.json` (mono-utilisateur, `ng serve`, poste),
+pas d'authentification : quiconque atteint le service peut écrire.
+
+## Comptes et autorisation (`scripts/sync/accounts.mjs`, `app.mjs`, `queue.mjs`, `core/me.service.ts`)
+
+`RUNSTAT_USERS/users.json` (NAS : `/docker/runstat/users`, volume `/app/users`) : `[{ id, name, role: owner|member, mode: hosted|local,
+logins: [login Tailscale] }]`, un seul propriétaire, logins uniques sans casse ; données de chaque compte dans `users/<id>/data-raw`,
+`snapshot` (coros.json, routes.json) et `secrets`. Sans ce fichier : instance mono-utilisateur historique (`data-raw/`, `public/data/`,
+`secrets/`), comme avant. **La confiance vient du port, jamais d'un en-tête** : `server.mjs` écoute une zone par port, et chaque bloc
+`server` de nginx (`deploy/nginx/default.conf`) ne relaie que vers le sien :
+- `:80` → 8787, zone `lan` : port 8080 du NAS lié à son adresse locale (pas 0.0.0.0, sinon joignable par l'adresse Tailscale du NAS
+  qu'ont les proches) → compte du propriétaire, sans administration ; en-têtes `Tailscale-User-*` effacés (`proxy.inc`).
+- `:81` → 8788, zone `tailnet` : `127.0.0.1:8090` du NAS, cible de Tailscale Serve (qui retire les `Tailscale-User-*` du client et pose
+  les siens) ; seule la passerelle du réseau Docker (172.28.0.1, sous-réseau fixé dans le compose) est admise. Login vide, inconnu ou
+  compte `local` → 403.
+Toutes les routes (`/api/sync`, `/api/fit`, saisie, `/api/strava/*`, `/api/data/<coros|routes>.json`) résolvent d'abord le compte puis
+ne touchent qu'à ses dossiers (`userPaths`) ; nginx renvoie `/data/` vers `/api/data/` (plus d'instantané dans la racine web).
+`GET /api/me` ; `GET|PUT /api/admin/users` (propriétaire par le tailnet seulement ; il garde son compte, son rôle et le login de sa
+requête ; dossiers créés à l'ajout, données gardées au retrait) : bouton « Proches » de l'en-tête (`ui/forms/users-form.ts`). Ajouter un
+proche hébergé : son login Tailscale dans Proches, puis partager le nœud du NAS dans la console Tailscale (Machines › Partager). Nouveau
+compte : écran « Bienvenue » (404 sur `data/coros.json`), puis Réglages et sources. Le `state` OAuth de Strava est lié au compte.
+- Runs : un seul à la fois pour tout le NAS, ordre d'arrivée, au plus une tâche de chaque sorte en attente par compte (une synchro
+  complète remplace une reconstruction ; un seul tracé ; deux archives) ; `POST /api/sync` → 202 même en file (`queued`), 429 seulement
+  dans les 20 s suivant une synchro complète. Chaque run reçoit un environnement en liste blanche (`runEnv`) avec `RUNSTAT_RAW`,
+  `RUNSTAT_SNAPSHOT`, `RUNSTAT_SECRETS` ; tous les scripts lisent leurs dossiers par `scripts/paths.mjs`, qui **échoue** si l'une
+  manque alors que `users.json` existe (jamais de repli sur les données du propriétaire). Secrets : `readSecret(nom, dossier)` et
+  `writeSecret(nom, valeur, dossier)` ; le service passe le dossier du compte (connexion Strava faite dans son processus).
+- Quota par compte hébergé : `RUNSTAT_USER_QUOTA_MB` (2 Go), 507 au-delà (saisie, archive). Au démarrage, `server.mjs` refuse de
+  tourner si `users/` existe sans `users.json` (nouveau YAML monté avant la migration).
+
+### Migration d'une instance mono-utilisateur (une fois, avec l'accord du propriétaire)
+1. `npm run nas -- pull` (copie locale), puis `npm run deploy` (scripts, `deploy/nginx/`, compose).
+2. Container Manager : Projet › runstat › Arrêter.
+3. Par SSH sur le NAS, à blanc puis pour de bon :
+   `sh /volume1/docker/runstat/app/scripts/migrate-users.sh /volume1/docker/runstat --owner <id> --login <login Tailscale> --name <Prénom>`,
+   puis la même commande avec `--apply` (et `--chown 1026:100` si lancée en root) : copie dans `migration-<date>/`, déplacement vers
+   `users/<id>/`, empreintes comparées, `users.json` écrit en dernier ; idempotente.
+4. Projet › runstat › YAML : coller `deploy/docker-compose.yml` avec les vraies valeurs (adresse locale du NAS sur le port 8080,
+   `SYNC_PUBLIC_ORIGINS`), puis Nettoyer › Construire.
+5. `tailscale serve --bg --https=443 http://127.0.0.1:8090` (au lieu de l'ancien port 8080).
+6. Vérifier : tableau de bord par l'adresse ts.net et par le réseau local, `GET /api/me`, 403 pour un login inconnu, `:8090` injoignable
+   depuis une autre machine du réseau local. 2e ligne de `data-raw/nas.txt` = identifiant du compte (pour `npm run nas`).
+   `migration-<date>/` supprimable après vérification. Retour arrière : arrêter, remettre les dossiers de `migration-<date>/`, ancien YAML.
 
 ## Rafraîchissement manuel (secours, par le connecteur Coros de Claude)
 
@@ -247,15 +291,16 @@ Le service worker n'est actif qu'en HTTPS (adresse Tailscale Serve) ou sur local
 
 ## Déploiement (NAS Synology)
 
-Projet Container Manager dans `/docker/runstat` (`deploy/docker-compose.yml`) : `runstat` (nginx, port 8080, `deploy/nginx.conf` :
-fallback vers `index.html` pour les routes Angular, `data/`, `index.html`, `ngsw-worker.js`, `ngsw.json` et le manifeste en no-cache, `/api/` vers runstat-sync,
-`/api/strava/archive` sans tampon jusqu'à 2 Go) et `runstat-sync` (node:24-alpine,
-uid 1026:100, voir Synchronisation). `npm run deploy` (`scripts/deploy.sh`) : `ng build`, puis rsync de la config, de
+Projet Container Manager dans `/docker/runstat` (`deploy/docker-compose.yml`) : `runstat` (nginx, ports 8080 réseau local et
+127.0.0.1:8090 Tailscale Serve, dossier `deploy/nginx/` monté sur `conf.d` : `default.conf` (un bloc par zone, voir Comptes), `site.inc`
+(fallback vers `index.html` pour les routes Angular, `index.html`, `ngsw-worker.js`, `ngsw.json` et le manifeste en no-cache, `/data/` et
+`/api/` vers runstat-sync, `/api/strava/archive` sans tampon jusqu'à 2 Go), `proxy.inc` (en-têtes relayés, dans chaque location)) et
+`runstat-sync` (node:24-alpine, uid 1026:100, volume `./users`, voir Synchronisation et Comptes). `npm run deploy` (`scripts/deploy.sh`) : `ng build`, puis rsync de la config, de
 `dist/runstat/browser/` vers `<destination>/html/` (**sauf `data/`**, produit sur le NAS) et des scripts + `fit-file-parser`
 vers `<destination>/app/` (relus à chaque synchro, sans redémarrage). Destination dans `data-raw/nas.txt` (SSH
 `user@nas:/volume1/docker/runstat` ou partage monté `/Volumes/docker/runstat`). Mise en place initiale : `npm run nas -- init`
 (copie `data-raw/`, les données du site et `secrets/`, refuse si le NAS a déjà des données), puis recréer le projet dans
-Container Manager. `server.mjs` ou `nginx.conf` modifié : Projet › runstat › Arrêter puis Construire. `docker-compose.yml` modifié :
+Container Manager, puis la migration vers les comptes (voir Comptes). `server.mjs`, `app.mjs` ou `deploy/nginx/` modifié : Projet › runstat › Arrêter puis Construire. `docker-compose.yml` modifié :
 Container Manager garde **sa propre copie du YAML** (celle copiée par le déploiement est ignorée) → recopier le changement dans
 Projet › runstat › YAML, puis Arrêter › Nettoyer › Construire (un simple Construire redémarre sans recréer : nouvelles variables
 d'environnement ignorées ; vérifier `stravaOrigin` dans `GET /api/sync`). Accès hors du réseau

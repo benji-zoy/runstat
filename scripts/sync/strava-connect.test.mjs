@@ -8,11 +8,12 @@ import { join } from 'node:path';
 
 const secrets = mkdtempSync(join(tmpdir(), 'runstat-secrets-'));
 const raw = mkdtempSync(join(tmpdir(), 'runstat-raw-'));
-process.env.RUNSTAT_SECRETS = secrets;
-// secretsDir est lu au chargement : import après la variable d'environnement
 const { InvalidEntry } = await import('./entries.mjs');
 const { StateStore, STATE_TTL_MS, allowedOrigins, preferredOrigin, publicOrigin, stravaConnectRoutes, stravaStatus, validateStravaClient } =
   await import('./strava-connect.mjs');
+/** Compte de la requête (app.mjs) : ses dossiers, et la synchro lancée après connexion */
+let connected = 0;
+const user = { id: 'a', raw, secrets, onConnected: () => connected++ };
 
 const CLIENT = { client_id: '12345', client_secret: 'a'.repeat(40) };
 const TOKENS = { access_token: 'ACCESS-SECRET', refresh_token: 'REFRESH-SECRET', expires_at: 2_000_000_000 };
@@ -54,7 +55,7 @@ beforeEach(() => {
 /** Parcours complet jusqu'à la redirection vers Strava : renvoie le state de l'URL d'autorisation */
 function connect(routes, headers = { 'x-forwarded-host': 'nas.tail1234.ts.net', 'x-forwarded-proto': 'https', host: 'runstat-sync:8787' }) {
   const res = fakeRes();
-  routes.connect(req(headers), res);
+  routes.connect(user, req(headers), res);
   assert.equal(res.status, 302);
   const to = new URL(res.headers.Location);
   return { res, to, state: to.searchParams.get('state') };
@@ -62,7 +63,7 @@ function connect(routes, headers = { 'x-forwarded-host': 'nas.tail1234.ts.net', 
 
 async function callback(routes, params) {
   const res = fakeRes();
-  await routes.callback(req({}), res, new URL(`http://runstat/api/strava/callback?${new URLSearchParams(params)}`));
+  await routes.callback(user, req({}), res, new URL(`http://runstat/api/strava/callback?${new URLSearchParams(params)}`));
   assert.equal(res.status, 302);
   return { res, back: new URL(res.headers.Location, ORIGIN) };
 }
@@ -95,23 +96,23 @@ test('origine : X-Forwarded-Host prioritaire, liste blanche stricte', () => {
 });
 
 test('connect : hôte hors liste refusé, sans redirection vers Strava', () => {
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   const res = fakeRes();
-  routes.connect(req({ host: 'evil.example' }), res);
+  routes.connect(user, req({ host: 'evil.example' }), res);
   assert.equal(res.status, 302);
   assert.equal(res.headers.Location, '/aujourdhui?strava=refus&raison=origine');
 });
 
 test('connect : sans appli Strava enregistrée, retour avec la raison', () => {
   rmSync(secretFile('strava-client.json'));
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   const res = fakeRes();
-  routes.connect(req({ 'x-forwarded-host': 'nas.tail1234.ts.net', 'x-forwarded-proto': 'https' }), res);
+  routes.connect(user, req({ 'x-forwarded-host': 'nas.tail1234.ts.net', 'x-forwarded-proto': 'https' }), res);
   assert.equal(res.headers.Location, '/aujourdhui?strava=refus&raison=appli');
 });
 
 test('connect : redirection vers l’autorisation Strava avec l’appli de l’athlète', () => {
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   const { to, state } = connect(routes);
   assert.equal(`${to.origin}${to.pathname}`, 'https://www.strava.com/oauth/authorize');
   assert.equal(to.searchParams.get('client_id'), '12345');
@@ -129,7 +130,7 @@ test('connect : redirection vers l’autorisation Strava avec l’appli de l’a
 test('state : inconnu, absent, rejoué ou expiré → refusé, rien d’écrit', async () => {
   let now = 1_000_000;
   const store = new StateStore(() => now);
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], store, log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], store, log: silent });
   const ok = { code: 'abc123', scope: 'read,activity:read_all' };
 
   for (const params of [{ ...ok, state: 'inventé' }, ok]) {
@@ -153,7 +154,7 @@ test('state : inconnu, absent, rejoué ou expiré → refusé, rien d’écrit',
 });
 
 test('state : un refus sur Strava consomme le state sans échange', async () => {
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   const { state } = connect(routes);
   const { back } = await callback(routes, { state, error: 'access_denied' });
   assert.equal(back.search, '?strava=refus&raison=annule');
@@ -162,7 +163,7 @@ test('state : un refus sur Strava consomme le state sans échange', async () => 
 });
 
 test('state : sans accès aux activités, refusé sans échange', async () => {
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   const { state } = connect(routes);
   assert.equal((await callback(routes, { state, code: 'abc', scope: 'read' })).back.search, '?strava=refus&raison=portee');
   assert.equal(calls.length, 0);
@@ -173,10 +174,10 @@ test('state : sans accès aux activités, refusé sans échange', async () => {
 test('échange : POST /oauth/token, jetons écrits avec le scope accordé, jamais renvoyés', async () => {
   mkdirSync(raw, { recursive: true });
   writeFileSync(join(raw, 'sync-state.json'), JSON.stringify({ strava: { reauthSince: '2026-10-01T00:00:00Z', lastError: 'x' }, coros: { lastSuccess: 'y' } }));
-  let connected = 0;
+  connected = 0;
   const lines = [];
   const log = { log: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) };
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log, onConnected: () => connected++ });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log });
   const { state } = connect(routes);
   const { res, back } = await callback(routes, { state, code: 'abc123', scope: 'read,activity:read' });
 
@@ -207,7 +208,7 @@ test('échange : POST /oauth/token, jetons écrits avec le scope accordé, jamai
   assert.deepEqual(st, { strava: { lastError: 'x' }, coros: { lastSuccess: 'y' } });
 
   // GET /api/sync : présence et athlète seulement
-  const status = stravaStatus();
+  const status = stravaStatus(secrets);
   assert.deepEqual(status, { stravaClient: true, stravaConnected: true, stravaAthlete: 'Jo, athlète 777' });
   assert.ok(!JSON.stringify(status).includes('SECRET'));
 });
@@ -215,12 +216,12 @@ test('échange : POST /oauth/token, jetons écrits avec le scope accordé, jamai
 test('échange : refus de Strava → aucun jeton, raison renvoyée', async () => {
   reply = () => new Response(JSON.stringify({ message: 'Bad Request', errors: [{ code: 'invalid' }] }), { status: 400 });
   try {
-    const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+    const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
     const { state } = connect(routes);
     const { back } = await callback(routes, { state, code: 'abc123', scope: 'read,activity:read_all' });
     assert.equal(back.search, '?strava=refus&raison=echange');
     assert.equal(existsSync(secretFile('strava-tokens.json')), false);
-    assert.deepEqual(stravaStatus(), { stravaClient: true, stravaConnected: false, stravaAthlete: null });
+    assert.deepEqual(stravaStatus(secrets), { stravaClient: true, stravaConnected: false, stravaAthlete: null });
   } finally {
     reply = () => new Response(JSON.stringify({ ...TOKENS, athlete: { id: 777, firstname: 'Jo' } }), { status: 200 });
   }
@@ -235,15 +236,35 @@ test('appli : validation stricte, secret jamais renvoyé, changement d’appli �
     { client_id: '1', client_secret: 'b'.repeat(40), autre: 1 }, { client_id: '1', client_secret: `${'b'.repeat(39)};` }])
     assert.throws(() => validateStravaClient(bad), InvalidEntry, JSON.stringify(bad));
 
-  const routes = stravaConnectRoutes({ raw, origins: [ORIGIN], log: silent });
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
   writeFileSync(secretFile('strava-tokens.json'), JSON.stringify(TOKENS));
   // Même appli, nouveau secret : jetons gardés
-  let out = routes.saveClient({ client_id: '12345', client_secret: 'c'.repeat(40) });
+  let out = routes.saveClient(user, { client_id: '12345', client_secret: 'c'.repeat(40) });
   assert.equal(readSecretFile('strava-client.json').client_secret, 'c'.repeat(40));
   assert.ok(existsSync(secretFile('strava-tokens.json')));
   assert.ok(!JSON.stringify(out).includes('c'.repeat(40)));
   // Autre appli : les jetons de l'ancienne sont inutilisables
-  out = routes.saveClient({ client_id: '555', client_secret: 'd'.repeat(40) });
+  out = routes.saveClient(user, { client_id: '555', client_secret: 'd'.repeat(40) });
   assert.equal(existsSync(secretFile('strava-tokens.json')), false);
   assert.deepEqual(out, { stravaClient: true, stravaConnected: false, stravaAthlete: null });
+});
+
+test('state : lié au compte, le retour de Strava chez un autre compte n’écrit rien', async () => {
+  const routes = stravaConnectRoutes({ origins: [ORIGIN], log: silent });
+  const { state } = connect(routes);
+  const otherSecrets = mkdtempSync(join(tmpdir(), 'runstat-secrets-b-'));
+  try {
+    const other = { id: 'b', raw, secrets: otherSecrets, onConnected: () => assert.fail('aucune synchro') };
+    const res = fakeRes();
+    const q = new URLSearchParams({ state, code: 'abc123', scope: 'read,activity:read_all' });
+    await routes.callback(other, req({}), res, new URL(`http://runstat/api/strava/callback?${q}`));
+    assert.equal(res.headers.Location, '/aujourdhui?strava=refus&raison=compte');
+    assert.equal(calls.length, 0);
+    assert.equal(existsSync(join(otherSecrets, 'strava-tokens.json')), false);
+    assert.equal(existsSync(secretFile('strava-tokens.json')), false);
+    // State consommé : même le bon compte doit recommencer
+    assert.equal((await callback(routes, { state, code: 'abc123', scope: 'read,activity:read_all' })).back.search, '?strava=refus&raison=lien');
+  } finally {
+    rmSync(otherSecrets, { recursive: true, force: true });
+  }
 });

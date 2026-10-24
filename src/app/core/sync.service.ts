@@ -12,7 +12,10 @@ interface SourceState {
 }
 
 interface SyncStatus {
+  /** Run en cours ou en attente (file des runs de tous les comptes du NAS) */
   running: boolean;
+  /** En attente : un autre compte synchronise */
+  queued?: boolean;
   startedAt: string | null;
   nextAt: string | null;
   state: Partial<Record<SourceKey, SourceState>> & {
@@ -42,6 +45,7 @@ const STRAVA_RETURN: Record<string, string> = {
   echange: 'Strava a refusé : vérifie le Client Secret',
   appli: 'Enregistre d’abord ton appli Strava (Réglages)',
   origine: 'Connexion Strava : passe par l’adresse Tailscale',
+  compte: 'Connexion Strava lancée depuis un autre compte : recommence depuis Réglages',
 };
 
 /** Clés de sync-state.json : source d'activités, puis source de santé (corosHealth : santé COROS) */
@@ -96,6 +100,7 @@ export class SyncService {
   readonly title = computed(() => {
     const st = this.status();
     if (!st) return '';
+    if (st.queued) return 'En file d’attente : un autre compte synchronise';
     if (st.running) return 'Synchronisation en cours…';
     const lines = [`Synchroniser ${this.active().map((k) => SOURCES[k]).join(' et ')}`];
     for (const key of this.active()) {

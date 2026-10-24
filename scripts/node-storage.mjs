@@ -1,9 +1,10 @@
-// Stockage du moteur (src/engine/storage/types.ts) sur le système de fichiers : data-raw/ et public/data/ du dépôt
-// (ou du conteneur runstat-sync, où public/data est le dossier html/data du site).
+// Stockage du moteur (src/engine/storage/types.ts) sur le système de fichiers : dossiers de l'utilisateur du run
+// (scripts/paths.mjs : RUNSTAT_RAW / RUNSTAT_SNAPSHOT, sinon data-raw/ et public/data/ du dépôt).
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cleanPath } from '#engine/storage/types.ts';
+import { rawDir, snapshotDir } from './paths.mjs';
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -45,7 +46,8 @@ export class NodeStore {
   }
 }
 
-export const nodeStorage = (base = root) => ({
-  raw: new NodeStore(join(base, 'data-raw')),
-  snapshot: new NodeStore(join(base, 'public', 'data')),
+/** `base` : copie d'un dépôt (data-raw/ et public/data/), sinon les dossiers du run */
+export const nodeStorage = (base) => ({
+  raw: new NodeStore(base ? join(base, 'data-raw') : rawDir()),
+  snapshot: new NodeStore(base ? join(base, 'public', 'data') : snapshotDir()),
 });
