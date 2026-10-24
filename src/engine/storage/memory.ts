@@ -12,6 +12,11 @@ export class MemoryStore implements FileStore {
     return childrenOf(this.files.keys(), dir);
   }
 
+  /** Tous les chemins, sous-dossiers compris (sauvegarde) */
+  async keys(): Promise<string[]> {
+    return [...this.files.keys()].sort();
+  }
+
   async read(path: string): Promise<Uint8Array | null> {
     return this.files.get(cleanPath(path)) ?? null;
   }

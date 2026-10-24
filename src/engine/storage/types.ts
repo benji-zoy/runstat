@@ -15,6 +15,11 @@ export interface FileStore {
   remove(path: string): Promise<void>;
 }
 
+/** Stockage qui sait lister tous ses chemins (mémoire, IndexedDB) : nécessaire à la sauvegarde */
+export interface KeyedStore extends FileStore {
+  keys(): Promise<string[]>;
+}
+
 /** Deux zones : données brutes (data-raw/) et snapshot servi à l'appli (public/data/) */
 export interface Storage {
   raw: FileStore;

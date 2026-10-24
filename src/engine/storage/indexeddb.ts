@@ -41,6 +41,11 @@ export class IndexedDbStore implements FileStore {
     return childrenOf(keys as string[], dir);
   }
 
+  /** Tous les chemins, sous-dossiers compris (sauvegarde) */
+  async keys(): Promise<string[]> {
+    return ((await request(this.store('readonly').getAllKeys())) as string[]).sort();
+  }
+
   async read(path: string): Promise<Uint8Array | null> {
     const v = await request(this.store('readonly').get(cleanPath(path)));
     return v == null ? null : new Uint8Array(v as ArrayBuffer | Uint8Array);

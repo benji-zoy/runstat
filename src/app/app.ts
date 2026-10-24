@@ -13,6 +13,8 @@ import { TABS, TAB_PARAMS } from './app.routes';
 import { IconComponent } from './ui/icon';
 import { AthleteFormComponent } from './ui/forms/athlete-form';
 import { UsersFormComponent } from './ui/forms/users-form';
+import { AccountFormComponent } from './ui/forms/account-form';
+import { AccountService } from './core/account.service';
 import { MeService } from './core/me.service';
 import { EntriesService } from './core/entries.service';
 import { LocalService } from './core/local.service';
@@ -20,7 +22,7 @@ import { LOCAL_MODE } from './core/runtime';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AthleteFormComponent, UsersFormComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AthleteFormComponent, UsersFormComponent, AccountFormComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -32,8 +34,11 @@ export class App {
   protected readonly me = inject(MeService);
   protected readonly entries = inject(EntriesService);
   protected readonly localService = inject(LocalService);
+  protected readonly account = inject(AccountService);
   /** Appli publique (local-first) : données sur l'appareil */
   protected readonly local = LOCAL_MODE;
+  /** Pages sans données (arrivée, connexion) : affichées même quand le compte est vide */
+  protected readonly standalone = signal(false);
   /** iPhone / iPad hors appli installée : Safari efface les données d'un site après 7 jours sans visite */
   protected readonly iosHint = signal(LOCAL_MODE && iosBrowser() && !dismissed('runstat-ios-hint'));
   protected hideIosHint(): void {
@@ -58,6 +63,9 @@ export class App {
   constructor() {
     // Retour d'une connexion (?strava|coros|google=ok|refus&raison=…) : message bref, puis paramètres retirés de l'adresse
     const router = inject(Router);
+    router.events
+      .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
+      .subscribe((e) => this.standalone.set(/^\/(rejoindre|connexion)\b/.test((e as NavigationEnd).urlAfterRedirects)));
     router.events
       .pipe(filter((e) => e instanceof NavigationEnd), take(1), takeUntilDestroyed())
       .subscribe(() => {

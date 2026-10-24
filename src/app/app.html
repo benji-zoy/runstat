@@ -39,6 +39,12 @@
       @if (local && localService.busy()) {
         <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
       }
+      @if (local) {
+        <button type="button" class="icon-btn" [class.warn]="!!account.lastError()" (click)="accountForm.open()"
+          [title]="account.connected() ? 'Compte et sauvegarde chiffrée' : 'Sauvegarde : aucune'" aria-label="Compte et sauvegarde">
+          <app-icon name="cloud" />
+        </button>
+      }
       @if (entries.available()) {
         <button type="button" class="icon-btn" (click)="athleteForm.open()" title="Réglages (FC, poids…)" aria-label="Réglages">
           <app-icon name="settings" />
@@ -69,13 +75,16 @@
   @if (!pwa.online() && data()) {
     <div class="banner" role="status">Hors ligne · données du {{ updatedAt() }}</div>
   }
-  @if (error()) {
+  @if (standalone()) {
+    <router-outlet />
+  } @else if (error()) {
     <p class="card error">{{ error() }}</p>
   } @else if (empty()) {
     <section class="card empty-account">
       <h2>Bienvenue{{ me.me()?.name ? ', ' + me.me()?.name : '' }}</h2>
       @if (local) {
-        <p>Tes données restent sur cet appareil : rien n'est envoyé à un serveur. Ouvre les Réglages : renseigne ta FC et ta
+        <p>Tes données restent sur cet appareil{{ account.state() ? ", sauvegardées chiffrées (illisibles pour le serveur)" : " : rien n'est envoyé à un serveur" }}.
+          Ouvre les Réglages : renseigne ta FC et ta
           morphologie, choisis Strava, puis importe ton archive Strava (strava.com › Paramètres › Mon compte › Télécharger ton
           archive). Le calcul se fait ici, en quelques minutes.</p>
       } @else {
@@ -102,6 +111,7 @@
 
 <app-athlete-form #athleteForm />
 <app-users-form #usersForm />
+<app-account-form #accountForm />
 
 <nav class="bottom" aria-label="Espaces">
   @for (t of mobileTabs; track t.path) {
