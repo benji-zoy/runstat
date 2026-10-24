@@ -50,7 +50,8 @@ type Step = 'serveur' | 'accord' | 'passkey' | 'creer' | 'code' | 'deverrouiller
             <b>{{ host() }}</b> garde seulement une sauvegarde chiffrée avec ta phrase de passe, qu'il ne peut pas lire. Elle sert aussi à
             retrouver tes données sur un autre appareil.</p>
           <p class="muted">Seuls les services que tu choisis sont contactés depuis cet appareil (Strava, COROS, Google, et la météo
-            Open-Meteo pour tes lieux de sortie, arrondis à 10 km). Aucun traceur, aucune publicité.</p>
+            Open-Meteo pour tes lieux de sortie, arrondis à 10 km). Aucun traceur, aucune publicité.
+            <a routerLink="/confidentialite" target="_blank">Tout le détail</a>.</p>
           <label class="check">
             <input type="checkbox" [checked]="consent()" (change)="consent.set($any($event.target).checked)" />
             J'accepte que mes données d'entraînement et de santé soient traitées ainsi (je peux tout effacer à tout moment).

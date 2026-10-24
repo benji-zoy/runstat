@@ -18,6 +18,8 @@
 //   GET|PUT /api/admin/users → comptes de l'instance (propriétaire, par le tailnet seulement)
 //   POST /api/admin/invitations { id, name } → lien d'invitation d'un proche local-first (compte créé au besoin, 7 jours)
 //   POST /api/admin/users/<id>/reset → passkeys, sessions et codes du compte local-first révoqués, nouvelle invitation
+//   GET  /api/export → zip des données du compte (data-raw sans les secrets, snapshot), droit à la portabilité
+//   DELETE /api/account { confirm: <id> } → suppression du compte d'un proche hébergé par lui-même (tailnet ; pas le propriétaire)
 import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -30,6 +32,7 @@ import { CONNECT_PATHS, connectStatus } from './oauth-connect.mjs';
 import { resolveUser, saveUsers, userPaths } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
 import { jobs } from './queue.mjs';
+import { exported, README, zipStream } from '#engine/archive/zip-writer.ts';
 
 const MAX_BODY = 64 * 1024;
 const MIN_GAP_MS = 20_000; // anti-rebond des clics
@@ -108,6 +111,18 @@ export function ensureUserDirs(paths) {
  * `strava` : routes de connexion (stravaConnectRoutes) ; `nextAt()` : prochaine synchro planifiée ;
  * `quotaBytes` : place par compte hébergé (instance à plusieurs comptes) ; `maxArchive` : taille d'une archive Strava.
  */
+/** Chemins relatifs (avec « / ») de tous les fichiers d'un dossier, sous-dossiers compris ; [] s'il n'existe pas */
+function walk(dir, prefix = '') {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const rel = prefix ? `${prefix}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...walk(join(dir, e.name), rel));
+    else if (e.isFile()) out.push(rel);
+  }
+  return out;
+}
+
 export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null, publicUrl = null, nextAt = () => null, quotaBytes = 2048 * 2 ** 20, maxArchive = 2 * 2 ** 30, log = console, now = Date.now }) {
   const sizes = new Map();
   /** Place occupée par un compte, recalculée au plus une fois par minute */
@@ -226,6 +241,49 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     createReadStream(file).pipe(res);
   }
 
+  /** Export : data-raw (sans secrets ni fichiers techniques) et snapshot du compte, en flux */
+  async function exportAccount(res, user, paths) {
+    const day = new Date(now()).toISOString().slice(0, 10);
+    async function* files() {
+      yield { path: 'LISEZMOI.txt', data: new TextEncoder().encode(README(new Date(now()))) };
+      for (const [dir, prefix] of [[paths.raw, 'data-raw'], [paths.snapshot, 'snapshot']]) {
+        for (const rel of walk(dir)) {
+          if (prefix === 'snapshot' ? !DATA_FILES.has(rel) : !exported(rel)) continue;
+          const file = join(dir, rel);
+          yield { path: `${prefix}/${rel}`, data: readFileSync(file), date: statSync(file).mtime };
+        }
+      }
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="runstat-${user.id}-${day}.zip"`,
+      'Cache-Control': 'no-store',
+    });
+    try {
+      for await (const chunk of zipStream(files(), new Date(now()))) if (!res.write(chunk)) await new Promise((r) => res.once('drain', r));
+      res.end();
+    } catch (e) {
+      log.error?.('Export :', e.message);
+      res.destroy(e);
+    }
+  }
+
+  /** Un proche hébergé supprime son compte : données, secrets et accès effacés, compte retiré de users.json */
+  async function deleteAccount(req, res, user, acc, paths) {
+    if (!acc.multi || zone !== 'tailnet') return send(res, 403, { error: 'suppression possible seulement par l’adresse Tailscale, sur une instance à plusieurs comptes' });
+    if (user.role === 'owner') return send(res, 403, { error: 'le propriétaire ne supprime pas son compte depuis le site' });
+    const body = await readBody(req).catch(() => null);
+    if (body?.confirm !== user.id) return send(res, 400, { error: `confirme en recopiant l’identifiant du compte (${user.id})` });
+    if (queue.status(user.id).running) return send(res, 409, { error: 'une synchro est en cours : réessaie dans quelques minutes' });
+    queue.forget(user.id);
+    saveUsers(acc.dir, acc.users.filter((u) => u.id !== user.id).map(({ legacy, ...u }) => u));
+    authStore().revokeAll(user.id);
+    rmSync(paths.base, { recursive: true, force: true });
+    sizes.delete(user.id);
+    log.log?.(`Compte supprimé par son titulaire : ${user.id}`);
+    return send(res, 200, { deleted: user.id });
+  }
+
   const authStore = () => new AuthStore(accounts().dir, now);
   /** Lien d'invitation vers l'appli publique (le fragment n'est jamais envoyé au serveur de l'appli) */
   function invitation(userId) {
@@ -331,6 +389,14 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       return send(res, 200, { id: user.id, name: user.name, role: user.role, mode: user.mode, multi: acc.multi, admin: who.admin });
     }
     if (path.startsWith('/api/data/')) return data(req, res, path.slice('/api/data/'.length), paths);
+    if (path === '/api/export') {
+      if (req.method !== 'GET') return send(res, 405, { error: 'méthode non autorisée' });
+      return await exportAccount(res, user, paths);
+    }
+    if (path === '/api/account') {
+      if (req.method !== 'DELETE') return send(res, 405, { error: 'méthode non autorisée' });
+      return await deleteAccount(req, res, user, acc, paths);
+    }
     if (path.startsWith('/api/admin/') && !who.admin) return send(res, 403, { error: 'réservé au propriétaire, par l’adresse Tailscale' });
     if (path === '/api/admin/invitations') {
       if (req.method !== 'POST') return send(res, 405, { error: 'méthode non autorisée' });

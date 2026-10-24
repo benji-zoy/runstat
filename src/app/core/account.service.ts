@@ -292,6 +292,23 @@ export class AccountService {
     }
   }
 
+  /**
+   * Suppression du compte sur le NAS (ré-authentification par passkey) : sauvegarde (récupérable 30 jours par le propriétaire),
+   * passkeys, sessions et codes. Puis compte oublié sur cet appareil ; les données locales s'effacent à part (LocalService.wipe).
+   */
+  async deleteAccount(): Promise<void> {
+    const api = this.client();
+    try {
+      await api.json('DELETE', '/auth/account');
+    } catch (e) {
+      if (!(e instanceof ApiError && e.body['stepUp'])) throw accountError(e);
+      await this.stepUp();
+      await api.json('DELETE', '/auth/account');
+    }
+    clearTimeout(this.timer);
+    await this.save(null);
+  }
+
   /** Déconnexion : session révoquée sur le NAS, clés effacées de cet appareil (les données locales restent) */
   async logout(): Promise<void> {
     try {

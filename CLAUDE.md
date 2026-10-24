@@ -253,6 +253,18 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   Nettoyer › Construire ; attribut `funnel` dans la politique du tailnet ; `sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8091` ;
   vérifier depuis l'extérieur (4G) que seuls `/auth`, `/backup`, `/relay` répondent (le reste : 404).
 
+### Confidentialité, export, suppression (RGPD)
+- Page publique `/confidentialite` (`pages/privacy.ts`, les deux constructions ; liens dans le pied de page, l'accord de `/rejoindre` et
+  « Mes données ») : ce qui va où selon le mode, tiers contactés, durées, droits. **À tenir à jour** quand un flux change.
+- Export (portabilité) : zip « stocké » du moteur (`src/engine/archive/zip-writer.ts`, `zipStream`, sans zip64 : 4 Gio et 65 535 fichiers
+  au plus), `data-raw/` sans `secrets/` ni fichiers techniques (`EXPORT_EXCLUDED`), `snapshot/`, `LISEZMOI.txt`. Hébergé :
+  `GET /api/export` (en flux, Réglages › Mes données) ; appareil : `LocalService.exportZip()` (Compte et sauvegarde › Mes données).
+- Suppression : proche hébergé, `DELETE /api/account { confirm: <id> }` (tailnet seulement, jamais le propriétaire ; dossier
+  `users/<id>/` effacé, compte retiré de `users.json`, accès public révoqué, tâches en attente abandonnées, 409 pendant un run) ;
+  local-first, « Tout effacer » : `DELETE /auth/account` (ré-authentification par passkey : sauvegarde en suppression douce 30 jours,
+  passkeys, sessions et codes révoqués ; le compte reste listé chez le propriétaire, sans accès), puis zones IndexedDB vidées
+  (`IndexedDbStore.clear`). Sans compte : données de l'appareil seulement.
+
 ### Migration d'une instance mono-utilisateur (une fois, avec l'accord du propriétaire)
 1. `npm run nas -- pull` (copie locale), puis `npm run deploy` (scripts, `deploy/nginx/`, compose).
 2. Container Manager : Projet › runstat › Arrêter.
@@ -415,6 +427,15 @@ Appli installable (PWA) : `@angular/service-worker` (`ngsw-config.json` : coquil
 `/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/` (tracé de `ui/icon.ts` sur fond sombre, `favicon.svg`),
 polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
 Le service worker n'est actif qu'en HTTPS (adresse Tailscale Serve) ou sur localhost, et seulement en build de production.
+
+## Auto-hébergement (`deploy/Dockerfile`, `deploy/compose.selfhost.yml`, `docs/auto-hebergement.md`)
+
+Images `ghcr.io/benji-zoy/runstat-web` (nginx + site du NAS + `deploy/nginx/`) et `runstat-sync` (scripts + moteur + `fit-file-parser`,
+même assemblage que `scripts/deploy.sh`), cibles `web` et `sync` d'un seul Dockerfile, publiées pour amd64 et arm64 par
+`.github/workflows/images.yml` à chaque étiquette `v*` (tests d'abord, actions épinglées par SHA). Aucune donnée dans les images
+(`.dockerignore` : data-raw, secrets, users, public/data). `compose.selfhost.yml` : mêmes zones et ports que le NAS, volume `./users`
+(créer `users/users.json` avec le propriétaire avant le premier démarrage). Pas de Docker sur le poste : images non construites en
+local, assemblage du service vérifié à la main (dossier temporaire, `server.mjs` démarré, `/api/me` et `/api/export`).
 
 ## Déploiement (NAS Synology)
 

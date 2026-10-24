@@ -1,6 +1,7 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AccountService, accountError } from '../../core/account.service';
+import { LocalService } from '../../core/local.service';
 import { passphraseProblem, suggestPassphrase } from '../../core/passphrase';
 import { IconComponent } from '../icon';
 
@@ -80,6 +81,33 @@ const when = (iso?: string) => (iso ? new Date(iso).toLocaleString('fr-FR', { da
               invitation de quelqu'un qui héberge RunStat.</p>
             <a class="btn primary" routerLink="/connexion" (click)="close()">J'ai déjà un compte : me connecter</a>
           }
+
+          <h3 class="group">Mes données</h3>
+          <div class="actions">
+            <button type="button" class="btn" [disabled]="busy()" (click)="exportData()">Exporter mes données (zip)</button>
+            @if (!erasing()) {
+              <button type="button" class="btn danger" (click)="erasing.set(true)">Tout effacer…</button>
+            }
+          </div>
+          @if (erasing()) {
+            <p class="hint">
+              @if (account.state()) {
+                Efface ton compte sur <b>{{ host() }}</b> (sauvegarde, passkeys et sessions ; ta passkey est redemandée), puis toutes
+                les données de cet appareil. Supprime ensuite la passkey « RunStat » de ton gestionnaire de mots de passe.
+              } @else {
+                Efface toutes les données de cet appareil.
+              }
+              Irréversible : exporte-les d'abord si tu veux les garder. Écris <b>EFFACER</b> pour confirmer.
+            </p>
+            <label class="field">Confirmation
+              <input type="text" [value]="confirmText()" (input)="confirmText.set($any($event.target).value)" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="actions">
+              <button type="button" class="btn danger" [disabled]="busy() || confirmText().trim() !== 'EFFACER'" (click)="erase()">Effacer définitivement</button>
+              <button type="button" class="btn" (click)="erasing.set(false)">Annuler</button>
+            </div>
+          }
+          <p class="hint"><a routerLink="/confidentialite" (click)="close()">Confidentialité : ce qui va où, tes droits</a></p>
           @if (message(); as m) {
             <p class="hint" role="status">{{ m }}</p>
           }
@@ -114,6 +142,9 @@ export class AccountFormComponent {
   protected readonly message = signal<string | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
+  protected readonly erasing = signal(false);
+  protected readonly confirmText = signal('');
+  private readonly local = inject(LocalService);
   protected readonly suggest = suggestPassphrase;
   protected readonly problem = computed(() => passphraseProblem(this.next()));
   protected readonly host = computed(() => {
@@ -141,6 +172,8 @@ export class AccountFormComponent {
     this.recovery.set(null);
     this.message.set(null);
     this.errors.set([]);
+    this.erasing.set(false);
+    this.confirmText.set('');
   }
 
   private async run(fn: () => Promise<string | void>): Promise<void> {
@@ -191,6 +224,30 @@ export class AccountFormComponent {
       this.mode.set(null);
       this.pass.set('');
       return undefined;
+    });
+  }
+
+  /** Export (RGPD, portabilité) : tout ce qui est sur l'appareil, sans les jetons */
+  protected exportData(): Promise<void> {
+    return this.run(async () => {
+      const blob = await this.local.exportZip();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `runstat-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+      return `Export prêt (${Math.max(1, Math.round(blob.size / 1024))} Ko).`;
+    });
+  }
+
+  /** Effacement : compte sur le NAS (s'il y en a un), puis données de l'appareil, puis rechargement */
+  protected erase(): Promise<void> {
+    return this.run(async () => {
+      if (this.account.state()?.token) await this.account.deleteAccount();
+      else if (this.account.state()) await this.account.logout();
+      await this.local.wipe();
+      sessionStorage.clear();
+      location.assign(new URL('aujourdhui', document.baseURI).href);
     });
   }
 

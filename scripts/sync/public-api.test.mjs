@@ -20,6 +20,7 @@ const USERS = [
   { id: 'alice', name: 'Alice', role: 'owner', mode: 'hosted', logins: ['alice@exemple.fr'] },
   { id: 'carol', name: 'Carol', role: 'member', mode: 'local', logins: [] },
   { id: 'dave', name: 'Dave', role: 'member', mode: 'local', logins: [] },
+  { id: 'erin', name: 'Erin', role: 'member', mode: 'local', logins: [] },
 ];
 const b64 = (b) => Buffer.from(b).toString('base64url');
 const sha = (d) => createHash('sha256').update(d).digest();
@@ -478,4 +479,19 @@ test('CBOR : refuse les entrées tronquées, trop imbriquées ou avec des octets
   assert.throws(() => decodeCbor(Buffer.from([0x01, 0x02])), WebAuthnError);
   assert.throws(() => decodeCbor(Buffer.alloc(20, 0x81)), WebAuthnError);
   assert.deepEqual(decodeCbor(cbor(new Map([['a', [1, -2, Buffer.from('x')]]]))).value, new Map([['a', [1, -2, Buffer.from('x')]]]));
+});
+
+test('suppression du compte local-first : ré-authentification, puis sauvegarde, passkeys et sessions effacées', async () => {
+  const { token, a } = await join_('erin');
+  const data = randomBytes(10);
+  assert.equal((await call('PUT', `/backup/objects/${objectId(data)}`, { token, raw: data })).status, 201);
+  // La session de l'invitation vaut ré-authentification 5 min : au-delà, la passkey est redemandée
+  now += 6 * 60_000;
+  assert.equal((await call('DELETE', '/auth/account', { token })).status, 403);
+  const so = await call('POST', '/auth/stepup/options', { token });
+  assert.equal((await call('POST', '/auth/stepup', { token, body: { credential: a.get(so.body.challenge) } })).status, 204);
+  assert.equal((await call('DELETE', '/auth/account', { token })).status, 204);
+  assert.equal((await call('GET', '/auth/session', { token })).status, 401);
+  assert.deepEqual(auth().credentials('erin'), []);
+  assert.ok(readdirSync(join(dir, 'erin')).some((f) => f.startsWith('backup-supprimee-')));
 });

@@ -187,6 +187,10 @@ footer {
   margin-top: 4rem;
   font-size: 0.8rem;
   text-align: center;
+
+  a {
+    color: inherit;
+  }
 }
 
 /* Barre d'onglets en bas d'écran, au pouce : téléphone seulement */

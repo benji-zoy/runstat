@@ -65,7 +65,7 @@ export class App {
     const router = inject(Router);
     router.events
       .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
-      .subscribe((e) => this.standalone.set(/^\/(rejoindre|connexion)\b/.test((e as NavigationEnd).urlAfterRedirects)));
+      .subscribe((e) => this.standalone.set(/^\/(rejoindre|connexion|confidentialite)\b/.test((e as NavigationEnd).urlAfterRedirects)));
     router.events
       // À chaque navigation : le retour d'une connexion faite sur l'appareil arrive après /connexion/<source>
       .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
