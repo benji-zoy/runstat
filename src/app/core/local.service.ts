@@ -1,7 +1,8 @@
 import { Injectable, signal } from '@angular/core';
 import { DATE_RESULT, InvalidEntry, validateAthlete, validateGoals, validateResult, validateSources } from '../../engine/entries';
 import { fileKey } from '../../engine/sources';
-import { indexedDbStorage } from '../../engine/storage/indexeddb';
+import { IndexedDbStore, indexedDbStorage } from '../../engine/storage/indexeddb';
+import { exportEntries, zipStream } from '../../engine/archive/zip-writer';
 import type { KeyedStore, Storage } from '../../engine/storage/types';
 import type { ArchiveImport } from '../../engine/archive/strava-archive';
 import { EntryError } from './entry-error';
@@ -49,6 +50,22 @@ export class LocalService {
   async routes(): Promise<Record<string, string>> {
     const text = await (await this.store()).snapshot.readText('routes.json');
     return text ? JSON.parse(text) : {};
+  }
+
+  /** Export (RGPD) : zip de la zone raw sans les jetons, et du snapshot */
+  async exportZip(): Promise<Blob> {
+    const s = await this.store();
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    for await (const p of zipStream(exportEntries(s.raw as KeyedStore, s.snapshot))) parts.push(p as Uint8Array<ArrayBuffer>);
+    return new Blob(parts, { type: 'application/zip' });
+  }
+
+  /** Efface toutes les données de l'appareil (après le calcul en cours) */
+  async wipe(): Promise<void> {
+    await this.chain;
+    const s = await this.store();
+    await (s.raw as IndexedDbStore).clear();
+    await (s.snapshot as IndexedDbStore).clear();
   }
 
   /** Demande au navigateur de ne pas effacer les données (Safari les efface après 7 jours sans visite, sauf appli installée) */

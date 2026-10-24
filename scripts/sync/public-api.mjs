@@ -13,6 +13,7 @@
 //   POST /auth/stepup/options, POST /auth/stepup        → ré-authentification par passkey (5 min)
 //   POST /auth/links                    (ré-auth.)      → lien de connexion pour un autre appareil (15 min)
 //   POST /auth/credentials/options, POST /auth/credentials, DELETE /auth/credentials/<id> (ré-auth.) → passkeys du compte
+//   DELETE /auth/account                (ré-auth.)      → suppression : sauvegarde (douce, 30 jours), passkeys, sessions et codes
 //   GET  /backup/manifest | /backup/manifests | /backup/manifests/<v> ; PUT /backup/manifest (If-Match: "v<n>" | If-None-Match: *)
 //   POST /backup/objects/missing { ids } ; PUT|GET /backup/objects/<id> ; DELETE /backup (ré-auth., suppression douce)
 //   POST /relay/google/token                            → échange ou renouvellement du jeton Google, secret du propriétaire ajouté ici
@@ -260,6 +261,13 @@ export function createPublicApi({
       if (entry.session !== s.id) throw new HttpError(400, 'demande d’une autre session');
       assertion(body.credential, challenge, user.id);
       auth.stepUp(s.id);
+      return { status: 204 };
+    }
+    if (m === 'DELETE' && path === '/auth/account') {
+      requireStepUp(s);
+      backupOf(user).softDelete();
+      auth.revokeAll(user.id);
+      log.log?.(`Compte local-first supprimé par son titulaire : ${user.id}`);
       return { status: 204 };
     }
     if (m === 'POST' && path === '/auth/links') {

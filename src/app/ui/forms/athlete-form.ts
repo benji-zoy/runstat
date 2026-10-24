@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { EntriesService } from '../../core/entries.service';
 import { ScienceService } from '../../core/science.service';
 import { SyncService } from '../../core/sync.service';
@@ -26,7 +27,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
 /** Réglages (bouton de l'en-tête) : FC, seuils, sexe, poids, taille, naissance, sources des données, connexion et archive Strava */
 @Component({
   selector: 'app-athlete-form',
-  imports: [ReactiveFormsModule, FormDialogComponent],
+  imports: [ReactiveFormsModule, RouterLink, FormDialogComponent],
   template: `
     <app-form-dialog heading="Réglages" [errors]="errors()" [busy]="entries.saving()" (save)="save()">
       <div class="fields" [formGroup]="form">
@@ -176,6 +177,27 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           </div>
         }
         <p class="hint field wide">Changer de source reconstruit toutes les données {{ local ? 'sur cet appareil' : 'sur le NAS' }} (quelques minutes).</p>
+        @if (!local && sync.available()) {
+          <h3 class="field wide group">Mes données</h3>
+          <div class="field wide">
+            <div class="upload">
+              <a class="btn" href="api/export" download>Exporter mes données (zip)</a>
+              @if (canDelete()) {
+                <button type="button" class="btn danger" (click)="deleting.set(!deleting())">Supprimer mon compte…</button>
+              }
+            </div>
+            <span class="hint">Tes sorties, ta santé, tes objectifs et réglages, sans les jetons de connexion.
+              <a routerLink="/confidentialite" (click)="dialogClose()">Confidentialité</a></span>
+            @if (deleting()) {
+              <span class="hint">Efface définitivement ton dossier sur le NAS (données, jetons) et ton compte. Exporte d'abord si tu veux
+                garder tes données. Recopie ton identifiant (<b>{{ me.me()?.id }}</b>) pour confirmer.</span>
+              <div class="client">
+                <input type="text" [formControl]="deleteConfirm" autocomplete="off" aria-label="Identifiant du compte" />
+                <button type="button" class="btn danger" [disabled]="busy() || deleteConfirm.value.trim() !== me.me()?.id" (click)="deleteAccount()">Supprimer définitivement</button>
+              </div>
+            }
+          </div>
+        }
       </div>
     </app-form-dialog>
   `,
@@ -243,6 +265,10 @@ export class AthleteFormComponent {
   protected readonly editingClient = signal(false);
   protected readonly clientId = new FormControl('', { nonNullable: true });
   protected readonly clientSecret = new FormControl('', { nonNullable: true });
+  protected readonly deleting = signal(false);
+  protected readonly deleteConfirm = new FormControl('', { nonNullable: true });
+  /** Proche hébergé (pas le propriétaire) : peut supprimer son compte depuis le site */
+  protected readonly canDelete = computed(() => Boolean(this.me.me()?.multi) && this.me.me()?.role !== 'owner');
 
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly n = () => this.fb.control<number | null>(null);
@@ -285,6 +311,8 @@ export class AthleteFormComponent {
     this.errors.set([]);
     this.uploadNotice.set(null);
     this.editingClient.set(false);
+    this.deleting.set(false);
+    this.deleteConfirm.reset();
     this.clientId.reset();
     this.clientSecret.reset();
     this.form.reset({
@@ -341,6 +369,29 @@ export class AthleteFormComponent {
       this.copied.set(true);
       setTimeout(() => this.copied.set(false), 2000);
     } catch {}
+  }
+
+  protected dialogClose(): void {
+    this.dialog().close();
+  }
+
+  /** Proche hébergé : suppression de son compte sur le NAS (DELETE /api/account), puis rechargement */
+  protected async deleteAccount(): Promise<void> {
+    this.errors.set([]);
+    this.busy.set(true);
+    try {
+      const res = await fetch('api/account', {
+        method: 'DELETE',
+        headers: { 'X-RunStat': 'sync', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: this.deleteConfirm.value.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      location.reload();
+    } catch (e) {
+      this.errors.set([`Suppression impossible (${(e as Error).message})`]);
+      this.busy.set(false);
+    }
   }
 
   /** Connexion à une source : lien vers le NAS, ou autorisation lancée depuis l'appareil (local-first) */

@@ -91,6 +91,12 @@ export class RunQueue {
     return { running, queued: u.pending.length > 0, startedAt: u.startedAt, finishedAt: u.finishedAt, fullAt: u.fullAt, log: u.log, kind: running ? this.current.job.kind : null };
   }
 
+  /** Compte supprimé : ses tâches en attente sont abandonnées (le run en cours, s'il y en a un, doit d'abord finir) */
+  forget(userId) {
+    for (const job of [...this.#user(userId).pending]) this.#drop(userId, job);
+    this.users.delete(userId);
+  }
+
   /** Vrai si le compte a un run en cours ou en attente */
   busy(userId) {
     const s = this.status(userId);

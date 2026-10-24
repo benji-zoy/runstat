@@ -41,6 +41,11 @@ export class IndexedDbStore implements FileStore {
     return childrenOf(keys as string[], dir);
   }
 
+  /** Vide la zone (effacement des données de l'appareil), sans fermer la base ouverte par d'autres (worker, onglets) */
+  async clear(): Promise<void> {
+    await request(this.store('readwrite').clear());
+  }
+
   /** Tous les chemins, sous-dossiers compris (sauvegarde) */
   async keys(): Promise<string[]> {
     return ((await request(this.store('readonly').getAllKeys())) as string[]).sort();

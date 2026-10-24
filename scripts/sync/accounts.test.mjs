@@ -388,3 +388,60 @@ test('migration : à blanc sans rien toucher, puis déplacement sans perte, idem
     rmSync(dest, { recursive: true, force: true });
   }
 });
+
+// ---------- export et suppression (RGPD) ----------
+
+test('export : zip des données du compte de la requête, sans secrets ni données d’un autre', async () => {
+  const { openZip, blobSource } = await import('#engine/archive/zip.ts');
+  mkdirSync(join(usersDir, 'bob', 'data-raw', 'fit'), { recursive: true });
+  writeFileSync(join(usersDir, 'bob', 'data-raw', 'fit', '7.fit'), 'FIT de Bob');
+  mkdirSync(join(usersDir, 'bob', 'secrets'), { recursive: true });
+  writeFileSync(join(usersDir, 'bob', 'secrets', 'coros-tokens.json'), '{"refresh_token":"SECRET-BOB"}');
+  const res = await api('tailnet', '/api/export', { login: 'bob@exemple.fr' });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /runstat-bob-\d{4}-\d{2}-\d{2}\.zip/);
+  const blob = new Blob([await res.arrayBuffer()]);
+  const zip = await openZip(blobSource(blob));
+  const names = zip.entries.map((e) => e.name);
+  assert.ok(names.includes('data-raw/fit/7.fit') && names.includes('snapshot/coros.json') && names.includes('LISEZMOI.txt'));
+  assert.ok(!names.some((n) => n.includes('secrets') || n.includes('coros-tokens')));
+  assert.equal(new TextDecoder().decode(await zip.read(zip.entries.find((e) => e.name === 'snapshot/coros.json'))), '{"owner":"bob"}');
+  assert.ok(!new TextDecoder().decode(new Uint8Array(await blob.arrayBuffer())).includes('SECRET-BOB'));
+  // Le propriétaire n'exporte que ses propres données
+  const mine = await openZip(blobSource(new Blob([await (await api('tailnet', '/api/export', { login: 'alice@exemple.fr' })).arrayBuffer()])));
+  assert.ok(!mine.entries.some((e) => e.name.includes('7.fit')));
+});
+
+test('suppression : un proche hébergé efface son compte, jamais celui d’un autre ni celui du propriétaire', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runstat-suppr-'));
+  writeFileSync(join(dir, 'users.json'), JSON.stringify(USERS));
+  const accounts = accountsLoader(dir, null);
+  for (const id of ['alice', 'bob']) mkdirSync(userPaths(accounts(), { id }).raw, { recursive: true });
+  writeFileSync(join(dir, 'bob', 'data-raw', 'goals.json'), '[]');
+  const queue = new RunQueue({ start: () => 0 });
+  const zones = { lan: await startApp('lan', accounts, queue), tailnet: await startApp('tailnet', accounts, queue) };
+  const del = (zone, login, confirm) =>
+    fetch(`http://127.0.0.1:${zones[zone].address().port}/api/account`, {
+      method: 'DELETE',
+      headers: { 'Tailscale-User-Login': login, 'X-RunStat': 'sync', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm }),
+    });
+  try {
+    assert.equal((await del('tailnet', 'alice@exemple.fr', 'alice')).status, 403);
+    assert.equal((await del('lan', 'bob@exemple.fr', 'bob')).status, 403);
+    // Alice ne peut viser Bob : la confirmation doit être son propre identifiant
+    assert.equal((await del('tailnet', 'alice@exemple.fr', 'bob')).status, 403);
+    assert.equal((await del('tailnet', 'bob@exemple.fr', 'alice')).status, 400);
+    assert.ok(existsSync(join(dir, 'bob', 'data-raw', 'goals.json')));
+    const ok = await del('tailnet', 'bob@exemple.fr', 'bob');
+    assert.equal(ok.status, 200);
+    assert.equal(existsSync(join(dir, 'bob')), false);
+    assert.ok(existsSync(join(dir, 'alice', 'data-raw')));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'users.json'), 'utf8')).map((u) => u.id), ['alice', 'carol']);
+    // Plus de compte : plus d'accès
+    assert.equal((await fetch(`http://127.0.0.1:${zones.tailnet.address().port}/api/me`, { headers: { 'Tailscale-User-Login': 'bob@exemple.fr' } })).status, 403);
+  } finally {
+    for (const s of Object.values(zones)) s.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

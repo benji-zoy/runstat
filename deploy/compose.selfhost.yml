@@ -1,0 +1,45 @@
+# Auto-hébergement de RunStat avec les images publiées (docs/auto-hebergement.md) : un serveur Docker chez toi (NAS, mini-PC),
+# accès hors de chez toi par Tailscale seulement (Serve pour le tableau de bord, Funnel pour les proches local-first).
+# Remplace les valeurs entre <…>, puis : docker compose -f compose.selfhost.yml up -d
+# Les données de chaque compte vivent dans ./users (users.json, puis users/<id>/data-raw, snapshot, secrets, backup).
+services:
+  runstat:
+    image: ghcr.io/benji-zoy/runstat-web:latest
+    container_name: runstat
+    ports:
+      # Réseau local : adresse locale du serveur, jamais 0.0.0.0 (ce port sert le compte du propriétaire sans authentification)
+      - "<adresse locale du serveur>:8080:80"
+      # Tailscale Serve : tailscale serve --bg --https=443 http://127.0.0.1:8090
+      - "127.0.0.1:8090:81"
+      # Tailscale Funnel (proches local-first, facultatif) : tailscale funnel --bg --https=8443 http://127.0.0.1:8091
+      - "127.0.0.1:8091:82"
+    networks: [runstat]
+    restart: unless-stopped
+
+  runstat-sync:
+    image: ghcr.io/benji-zoy/runstat-sync:latest
+    container_name: runstat-sync
+    # Propriétaire de ./users sur l'hôte (id -u, id -g)
+    user: "<uid>:<gid>"
+    environment:
+      TZ: Europe/Paris
+      SYNC_INTERVAL_MIN: "180"
+      RUNSTAT_USER_QUOTA_MB: "2048"
+      # Adresse Tailscale du tableau de bord (redirect_uri des connexions Strava, COROS, Google), puis l'adresse locale
+      SYNC_PUBLIC_ORIGINS: "https://<machine>.<tailnet>.ts.net,http://<adresse locale du serveur>:8080"
+      # Proches local-first (facultatif) : appli publique et adresse Funnel
+      RUNSTAT_APP_URL: "https://benji-zoy.github.io/runstat/"
+      RUNSTAT_PUBLIC_URL: "https://<machine>.<tailnet>.ts.net:8443"
+      RUNSTAT_BACKUP_QUOTA_MB: "1024"
+    volumes:
+      - ./users:/app/users
+    networks: [runstat]
+    restart: unless-stopped
+
+# Sous-réseau fixe : la passerelle (172.28.0.1) est la seule source admise sur les ports Tailscale de nginx (default.conf)
+networks:
+  runstat:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+          gateway: 172.28.0.1

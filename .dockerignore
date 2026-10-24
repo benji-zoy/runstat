@@ -1,0 +1,11 @@
+# Jamais dans une image : données personnelles, secrets, comptes, constructions locales
+data-raw
+secrets
+users
+public/data
+dist
+node_modules
+.angular
+.claude
+.git
+*.zip
