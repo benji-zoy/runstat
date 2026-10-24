@@ -4,6 +4,7 @@ import { LocalService } from './local.service';
 import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
 import { SyncService } from './sync.service';
+import { DeviceSyncService } from './device-sync.service';
 import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult } from './models';
 
 export { EntryError } from './entry-error';
@@ -19,6 +20,7 @@ export class EntriesService {
   private readonly store = inject(DataService);
   private readonly sync = inject(SyncService);
   private readonly local = inject(LocalService);
+  private readonly device = inject(DeviceSyncService);
   /** Peut saisir : NAS joignable, ou mode local-first */
   readonly available = computed(() => LOCAL_MODE || this.sync.available());
   readonly saving = signal(false);
@@ -90,7 +92,8 @@ export class EntriesService {
 
   /** Appli Strava de l'athlète, écrite dans secrets/ du NAS : le secret n'est jamais relu par le site */
   async saveStravaClient(clientId: string, clientSecret: string): Promise<void> {
-    if (LOCAL_MODE) throw new EntryError(['La synchro Strava depuis l’appareil arrive bientôt : importe ton archive en attendant']);
+    // Appli publique : identifiants gardés sur l'appareil (et dans la sauvegarde chiffrée), jamais envoyés au NAS
+    if (LOCAL_MODE) return this.device.saveStravaApp(clientId, clientSecret);
     await this.send('PUT', 'strava/client', { client_id: clientId, client_secret: clientSecret });
   }
 

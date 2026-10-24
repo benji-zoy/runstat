@@ -1,143 +1,32 @@
-// Client COROS MCP (HTTP sans session, OAuth 2.0) en lecture seule.
-// Autorisation : enregistrement dynamique d'un client public, puis code + PKCE (le serveur refuse le device flow à ces
-// clients), depuis le site (Réglages › « Connecter COROS », coros-connect.mjs) ou en secours sur le poste (loopback,
+// Client COROS MCP en lecture seule : enveloppe Node du client portable (src/engine/sync/coros.ts) sur un dossier de secrets.
+// Autorisation : depuis le site (Réglages › « Connecter COROS », oauth-connect.mjs) ou en secours sur le poste (loopback,
 // npm run auth -- coros, puis copie des jetons sur le NAS).
-import { readSecret, writeSecret, ReauthRequired } from './secrets.mjs';
+import { corosClient, READ_TOOLS, toolText } from '#engine/sync/coros.ts';
+import { nodeTokens, secretsDir } from './secrets.mjs';
 import { pkce, loopbackCode } from './loopback.mjs';
-import { fetchRetry } from './retry.mjs';
 
 export const COROS_MCP = process.env.COROS_MCP_URL ?? 'https://mcpeu.coros.com/mcp';
-const ISSUER = new URL(COROS_MCP).origin;
-const SCOPE = 'openid mcp.tools offline_access';
 const REDIRECT = 'http://127.0.0.1:53682/callback';
-const PROTOCOL = '2025-06-18';
 
-/** Seuls outils appelables. Les outils d'écriture (create…, update…, schedule…) n'y figurent pas. */
-export const READ_TOOLS = new Set([
-  'querySportRecords',
-  'getActivityDetail',
-  'queryActivityLapData',
-  'queryActivityFitFileDownloadUrls',
-  'querySleepOverview',
-  'querySleepHrv',
-  'queryRestingHeartRate',
-  'queryAvgHeartRate',
-  'queryDailyHealthData',
-  'queryRecoveryStatus',
-  'queryTrainingLoadAssessment',
-  'queryFitnessAssessmentOverview',
-]);
+export { READ_TOOLS, toolText };
 
-async function postForm(url, params) {
-  const res = await fetchRetry(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams(params),
-  });
-  const text = await res.text();
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = { error: `http_${res.status}`, error_description: text.slice(0, 300) };
-  }
-  return { status: res.status, body };
-}
+/** Client d'un dossier de secrets (`dir` : compte du service, sinon celui du run) */
+export const corosAt = (dir = secretsDir()) => corosClient({ tokens: nodeTokens(dir), mcp: COROS_MCP });
+let run;
+const current = () => (run ??= corosAt());
 
-let meta;
-export async function metadata() {
-  if (meta) return meta;
-  const res = await fetchRetry(`${ISSUER}/.well-known/oauth-authorization-server`);
-  if (!res.ok) throw new Error(`Métadonnées OAuth COROS : HTTP ${res.status}`);
-  return (meta = await res.json());
-}
+export const metadata = () => current().metadata();
 
 /**
- * Client public pour `redirect` (loopback du poste, ou adresse du site : coros-connect.mjs). Celui du compte est réutilisé
- * s'il a la même adresse de retour ; sinon un nouveau est enregistré. `persist` : écrit tout de suite dans coros-client.json
- * (poste) ; le site ne l'écrit qu'après un échange réussi, pour ne jamais séparer le client des jetons qu'il a obtenus.
+ * Client public pour `redirect` (loopback du poste, ou adresse du site : oauth-connect.mjs). `persist` : écrit tout de suite
+ * dans coros-client.json (poste) ; le site ne l'écrit qu'après un échange réussi.
  */
-export async function registerClient(meta, { redirect = REDIRECT, persist = true, dir } = {}) {
-  const existing = readSecret('coros-client.json', dir);
-  if (existing?.issuer === ISSUER && existing.redirect === redirect) return existing;
-  const res = await fetch(meta.registration_endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      client_name: 'RunStat sync',
-      grant_types: ['authorization_code', 'refresh_token'],
-      redirect_uris: [redirect],
-      token_endpoint_auth_method: 'none',
-      scope: SCOPE,
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.client_id) {
-    throw new Error(
-      `Enregistrement du client COROS refusé (HTTP ${res.status}) : ${JSON.stringify(body)}`,
-    );
-  }
-  const client = {
-    issuer: ISSUER,
-    client_id: body.client_id,
-    redirect,
-    registeredAt: new Date().toISOString(),
-  };
-  if (persist) writeSecret('coros-client.json', client, dir);
-  return client;
-}
+export const registerClient = (meta, { redirect = REDIRECT, persist = true, dir } = {}) => corosAt(dir).registerClient(meta, { redirect, persist });
 
-function saveTokens(body, previous, dir) {
-  const tokens = {
-    access_token: body.access_token,
-    // Le serveur peut faire tourner le refresh token : on garde le nouveau dès qu'il arrive.
-    refresh_token: body.refresh_token ?? previous?.refresh_token,
-    expires_at: Date.now() + (body.expires_in ?? 3600) * 1000,
-    scope: body.scope ?? previous?.scope,
-    obtainedAt: body.refresh_token ? new Date().toISOString() : previous?.obtainedAt,
-  };
-  writeSecret('coros-tokens.json', tokens, dir);
-  return tokens;
-}
+export const authorizeUrl = (meta, client, opts) => current().authorizeUrl(meta, client, opts);
 
-/** Adresse d'autorisation COROS (code + PKCE, ressource MCP) */
-export function authorizeUrl(meta, client, { redirect, challenge, state }) {
-  const url = new URL(meta.authorization_endpoint);
-  url.search = new URLSearchParams({
-    response_type: 'code',
-    client_id: client.client_id,
-    redirect_uri: redirect,
-    scope: SCOPE,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state,
-    resource: COROS_MCP,
-  });
-  return url.toString();
-}
-
-/**
- * Échange du code contre les jetons ; écrit le client puis les jetons dans `dir` (secrets du compte).
- * Renvoie seulement les scopes : les jetons ne sortent jamais de ce module.
- */
-export async function exchangeCode(meta, client, { code, verifier, redirect, dir }) {
-  const res = await postForm(meta.token_endpoint, {
-    grant_type: 'authorization_code',
-    code,
-    code_verifier: verifier,
-    redirect_uri: redirect,
-    client_id: client.client_id,
-    resource: COROS_MCP,
-  });
-  if (res.status !== 200 || !res.body.access_token) {
-    throw new Error(
-      `Échange du code COROS : ${res.body.error} ${res.body.error_description ?? ''}`.trim(),
-    );
-  }
-  writeSecret('coros-client.json', client, dir);
-  const t = saveTokens(res.body, undefined, dir);
-  return { scope: t.scope, refresh: Boolean(t.refresh_token), expiresAt: t.expires_at };
-}
+/** Échange du code ; écrit le client puis les jetons dans `dir` (secrets du compte). Renvoie seulement les scopes. */
+export const exchangeCode = (meta, client, { code, verifier, redirect, dir }) => corosAt(dir).exchangeCode(meta, client, { code, verifier, redirect });
 
 /** Autorisation interactive sur le poste (navigateur + loopback, PKCE), en secours de Réglages › « Connecter COROS » */
 export async function authorizeCoros() {
@@ -152,95 +41,10 @@ export async function authorizeCoros() {
   });
   const t = await exchangeCode(meta, client, { code, verifier, redirect: REDIRECT });
   const ttl = Math.round((t.expiresAt - Date.now()) / 60000);
-  console.log(
-    `COROS autorisé (scopes : ${t.scope ?? '?'}, access token ${ttl} min, refresh token : ${t.refresh ? 'oui' : 'NON'}).`,
-  );
+  console.log(`COROS autorisé (scopes : ${t.scope ?? '?'}, access token ${ttl} min, refresh token : ${t.refresh ? 'oui' : 'NON'}).`);
 }
 
-async function accessToken() {
-  const tokens = readSecret('coros-tokens.json');
-  const client = readSecret('coros-client.json');
-  if (!tokens || !client) throw new ReauthRequired('coros', 'aucun token');
-  if (tokens.expires_at - 60_000 > Date.now()) return tokens.access_token;
-  if (!tokens.refresh_token) throw new ReauthRequired('coros', 'token expiré sans refresh token');
-  const meta = await metadata();
-  const res = await postForm(meta.token_endpoint, {
-    grant_type: 'refresh_token',
-    refresh_token: tokens.refresh_token,
-    client_id: client.client_id,
-    resource: COROS_MCP,
-  });
-  if (res.status === 400 || res.status === 401) {
-    throw new ReauthRequired('coros', res.body.error ?? `HTTP ${res.status}`);
-  }
-  if (res.status !== 200) throw new Error(`Refresh COROS : HTTP ${res.status}`);
-  return saveTokens(res.body, tokens).access_token;
-}
-
-let rpcId = 0;
-
-/** Requête JSON-RPC ; la réponse peut être du JSON ou un flux SSE */
-async function rpc(method, params, { notification = false } = {}) {
-  const token = await accessToken();
-  const message = { jsonrpc: '2.0', method, ...(params && { params }) };
-  if (!notification) message.id = ++rpcId;
-  // Outils en lecture seule : renvoyer la requête après une erreur 5xx est sans effet de bord
-  const res = await fetchRetry(COROS_MCP, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      'MCP-Protocol-Version': PROTOCOL,
-    },
-    body: JSON.stringify(message),
-  });
-  if (res.status === 401) throw new ReauthRequired('coros', 'token refusé par le serveur MCP');
-  if (notification) return null;
-  const text = await res.text();
-  if (!res.ok) throw new Error(`MCP ${method} : HTTP ${res.status} ${text.slice(0, 300)}`);
-  const payloads = (res.headers.get('content-type') ?? '').includes('text/event-stream')
-    ? text
-        .split('\n')
-        .filter((l) => l.startsWith('data:'))
-        .map((l) => JSON.parse(l.slice(5)))
-    : [JSON.parse(text)];
-  const reply = payloads.find((p) => p.id === message.id);
-  if (!reply) throw new Error(`MCP ${method} : réponse introuvable`);
-  if (reply.error) throw new Error(`MCP ${method} : ${reply.error.code} ${reply.error.message}`);
-  return reply.result;
-}
-
-export async function initialize() {
-  const result = await rpc('initialize', {
-    protocolVersion: PROTOCOL,
-    capabilities: {},
-    clientInfo: { name: 'runstat-sync', version: '0.1.0' },
-  });
-  await rpc('notifications/initialized', undefined, { notification: true });
-  return result;
-}
-
-export async function listTools() {
-  const tools = [];
-  let cursor;
-  do {
-    const page = await rpc('tools/list', cursor ? { cursor } : {});
-    tools.push(...page.tools);
-    cursor = page.nextCursor;
-  } while (cursor);
-  return tools;
-}
-
+export const initialize = () => current().initialize();
+export const listTools = () => current().listTools();
 /** Appelle un outil de la liste blanche ; tout autre nom est refusé avant l'envoi */
-export async function callTool(name, args = {}) {
-  if (!READ_TOOLS.has(name)) throw new Error(`Outil COROS non autorisé (lecture seule) : ${name}`);
-  return rpc('tools/call', { name, arguments: args });
-}
-
-/** Texte concaténé d'un résultat d'outil */
-export const toolText = (result) =>
-  (result?.content ?? [])
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text)
-    .join('\n');
+export const callTool = (name, args = {}) => current().callTool(name, args);

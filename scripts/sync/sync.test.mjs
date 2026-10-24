@@ -294,6 +294,62 @@ test('tracé seul : run.mjs refuse un identifiant invalide', async () => {
   assert.match(bad.stderr, /--fit <labelId/);
 });
 
+test('run.mjs : synchro COROS par le moteur contre un serveur MCP simulé, jeton renouvelé et état écrit', async () => {
+  const { createServer } = await import('node:http');
+  const { execFile } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const dir = fileURLToPath(new URL('.', import.meta.url));
+  const base = mkdtempSync(join(tmpdir(), 'runstat-run-'));
+  const raw = join(base, 'data-raw');
+  const secrets = join(base, 'secrets');
+  mkdirSync(raw, { recursive: true });
+  mkdirSync(secrets, { recursive: true });
+  writeFileSync(join(raw, 'sources.json'), '{"activities":"coros","health":"none"}');
+  const calls = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const send = (v) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(v));
+      const origin = `http://127.0.0.1:${server.address().port}`;
+      if (req.url === '/.well-known/oauth-authorization-server') return send({ token_endpoint: `${origin}/token` });
+      if (req.url === '/token') return (calls.push(`token:${new URLSearchParams(body).get('refresh_token')}`), send({ access_token: 'acc-1', refresh_token: 'ref-1', expires_in: 3600 }));
+      const msg = JSON.parse(body);
+      if (!msg.id) return res.writeHead(202).end();
+      const name = msg.method === 'tools/call' ? msg.params.name : msg.method;
+      calls.push(name);
+      const texts = {
+        querySportRecords: 'Sport Records — x\n\n1. Outdoor Run — 2026-03-09\n   LabelId: 300001 | SportType: 100',
+        getActivityDetail: 'Training Load: 70',
+        queryFitnessAssessmentOverview: 'VO2max: 52',
+        queryTrainingLoadAssessment: '2026-03-09\nLoad Ratio: 1.0',
+        queryActivityFitFileDownloadUrls: 'daily limit reached',
+      };
+      send({ jsonrpc: '2.0', id: msg.id, result: msg.method === 'initialize' ? {} : { content: [{ type: 'text', text: texts[name] ?? '' }] } });
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const mcp = `http://127.0.0.1:${server.address().port}/mcp`;
+  writeFileSync(join(secrets, 'coros-client.json'), JSON.stringify({ issuer: new URL(mcp).origin, client_id: 'c', redirect: 'x' }));
+  writeFileSync(join(secrets, 'coros-tokens.json'), JSON.stringify({ access_token: 'old', refresh_token: 'ref-0', expires_at: 0 }));
+  try {
+    const env = { ...process.env, RUNSTAT_USERS: join(base, 'aucun'), RUNSTAT_RAW: raw, RUNSTAT_SECRETS: secrets, RUNSTAT_SNAPSHOT: join(base, 'snap'), COROS_MCP_URL: mcp };
+    const out = await new Promise((resolve, reject) =>
+      execFile(process.execPath, [`${dir}run.mjs`, '--no-build'], { env, encoding: 'utf8' }, (e, stdout) => (e ? reject(e) : resolve(stdout))),
+    );
+    assert.match(out, /COROS : 1 activités .* 1 détails, 0 FIT \(quota de 50\/jour atteint/);
+    assert.deepEqual(calls.slice(0, 2), ['token:ref-0', 'initialize']);
+    assert.match(readFileSync(join(raw, 'records.txt'), 'utf8'), /LabelId: 300001/);
+    assert.match(readFileSync(join(raw, 'fitness.txt'), 'utf8'), /VO2max: 52/);
+    assert.equal(JSON.parse(readFileSync(join(secrets, 'coros-tokens.json'), 'utf8')).refresh_token, 'ref-1');
+    assert.ok(JSON.parse(readFileSync(join(raw, 'sync-state.json'), 'utf8')).coros.lastSuccess);
+    assert.ok(existsSync(join(raw, 'raw', 'coros', 'querySportRecords')));
+  } finally {
+    server.close();
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 // ---------- saisie depuis le site (entries.mjs) ----------
 
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';

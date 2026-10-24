@@ -4,6 +4,8 @@ import { EntriesService } from '../../core/entries.service';
 import { ScienceService } from '../../core/science.service';
 import { SyncService } from '../../core/sync.service';
 import { MeService } from '../../core/me.service';
+import { AccountService } from '../../core/account.service';
+import { DeviceSyncService, type DeviceSource } from '../../core/device-sync.service';
 import { LOCAL_MODE } from '../../core/runtime';
 import { ActivitySource, Athlete, HealthSource } from '../../core/models';
 import { CITY_NAMES, DEFAULT_CITY } from '../../core/equivalences';
@@ -79,34 +81,41 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             }
           </div>
         </div>
-        @if (!local && usesCoros()) {
+        @if (local && account.connected() && sync.available()) {
+          <div class="field wide">Appareil de synchro
+            <span class="hint">{{ device.isPrimary() ? 'Cet appareil synchronise tes sources et renouvelle les jetons ; tes autres appareils reçoivent les données par ta sauvegarde.'
+              : 'Synchro faite par ' + device.primary()?.name + ' : ici, les données arrivent par ta sauvegarde.' }}</span>
+            @if (!device.isPrimary()) {
+              <div class="upload">
+                <button type="button" class="btn" [disabled]="busy()" (click)="takeOver()">Devenir l’appareil principal</button>
+              </div>
+            }
+          </div>
+        }
+        @if (usesCoros()) {
           <div class="field wide">Connexion COROS
             <span class="hint">{{ corosConnection() }}</span>
             <div class="upload">
-              <a class="btn primary" [href]="connectUrl('coros')">{{ sync.status()?.corosConnected ? 'Reconnecter COROS' : 'Connecter COROS' }}</a>
+              <a class="btn primary" [attr.href]="local ? '#' : connectUrl('coros')" (click)="go($event, 'coros')">{{ sync.status()?.corosConnected ? 'Reconnecter COROS' : 'Connecter COROS' }}</a>
             </div>
             <span class="hint">COROS te demande d’autoriser RunStat à lire tes activités et ta santé ; tu reviens ensuite ici.
               Une seule connexion à la fois : le jeton COROS change à chaque renouvellement.</span>
           </div>
         }
-        @if (!local && form.controls.health.value === 'google') {
+        @if (form.controls.health.value === 'google') {
           <div class="field wide">Connexion Google Health
             <span class="hint">{{ googleConnection() }}</span>
             @if (sync.status()?.googleClient) {
               <div class="upload">
-                <a class="btn primary" [href]="connectUrl('google')">{{ sync.status()?.googleConnected ? 'Reconnecter Google' : 'Connecter Google' }}</a>
+                <a class="btn primary" [attr.href]="local ? '#' : connectUrl('google')" (click)="go($event, 'google')">{{ sync.status()?.googleConnected ? 'Reconnecter Google' : 'Connecter Google' }}</a>
               </div>
               <span class="hint">Passe par l’appli Google Cloud du propriétaire : il doit t’y avoir ajouté comme testeur, et y avoir
-                déclaré l’adresse de retour <code>{{ stravaOrigin() }}/api/google/callback</code>. En mode test, Google redemande
-                l’autorisation chaque semaine.</span>
+                déclaré l’adresse de retour <code>{{ local ? device.redirect('google') : stravaOrigin() + '/api/google/callback' }}</code>.
+                En mode test, Google redemande l’autorisation chaque semaine.</span>
             }
           </div>
         }
         @if (form.controls.activities.value === 'strava') {
-          @if (local) {
-          <p class="hint field wide">Synchro automatique de Strava depuis cet appareil : bientôt. En attendant, importe ton archive ;
-            elle est lue sur l'appareil et n'est jamais envoyée.</p>
-        } @else {
           <div class="field wide">Synchro Strava
             <span class="hint">{{ stravaConnection() }}</span>
             @if (!sync.status()?.stravaClient || editingClient()) {
@@ -133,10 +142,10 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
                   <button type="button" class="btn" (click)="editingClient.set(false)">Annuler</button>
                 }
               </div>
-              <span class="hint">Ils restent sur le NAS et ne s’affichent plus ensuite.</span>
+              <span class="hint">{{ local ? 'Ils restent sur cet appareil (et dans ta sauvegarde chiffrée)' : 'Ils restent sur le NAS' }} et ne s’affichent plus ensuite.</span>
             } @else {
               <div class="upload">
-                <a class="btn primary" [href]="connectUrl('strava')">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
+                <a class="btn primary" [attr.href]="local ? '#' : connectUrl('strava')" (click)="go($event, 'strava')">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
                 <button type="button" class="btn" (click)="editClient()">Changer d’appli</button>
               </div>
               <span class="hint">Strava te demande d’autoriser RunStat à lire tes sorties : laisse les cases cochées
@@ -149,10 +158,9 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               </div>
             }
           </div>
-          }
           <div class="field wide">Archive Strava
             <span class="hint">Pour tout l'historique : sur strava.com, Paramètres › Mon compte › Télécharger ou supprimer ton compte ›
-              Demander une archive. Le zip arrive par e-mail quelques heures plus tard ; envoie-le ici tel quel.</span>
+              Demander une archive. Le zip arrive par e-mail quelques heures plus tard ; {{ local ? 'choisis-le ici tel quel : il est lu sur l’appareil et n’est jamais envoyé.' : 'envoie-le ici tel quel.' }}</span>
             <div class="upload">
               <label class="btn" [class.disabled]="entries.uploading() !== null || sync.running()">
                 <input type="file" accept=".zip,application/zip" hidden (change)="upload($event)"
@@ -192,8 +200,11 @@ export class AthleteFormComponent {
   private readonly sci = inject(ScienceService);
   protected readonly sync = inject(SyncService);
   protected readonly me = inject(MeService);
-  /** Appli publique : données sur l'appareil, pas de connexion aux sources pour l'instant */
+  protected readonly account = inject(AccountService);
+  protected readonly device = inject(DeviceSyncService);
+  /** Appli publique : données et synchro sur l'appareil, connexions OAuth depuis le navigateur */
   protected readonly local = LOCAL_MODE;
+  protected readonly busy = signal(false);
   protected readonly activitySources = ACTIVITY_SOURCES;
   protected readonly healthSources = HEALTH_SOURCES;
   protected readonly cities = CITY_NAMES;
@@ -221,6 +232,7 @@ export class AthleteFormComponent {
   });
   protected readonly googleConnection = computed(() => {
     const st = this.sync.status();
+    if (this.local && !st?.googleClient) return 'Indisponible sans compte : Google Health passe par le NAS qui t’héberge (lien d’invitation).';
     if (!st?.googleClient) return 'Indisponible : le propriétaire n’a pas déposé d’appli Google Cloud sur le NAS.';
     if (st.state.google?.reauthSince) return 'À ré-autoriser : Google a refusé les jetons (chaque semaine en mode test), reconnecte-toi.';
     return st.googleConnected ? 'Connecté.' : 'Non connecté.';
@@ -329,6 +341,35 @@ export class AthleteFormComponent {
       this.copied.set(true);
       setTimeout(() => this.copied.set(false), 2000);
     } catch {}
+  }
+
+  /** Connexion à une source : lien vers le NAS, ou autorisation lancée depuis l'appareil (local-first) */
+  protected async go(event: Event, source: DeviceSource): Promise<void> {
+    if (!this.local) return;
+    event.preventDefault();
+    if (this.busy()) return;
+    this.errors.set([]);
+    this.busy.set(true);
+    try {
+      location.assign(await this.device.connectUrl(source));
+    } catch (e) {
+      this.errors.set(errorList(e));
+      this.busy.set(false);
+    }
+  }
+
+  /** Cet appareil reprend la synchro des sources (le précédent arrête de renouveler les jetons) */
+  protected async takeOver(): Promise<void> {
+    if (!this.account.unlocked()) return this.errors.set(['Déverrouille d’abord ta sauvegarde (Compte et sauvegarde)']);
+    this.errors.set([]);
+    this.busy.set(true);
+    try {
+      await this.device.claim();
+    } catch (e) {
+      this.errors.set(errorList(e));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected editClient(): void {

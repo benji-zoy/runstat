@@ -274,6 +274,24 @@ export class AccountService {
     return `${appUrl}connexion#nas=${encodeURIComponent(this.state()!.nas)}&lien=${r.code}`;
   }
 
+  /** Client Google du propriétaire (relais du NAS) : identifiant public et adresses de retour déclarées */
+  googleClient(): Promise<{ client_id: string; redirects: string[] }> {
+    return this.client().json('GET', '/relay/google/client');
+  }
+
+  /**
+   * Jeton Google par le relais (secret ajouté par le NAS). Les refus de Google (codes en snake_case) sont rendus tels quels
+   * au client du moteur (ré-autorisation) ; les erreurs du relais lui-même (session, limite) remontent.
+   */
+  async googleToken(params: Record<string, string>): Promise<{ status: number; body: Record<string, any> }> {
+    try {
+      return { status: 200, body: await this.client().json<Record<string, any>>('POST', '/relay/google/token', params) };
+    } catch (e) {
+      if (e instanceof ApiError && typeof e.body['error'] === 'string' && /^[a-z_]+$/.test(e.body['error'])) return { status: e.status, body: e.body };
+      throw accountError(e);
+    }
+  }
+
   /** Déconnexion : session révoquée sur le NAS, clés effacées de cet appareil (les données locales restent) */
   async logout(): Promise<void> {
     try {

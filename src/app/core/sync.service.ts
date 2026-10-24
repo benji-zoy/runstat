@@ -2,6 +2,8 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { LocalService } from './local.service';
 import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
+import { AccountService } from './account.service';
+import { DeviceSyncService } from './device-sync.service';
 import { sourcesOf } from './sources';
 
 /** État d'une source dans data-raw/sync-state.json (scripts/sync/run.mjs) */
@@ -76,17 +78,39 @@ type SourceKey = keyof typeof SOURCES;
 const AUTH: Record<SourceKey, string> = { coros: 'coros', strava: 'strava', google: 'google', corosHealth: 'coros' };
 
 /**
- * Synchro à la demande par le service runstat-sync du NAS (/api/sync, proxy nginx).
- * Sans ce service (ng serve, autre hébergement), `available` reste faux et le bouton n'apparaît pas.
+ * Synchro à la demande par le service runstat-sync du NAS (/api/sync, proxy nginx), ou sur l'appareil en local-first
+ * (core/device-sync.service.ts, même état sync-state.json). Sans l'un ni l'autre (ng serve), `available` reste faux et le
+ * bouton n'apparaît pas ; en local-first, il apparaît dès qu'une source est connectée.
  */
 @Injectable({ providedIn: 'root' })
 export class SyncService {
   private readonly store = inject(DataService);
   private readonly local = inject(LocalService);
-  readonly status = signal<SyncStatus | null>(null);
-  readonly available = computed(() => this.status() !== null);
-  /** Run du NAS, ou calcul sur l'appareil (mode local-first) */
-  readonly running = computed(() => (LOCAL_MODE ? this.local.busy() : (this.status()?.running ?? false)));
+  private readonly account = inject(AccountService);
+  private readonly device = inject(DeviceSyncService);
+  private readonly remote = signal<SyncStatus | null>(null);
+  /** État du NAS, ou de l'appareil (présence des jetons, jamais leur contenu) */
+  readonly status = computed<SyncStatus | null>(() => {
+    if (!LOCAL_MODE) return this.remote();
+    const t = this.device.tokens();
+    return {
+      running: this.device.running(),
+      startedAt: null,
+      nextAt: null,
+      state: this.device.state(),
+      log: this.device.log(),
+      stravaClient: t.stravaClient,
+      stravaConnected: t.strava,
+      stravaAthlete: t.stravaAthlete,
+      corosConnected: t.coros,
+      googleConnected: t.google,
+      googleClient: this.account.connected(),
+      stravaOrigin: null,
+    };
+  });
+  readonly available = computed(() => (LOCAL_MODE ? this.device.anyConnected() : this.remote() !== null));
+  /** Run du NAS, ou synchro et calculs sur l'appareil (mode local-first) */
+  readonly running = computed(() => (LOCAL_MODE ? this.local.busy() || this.device.running() : (this.remote()?.running ?? false)));
   /** Message d'une demande refusée (déjà en cours, trop tôt, service injoignable) */
   readonly notice = signal<string | null>(null);
   /** Sortie dont le FIT est en cours de téléchargement (« Affiner avec le tracé ») */
@@ -111,7 +135,9 @@ export class SyncService {
     for (const key of this.active()) {
       const src = s[key];
       if (src?.reauthSince)
-        out.push(`${SOURCES[key]} : ré-autorisation nécessaire (${key === 'strava' ? 'Réglages › Connecter Strava' : `npm run auth -- ${AUTH[key]}`})`);
+        out.push(
+          `${SOURCES[key]} : ré-autorisation nécessaire (${key === 'strava' || LOCAL_MODE ? `Réglages › Connecter ${SOURCES[AUTH[key] as SourceKey]}` : `npm run auth -- ${AUTH[key]}`})`,
+        );
       else if (src?.lastError) out.push(`${SOURCES[key]} : ${src.lastError}`);
     }
     if (s.lastBuildError) out.push(`Reconstruction : ${s.lastBuildError}`);
@@ -130,6 +156,7 @@ export class SyncService {
       const t = st.state[key]?.lastSuccess;
       lines.push(`${SOURCES[key]} : ${t ? `à jour ${ago(t)}` : 'jamais synchronisé'}`);
     }
+    if (LOCAL_MODE && !this.device.isPrimary()) lines.push(`Synchro faite par ${this.device.primary()?.name} (Réglages)`);
     lines.push(...this.problems());
     return lines.join('\n');
   });
@@ -141,15 +168,15 @@ export class SyncService {
   }
 
   async refresh(): Promise<void> {
-    // Appli publique : pas de service de synchro derrière la même adresse (synchro sur l'appareil : à venir)
-    if (LOCAL_MODE) return;
+    // Appli publique : synchro sur l'appareil, état relu dans IndexedDB
+    if (LOCAL_MODE) return this.device.reload();
     try {
       const res = await fetch('api/sync', { headers: { Accept: 'application/json' }, cache: 'no-store' });
       const type = res.headers.get('content-type') ?? '';
       // ng serve renvoie index.html pour une adresse inconnue : pas de service de synchro
-      this.status.set(res.ok && type.includes('json') ? await res.json() : null);
+      this.remote.set(res.ok && type.includes('json') ? await res.json() : null);
     } catch {
-      this.status.set(null);
+      this.remote.set(null);
     }
   }
 
@@ -171,12 +198,21 @@ export class SyncService {
         ? (STRAVA_RETURN[ok ? (reason ?? 'ok') : (reason ?? '')] ?? (ok ? STRAVA_RETURN['ok'] : 'Connexion Strava refusée'))
         : (OTHER_RETURN[ok ? 'ok' : (reason ?? '')]?.(label) ?? `Connexion ${label} refusée`);
     this.say(text, 8000);
-    if (ok) void this.followImport();
+    if (ok) void (LOCAL_MODE ? this.trigger(true) : this.followImport());
   }
 
-  async trigger(): Promise<void> {
+  async trigger(quiet = false): Promise<void> {
     if (this.running()) return;
-    this.notice.set(null);
+    if (!quiet) this.notice.set(null);
+    if (LOCAL_MODE) {
+      try {
+        const text = await this.device.syncNow();
+        this.say(this.problems().length ? 'Synchro terminée avec des erreurs' : text);
+      } catch (e) {
+        this.say(`Synchro impossible (${(e as Error).message})`, 8000);
+      }
+      return;
+    }
     try {
       const res = await fetch('api/sync', { method: 'POST', headers: { 'X-RunStat': 'sync' } });
       const body = await res.json().catch(() => ({}));
@@ -194,6 +230,17 @@ export class SyncService {
     if (this.running()) return;
     this.refineNotice.set(null);
     this.refining.set(id);
+    if (LOCAL_MODE) {
+      try {
+        const r = await this.device.refine(id);
+        this.refineNotice.set({ id, text: r.ok ? 'Tracé ajouté : analyse affinée' : `Tracé indisponible (${r.message})` });
+      } catch (e) {
+        this.refineNotice.set({ id, text: `Impossible (${(e as Error).message})` });
+      } finally {
+        this.refining.set(null);
+      }
+      return;
+    }
     try {
       const res = await fetch(`api/fit?id=${encodeURIComponent(id)}`, { method: 'POST', headers: { 'X-RunStat': 'sync' } });
       if (!res.ok) {

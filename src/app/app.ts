@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { filter, take } from 'rxjs';
+import { filter } from 'rxjs';
 import { DataService } from './core/data.service';
 import { ThemeService } from './core/theme.service';
 import { CONNECT_SOURCES, SyncService } from './core/sync.service';
@@ -67,7 +67,8 @@ export class App {
       .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
       .subscribe((e) => this.standalone.set(/^\/(rejoindre|connexion)\b/.test((e as NavigationEnd).urlAfterRedirects)));
     router.events
-      .pipe(filter((e) => e instanceof NavigationEnd), take(1), takeUntilDestroyed())
+      // À chaque navigation : le retour d'une connexion faite sur l'appareil arrive après /connexion/<source>
+      .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
       .subscribe(() => {
         const q = router.routerState.snapshot.root.queryParamMap;
         const source = CONNECT_SOURCES.find((s) => q.get(s));

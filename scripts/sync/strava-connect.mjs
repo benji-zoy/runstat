@@ -11,9 +11,10 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { InvalidEntry, readJsonFile, writeJsonAtomic } from './entries.mjs';
+import { readJsonFile, writeJsonAtomic } from './entries.mjs';
 import { readSecret, writeSecret } from './secrets.mjs';
 import { authorizeUrl, exchangeCode } from './strava.mjs';
+import { validateStravaApp } from '#engine/sync/strava.ts';
 
 export const STATE_TTL_MS = 10 * 60_000;
 /** Demandes en attente gardées au plus (les plus anciennes sont oubliées) */
@@ -83,18 +84,8 @@ export class StateStore {
   }
 }
 
-/** Identifiants de l'appli Strava saisis dans Réglages : validation stricte, le secret n'est jamais renvoyé */
-export function validateStravaClient(body) {
-  const errors = [];
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new InvalidEntry(['objet attendu']);
-  for (const k of Object.keys(body)) if (k !== 'client_id' && k !== 'client_secret') errors.push(`${k} : champ inconnu`);
-  const id = typeof body.client_id === 'string' || typeof body.client_id === 'number' ? String(body.client_id).trim() : '';
-  const secret = typeof body.client_secret === 'string' ? body.client_secret.trim() : '';
-  if (!/^\d{1,12}$/.test(id)) errors.push('Client ID : nombre attendu (strava.com/settings/api)');
-  if (!/^[A-Za-z0-9]{20,100}$/.test(secret)) errors.push('Client Secret : 40 caractères attendus (strava.com/settings/api)');
-  if (errors.length) throw new InvalidEntry(errors);
-  return { client_id: id, client_secret: secret };
-}
+/** Identifiants de l'appli Strava saisis dans Réglages : validation stricte (moteur), le secret n'est jamais renvoyé */
+export const validateStravaClient = validateStravaApp;
 
 /** État Strava pour GET /api/sync : rien des jetons ni du secret, seulement leur présence et l'athlète. `dir` : secrets du compte */
 export function stravaStatus(dir) {
