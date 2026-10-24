@@ -232,7 +232,8 @@ Funnel), `RUNSTAT_APP_ORIGINS` (CORS et origines WebAuthn ; défaut : origine de
 l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
 - Comptes `mode: local` (sans login Tailscale, pas d'accès au tableau de bord). « Proches » › « Créer le lien d'invitation »
   (`POST /api/admin/invitations`, compte créé au besoin), « Nouveau lien », « Réinitialiser l'accès » (`POST /api/admin/users/<id>/reset` :
-  passkeys, sessions et codes révoqués). Retirer un compte local révoque aussi tout.
+  passkeys, sessions, codes et identifiant WebAuthn révoqués). Retirer un compte local révoque aussi tout et met sa sauvegarde
+  en suppression douce (penser à « Enregistrer » dans Proches : retirer la ligne seule n'envoie rien).
 - `auth-store.mjs` (`users/auth/`, 700/600, empreintes seulement) : codes d'invitation (7 jours) et liens de connexion (15 min) à
   usage unique ; passkeys ; sessions (30 jours glissants, 180 au plus, 20 par compte). `webauthn.mjs` : CBOR maison, ES256 et RS256
   seulement, UP + UV exigés, `crossOrigin` refusé, rpId = hôte de l'origine, compteur refusé seulement s'il recule (iCloud et Google
@@ -242,7 +243,8 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
 - `backup-store.mjs` (`users/<id>/backup/`) : objets chiffrés immuables nommés par un HMAC (64 hex, 32 Mio au plus), manifestes
   versionnés (`If-Match: "v<n>"` / `If-None-Match: *`, 412 si périmé, 409 si des objets manquent) avec en-tête clair (dérivation,
   clé enveloppée) et blob chiffré ; manifestes et objets gardés 30 jours quel que soit leur nombre (le dernier toujours), ménage toutes
-  les 6 h ; `DELETE /backup` = suppression douce (30 jours).
+  les 6 h (`gcAllBackups` : aussi les dossiers des comptes retirés, dont la sauvegarde restante passe en suppression douce, purgée
+  après 30 jours, dossier effacé une fois vide ; données d'un hébergé retiré gardées) ; `DELETE /backup` = suppression douce (30 jours).
 - Relais : `POST /relay/google/token` et `GET /relay/google/client` (identifiant public du client et adresses de retour) seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
   avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte). Le reste se fait
   depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS

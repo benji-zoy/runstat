@@ -31,6 +31,7 @@ import { CALLBACK_PATH, preferredOrigin, stravaStatus } from './strava-connect.m
 import { CONNECT_PATHS, connectStatus } from './oauth-connect.mjs';
 import { resolveUser, saveUsers, userPaths } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
+import { BackupStore } from './backup-store.mjs';
 import { jobs } from './queue.mjs';
 import { exported, README, zipStream } from '#engine/archive/zip-writer.ts';
 
@@ -329,6 +330,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       for (const u of users) if (u.mode === 'hosted') ensureUserDirs(userPaths(acc, u));
       // Compte retiré ou passé en hébergé : plus d'accès public (passkeys, sessions, invitations)
       for (const old of acc.users) if (old.mode === 'local' && !users.some((u) => u.id === old.id && u.mode === 'local')) authStore().revokeAll(old.id);
+      // Compte local-first retiré : sa sauvegarde chiffrée part en suppression douce (purgée après 30 jours par le ménage)
+      for (const old of acc.users) if (old.mode === 'local' && !users.some((u) => u.id === old.id)) new BackupStore(userPaths(acc, old).base, now).softDelete();
       log.log?.(`Comptes mis à jour par ${user.id} : ${users.map((u) => u.id).join(', ')}`);
       return send(res, 200, users);
     } catch (e) {

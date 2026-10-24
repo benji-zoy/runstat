@@ -21,7 +21,7 @@ import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
 import { oauthConnectRoutes } from './oauth-connect.mjs';
 import { createPublicApi, parseOrigins } from './public-api.mjs';
-import { BackupStore } from './backup-store.mjs';
+import { gcAllBackups } from './backup-store.mjs';
 
 const PORT = Number(process.env.SYNC_PORT ?? 8787);
 const INTERVAL_MS = Number(process.env.SYNC_INTERVAL_MIN ?? 180) * 60_000;
@@ -103,15 +103,13 @@ listen('tailnet', PORT + 1);
 createServer(createPublicApi({ accounts, usersDir: dir, appOrigins: APP_ORIGINS, googleRedirects: GOOGLE_REDIRECTS, quotaBytes: BACKUP_QUOTA }))
   .listen(PORT + 2, () => console.log(`API (public) sur le port ${PORT + 2}${APP_ORIGINS.length ? ` pour ${APP_ORIGINS.join(', ')}` : ', aucune origine autorisée'}`));
 
-// Ménage des sauvegardes local-first (manifestes de plus de 30 jours, objets orphelins, suppressions anciennes), toutes les 6 h
+// Ménage des sauvegardes local-first (manifestes de plus de 30 jours, objets orphelins, suppressions anciennes) et de celles des
+// comptes retirés (backup-store.mjs, gcAllBackups), toutes les 6 h
 const backupGc = () => {
-  const acc = accounts();
-  for (const u of acc.users) if (u.mode === 'local') {
-    try {
-      new BackupStore(userPaths(acc, u).base).gc();
-    } catch (e) {
-      console.error(`Sauvegarde de ${u.id} : ménage impossible (${e.message})`);
-    }
+  try {
+    gcAllBackups(dir, accounts().users);
+  } catch (e) {
+    console.error(`Sauvegardes : ménage impossible (${e.message})`);
   }
 };
 if (schedule) setInterval(backupGc, 6 * 3_600_000).unref();

@@ -169,8 +169,10 @@ export class AuthStore {
     return next.length !== all.length;
   }
 
-  /** Accès réinitialisé (propriétaire) ou compte supprimé : passkeys, sessions et codes du compte effacés */
+  /** Accès réinitialisé (propriétaire) ou compte supprimé : passkeys, sessions, codes et identifiant WebAuthn du compte effacés */
   revokeAll(userId) {
+    const handles = this.#read('handles.json', {});
+    if (userId in handles) (delete handles[userId], this.#write('handles.json', handles));
     this.#write('credentials.json', this.#read('credentials.json', []).filter((c) => c.userId !== userId));
     this.#write('sessions.json', this.#read('sessions.json', []).filter((s) => s.userId !== userId));
     this.#write('codes.json', this.#read('codes.json', []).filter((c) => c.userId !== userId));
