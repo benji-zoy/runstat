@@ -53,6 +53,28 @@ export class MeService {
     return json;
   }
 
+  /** Lien d'invitation d'un proche local-first (compte créé s'il n'existe pas), valable 7 jours */
+  invite(id: string, name?: string): Promise<{ link: string; expiresAt: string }> {
+    return this.post('api/admin/invitations', { id, name });
+  }
+
+  /** Passkeys, sessions et liens du compte révoqués, puis nouveau lien d'invitation */
+  reset(id: string): Promise<{ link: string | null; expiresAt?: string }> {
+    return this.post(`api/admin/users/${encodeURIComponent(id)}/reset`, {});
+  }
+
+  private async post<T>(url: string, body: unknown): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'POST', headers: { 'X-RunStat': 'sync', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch {
+      throw new EntryError(['Service de synchro injoignable']);
+    }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new EntryError(json.errors ?? [json.error ?? `HTTP ${res.status}`]);
+    return json;
+  }
+
   async saveAccounts(list: Account[]): Promise<Account[]> {
     let res: Response;
     try {

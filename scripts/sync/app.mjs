@@ -16,6 +16,8 @@
 //     (scripts/sync/strava-connect.mjs : les deux GET sont des navigations, protégées par le state lié au compte)
 //   GET /api/coros/connect|callback, /api/google/connect|callback → connexion COROS et Google (oauth-connect.mjs)
 //   GET|PUT /api/admin/users → comptes de l'instance (propriétaire, par le tailnet seulement)
+//   POST /api/admin/invitations { id, name } → lien d'invitation d'un proche local-first (compte créé au besoin, 7 jours)
+//   POST /api/admin/users/<id>/reset → passkeys, sessions et codes du compte local-first révoqués, nouvelle invitation
 import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -26,6 +28,7 @@ import { fileKey, readSources } from './sources.mjs';
 import { CALLBACK_PATH, preferredOrigin, stravaStatus } from './strava-connect.mjs';
 import { CONNECT_PATHS, connectStatus } from './oauth-connect.mjs';
 import { resolveUser, saveUsers, userPaths } from './accounts.mjs';
+import { AuthStore } from './auth-store.mjs';
 import { jobs } from './queue.mjs';
 
 const MAX_BODY = 64 * 1024;
@@ -105,7 +108,7 @@ export function ensureUserDirs(paths) {
  * `strava` : routes de connexion (stravaConnectRoutes) ; `nextAt()` : prochaine synchro planifiée ;
  * `quotaBytes` : place par compte hébergé (instance à plusieurs comptes) ; `maxArchive` : taille d'une archive Strava.
  */
-export function createApp({ zone, accounts, queue, strava, oauth, nextAt = () => null, quotaBytes = 2048 * 2 ** 20, maxArchive = 2 * 2 ** 30, log = console, now = Date.now }) {
+export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null, publicUrl = null, nextAt = () => null, quotaBytes = 2048 * 2 ** 20, maxArchive = 2 * 2 ** 30, log = console, now = Date.now }) {
   const sizes = new Map();
   /** Place occupée par un compte, recalculée au plus une fois par minute */
   const used = (id, base) => {
@@ -223,6 +226,34 @@ export function createApp({ zone, accounts, queue, strava, oauth, nextAt = () =>
     createReadStream(file).pipe(res);
   }
 
+  const authStore = () => new AuthStore(accounts().dir, now);
+  /** Lien d'invitation vers l'appli publique (le fragment n'est jamais envoyé au serveur de l'appli) */
+  function invitation(userId) {
+    const { code, expiresAt } = authStore().createCode(userId, 'invite');
+    return { link: `${appUrl}rejoindre#nas=${encodeURIComponent(publicUrl)}&code=${code}`, expiresAt };
+  }
+
+  /** Invitation d'un proche local-first : compte créé s'il n'existe pas (mode local, sans login Tailscale) */
+  async function invite(req, res) {
+    if (!appUrl || !publicUrl) return send(res, 503, { error: 'accès public non configuré (RUNSTAT_APP_URL, RUNSTAT_PUBLIC_URL)' });
+    const acc = accounts();
+    try {
+      const body = await readBody(req);
+      if (!body || typeof body !== 'object' || typeof body.id !== 'string') throw new InvalidEntry(['identifiant attendu']);
+      let target = acc.users.find((u) => u.id === body.id);
+      if (!target) {
+        const users = saveUsers(acc.dir, [...acc.users.map(({ legacy, ...u }) => u), { id: body.id, name: body.name, role: 'member', mode: 'local', logins: [] }]);
+        target = users.find((u) => u.id === body.id);
+        log.log?.(`Compte local-first créé : ${target.id}`);
+      }
+      if (target.mode !== 'local') throw new InvalidEntry([`${target.id} est un compte hébergé (login Tailscale), pas local-first`]);
+      return send(res, 201, invitation(target.id));
+    } catch (e) {
+      if (e instanceof InvalidEntry) return send(res, 400, { error: e.message, errors: e.errors });
+      throw e;
+    }
+  }
+
   /** Comptes de l'instance : le propriétaire garde son compte, son rôle et le login de la requête */
   async function admin(req, res, user, headers) {
     const acc = accounts();
@@ -238,6 +269,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, nextAt = () =>
       if (errors.length) throw new InvalidEntry(errors);
       const users = saveUsers(acc.dir, body);
       for (const u of users) if (u.mode === 'hosted') ensureUserDirs(userPaths(acc, u));
+      // Compte retiré ou passé en hébergé : plus d'accès public (passkeys, sessions, invitations)
+      for (const old of acc.users) if (old.mode === 'local' && !users.some((u) => u.id === old.id && u.mode === 'local')) authStore().revokeAll(old.id);
       log.log?.(`Comptes mis à jour par ${user.id} : ${users.map((u) => u.id).join(', ')}`);
       return send(res, 200, users);
     } catch (e) {
@@ -298,8 +331,22 @@ export function createApp({ zone, accounts, queue, strava, oauth, nextAt = () =>
       return send(res, 200, { id: user.id, name: user.name, role: user.role, mode: user.mode, multi: acc.multi, admin: who.admin });
     }
     if (path.startsWith('/api/data/')) return data(req, res, path.slice('/api/data/'.length), paths);
+    if (path.startsWith('/api/admin/') && !who.admin) return send(res, 403, { error: 'réservé au propriétaire, par l’adresse Tailscale' });
+    if (path === '/api/admin/invitations') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'méthode non autorisée' });
+      return await invite(req, res);
+    }
+    const reset = path.match(/^\/api\/admin\/users\/([a-z0-9-]{1,32})\/reset$/);
+    if (reset) {
+      if (req.method !== 'POST') return send(res, 405, { error: 'méthode non autorisée' });
+      const target = acc.users.find((u) => u.id === reset[1]);
+      if (!target || target.mode !== 'local') return send(res, 404, { error: 'aucun compte local-first à ce nom' });
+      authStore().revokeAll(target.id);
+      log.log?.(`Accès réinitialisé pour ${target.id} par ${user.id}`);
+      if (!appUrl || !publicUrl) return send(res, 200, { link: null });
+      return send(res, 200, invitation(target.id));
+    }
     if (path === '/api/admin/users') {
-      if (!who.admin) return send(res, 403, { error: 'réservé au propriétaire, par l’adresse Tailscale' });
       try {
         return await admin(req, res, user, req.headers);
       } catch (e) {
