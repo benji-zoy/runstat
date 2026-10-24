@@ -1,7 +1,7 @@
 // Client COROS MCP (HTTP sans session, OAuth 2.0) en lecture seule.
-// Autorisation : enregistrement dynamique d'un client public, puis code + PKCE avec redirection
-// loopback, sur le poste (le serveur refuse le device flow à ces clients). Le refresh token est
-// ensuite copié sur le volume du NAS.
+// Autorisation : enregistrement dynamique d'un client public, puis code + PKCE (le serveur refuse le device flow à ces
+// clients), depuis le site (Réglages › « Connecter COROS », coros-connect.mjs) ou en secours sur le poste (loopback,
+// npm run auth -- coros, puis copie des jetons sur le NAS).
 import { readSecret, writeSecret, ReauthRequired } from './secrets.mjs';
 import { pkce, loopbackCode } from './loopback.mjs';
 import { fetchRetry } from './retry.mjs';
@@ -45,24 +45,28 @@ async function postForm(url, params) {
 }
 
 let meta;
-async function metadata() {
+export async function metadata() {
   if (meta) return meta;
   const res = await fetchRetry(`${ISSUER}/.well-known/oauth-authorization-server`);
   if (!res.ok) throw new Error(`Métadonnées OAuth COROS : HTTP ${res.status}`);
   return (meta = await res.json());
 }
 
-/** Enregistre (une fois) un client public. Le serveur n'accorde que authorization_code + refresh_token. */
-async function registerClient(meta) {
-  const existing = readSecret('coros-client.json');
-  if (existing?.issuer === ISSUER && existing.redirect === REDIRECT) return existing;
+/**
+ * Client public pour `redirect` (loopback du poste, ou adresse du site : coros-connect.mjs). Celui du compte est réutilisé
+ * s'il a la même adresse de retour ; sinon un nouveau est enregistré. `persist` : écrit tout de suite dans coros-client.json
+ * (poste) ; le site ne l'écrit qu'après un échange réussi, pour ne jamais séparer le client des jetons qu'il a obtenus.
+ */
+export async function registerClient(meta, { redirect = REDIRECT, persist = true, dir } = {}) {
+  const existing = readSecret('coros-client.json', dir);
+  if (existing?.issuer === ISSUER && existing.redirect === redirect) return existing;
   const res = await fetch(meta.registration_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       client_name: 'RunStat sync',
       grant_types: ['authorization_code', 'refresh_token'],
-      redirect_uris: [REDIRECT],
+      redirect_uris: [redirect],
       token_endpoint_auth_method: 'none',
       scope: SCOPE,
     }),
@@ -76,14 +80,14 @@ async function registerClient(meta) {
   const client = {
     issuer: ISSUER,
     client_id: body.client_id,
-    redirect: REDIRECT,
+    redirect,
     registeredAt: new Date().toISOString(),
   };
-  writeSecret('coros-client.json', client);
+  if (persist) writeSecret('coros-client.json', client, dir);
   return client;
 }
 
-function saveTokens(body, previous) {
+function saveTokens(body, previous, dir) {
   const tokens = {
     access_token: body.access_token,
     // Le serveur peut faire tourner le refresh token : on garde le nouveau dès qu'il arrive.
@@ -92,11 +96,50 @@ function saveTokens(body, previous) {
     scope: body.scope ?? previous?.scope,
     obtainedAt: body.refresh_token ? new Date().toISOString() : previous?.obtainedAt,
   };
-  writeSecret('coros-tokens.json', tokens);
+  writeSecret('coros-tokens.json', tokens, dir);
   return tokens;
 }
 
-/** Autorisation interactive sur le poste (navigateur + loopback, PKCE) */
+/** Adresse d'autorisation COROS (code + PKCE, ressource MCP) */
+export function authorizeUrl(meta, client, { redirect, challenge, state }) {
+  const url = new URL(meta.authorization_endpoint);
+  url.search = new URLSearchParams({
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: redirect,
+    scope: SCOPE,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state,
+    resource: COROS_MCP,
+  });
+  return url.toString();
+}
+
+/**
+ * Échange du code contre les jetons ; écrit le client puis les jetons dans `dir` (secrets du compte).
+ * Renvoie seulement les scopes : les jetons ne sortent jamais de ce module.
+ */
+export async function exchangeCode(meta, client, { code, verifier, redirect, dir }) {
+  const res = await postForm(meta.token_endpoint, {
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: verifier,
+    redirect_uri: redirect,
+    client_id: client.client_id,
+    resource: COROS_MCP,
+  });
+  if (res.status !== 200 || !res.body.access_token) {
+    throw new Error(
+      `Échange du code COROS : ${res.body.error} ${res.body.error_description ?? ''}`.trim(),
+    );
+  }
+  writeSecret('coros-client.json', client, dir);
+  const t = saveTokens(res.body, undefined, dir);
+  return { scope: t.scope, refresh: Boolean(t.refresh_token), expiresAt: t.expires_at };
+}
+
+/** Autorisation interactive sur le poste (navigateur + loopback, PKCE), en secours de Réglages › « Connecter COROS » */
 export async function authorizeCoros() {
   const meta = await metadata();
   const client = await registerClient(meta);
@@ -105,38 +148,12 @@ export async function authorizeCoros() {
     port: Number(new URL(REDIRECT).port),
     path: new URL(REDIRECT).pathname,
     state,
-    authorize: (redirect) => {
-      const url = new URL(meta.authorization_endpoint);
-      url.search = new URLSearchParams({
-        response_type: 'code',
-        client_id: client.client_id,
-        redirect_uri: redirect,
-        scope: SCOPE,
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-        state,
-        resource: COROS_MCP,
-      });
-      return url.toString();
-    },
+    authorize: (redirect) => authorizeUrl(meta, client, { redirect, challenge, state }),
   });
-  const res = await postForm(meta.token_endpoint, {
-    grant_type: 'authorization_code',
-    code,
-    code_verifier: verifier,
-    redirect_uri: REDIRECT,
-    client_id: client.client_id,
-    resource: COROS_MCP,
-  });
-  if (res.status !== 200) {
-    throw new Error(
-      `Échange du code COROS : ${res.body.error} ${res.body.error_description ?? ''}`,
-    );
-  }
-  const t = saveTokens(res.body);
-  const ttl = Math.round((t.expires_at - Date.now()) / 60000);
+  const t = await exchangeCode(meta, client, { code, verifier, redirect: REDIRECT });
+  const ttl = Math.round((t.expiresAt - Date.now()) / 60000);
   console.log(
-    `COROS autorisé (scopes : ${t.scope ?? '?'}, access token ${ttl} min, refresh token : ${t.refresh_token ? 'oui' : 'NON'}).`,
+    `COROS autorisé (scopes : ${t.scope ?? '?'}, access token ${ttl} min, refresh token : ${t.refresh ? 'oui' : 'NON'}).`,
   );
 }
 

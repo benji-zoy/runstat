@@ -1,6 +1,6 @@
 // Saisie depuis le site (objectifs, bilans, classements, réglages, sources) : validation et écriture dans data-raw/.
 // Fonctions pures (validate*) testées par sync.test.mjs ; seuls les champs connus sont gardés, jamais de nom d'un autre coureur.
-import { writeFileSync, renameSync, mkdirSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, renameSync, mkdirSync, existsSync, readFileSync, unlinkSync, chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ACTIVITY_ID, ACTIVITY_SOURCES, HEALTH_SOURCES, fileKey } from './sources.mjs';
 
@@ -224,10 +224,12 @@ export function validateResult(activityId, obj, today = new Date().toISOString()
 // ---------- fichiers ----------
 
 /** Écriture atomique : un lecteur (build-data) ne voit jamais un fichier à moitié écrit */
+/** Écriture atomique, droits explicites (0644) : sur le NAS, les ACL héritées de DSM ouvriraient le fichier à tous */
 export function writeJsonAtomic(file, value) {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
+  writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', { mode: 0o644 });
+  chmodSync(tmp, 0o644);
   renameSync(tmp, file);
 }
 

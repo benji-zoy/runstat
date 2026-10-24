@@ -61,7 +61,9 @@ fi
 
 stamp=$(date +%Y%m%d-%H%M%S)
 backup="migration-$stamp"
+# Droits explicites partout : sur le NAS, les ACL héritées de DSM ouvrent les nouveaux dossiers à tous (rwxrwxrwx+)
 mkdir "$backup"
+chmod 700 "$backup"
 for src in data-raw html/data secrets; do
   if [ -d "$src" ]; then cp -Rp "$src" "$backup/$(echo "$src" | tr / -)"; fi
 done
@@ -72,8 +74,9 @@ before_snap=$(fingerprint html/data)
 before_sec=$(fingerprint secrets)
 
 mkdir -p "users/$owner"
+chmod 755 users "users/$owner"
 mv data-raw "users/$owner/data-raw"
-if [ -d html/data ]; then mv html/data "users/$owner/snapshot"; else mkdir "users/$owner/snapshot"; fi
+if [ -d html/data ]; then mv html/data "users/$owner/snapshot"; else mkdir "users/$owner/snapshot" && chmod 755 "users/$owner/snapshot"; fi
 if [ -d secrets ]; then mv secrets "users/$owner/secrets"; else mkdir "users/$owner/secrets"; fi
 
 [ "$before_raw" = "$(fingerprint "users/$owner/data-raw")" ] &&
@@ -85,6 +88,7 @@ chmod 700 "users/$owner/secrets"
 find "users/$owner/secrets" -type f -exec chmod 600 {} +
 printf '[\n  {\n    "id": "%s",\n    "name": "%s",\n    "role": "owner",\n    "mode": "hosted",\n    "logins": ["%s"]\n  }\n]\n' \
   "$owner" "$name" "$login" > users/users.json.tmp
+chmod 644 users/users.json.tmp
 mv users/users.json.tmp users/users.json
 [ -z "$owner_chown" ] || chown -R "$owner_chown" users
 echo "Migré : users/$owner/ ($(count "users/$owner") fichiers), users/users.json."

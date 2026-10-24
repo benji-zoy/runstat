@@ -78,6 +78,29 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             }
           </div>
         </div>
+        @if (usesCoros()) {
+          <div class="field wide">Connexion COROS
+            <span class="hint">{{ corosConnection() }}</span>
+            <div class="upload">
+              <a class="btn primary" [href]="connectUrl('coros')">{{ sync.status()?.corosConnected ? 'Reconnecter COROS' : 'Connecter COROS' }}</a>
+            </div>
+            <span class="hint">COROS te demande d’autoriser RunStat à lire tes activités et ta santé ; tu reviens ensuite ici.
+              Une seule connexion à la fois : le jeton COROS change à chaque renouvellement.</span>
+          </div>
+        }
+        @if (form.controls.health.value === 'google') {
+          <div class="field wide">Connexion Google Health
+            <span class="hint">{{ googleConnection() }}</span>
+            @if (sync.status()?.googleClient) {
+              <div class="upload">
+                <a class="btn primary" [href]="connectUrl('google')">{{ sync.status()?.googleConnected ? 'Reconnecter Google' : 'Connecter Google' }}</a>
+              </div>
+              <span class="hint">Passe par l’appli Google Cloud du propriétaire : il doit t’y avoir ajouté comme testeur, et y avoir
+                déclaré l’adresse de retour <code>{{ stravaOrigin() }}/api/google/callback</code>. En mode test, Google redemande
+                l’autorisation chaque semaine.</span>
+            }
+          </div>
+        }
         @if (form.controls.activities.value === 'strava') {
           <div class="field wide">Synchro Strava
             <span class="hint">{{ stravaConnection() }}</span>
@@ -108,7 +131,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               <span class="hint">Ils restent sur le NAS et ne s’affichent plus ensuite.</span>
             } @else {
               <div class="upload">
-                <a class="btn primary" [href]="connectUrl()">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
+                <a class="btn primary" [href]="connectUrl('strava')">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
                 <button type="button" class="btn" (click)="editClient()">Changer d’appli</button>
               </div>
               <span class="hint">Strava te demande d’autoriser RunStat à lire tes sorties : laisse les cases cochées
@@ -174,8 +197,26 @@ export class AthleteFormComponent {
   protected readonly stravaOrigin = computed(() => this.sync.status()?.stravaOrigin ?? location.origin);
   /** Domaine de rappel à déclarer dans l'appli Strava */
   protected readonly callbackDomain = computed(() => new URL(this.stravaOrigin()).hostname);
-  /** Toujours par cette adresse, même depuis le réseau local : Strava n'accepte que le domaine de rappel */
-  protected readonly connectUrl = computed(() => `${this.stravaOrigin()}/api/strava/connect`);
+  /** Toujours par cette adresse (Tailscale), même depuis le réseau local : adresse de retour déclarée chez chaque service */
+  protected connectUrl(source: 'strava' | 'coros' | 'google' = 'strava'): string {
+    return `${this.stravaOrigin()}/api/${source}/connect`;
+  }
+  /** Valeurs du formulaire (pas des signaux) : relues à chaque rendu */
+  protected usesCoros(): boolean {
+    return this.form.controls.activities.value === 'coros' || this.form.controls.health.value === 'coros';
+  }
+  /** État des jetons COROS et Google du compte (sur le NAS) */
+  protected readonly corosConnection = computed(() => {
+    const st = this.sync.status();
+    if (st?.state.coros?.reauthSince || st?.state.corosHealth?.reauthSince) return 'À ré-autoriser : COROS a refusé les jetons, reconnecte-toi.';
+    return st?.corosConnected ? 'Connecté.' : 'Non connecté.';
+  });
+  protected readonly googleConnection = computed(() => {
+    const st = this.sync.status();
+    if (!st?.googleClient) return 'Indisponible : le propriétaire n’a pas déposé d’appli Google Cloud sur le NAS.';
+    if (st.state.google?.reauthSince) return 'À ré-autoriser : Google a refusé les jetons (chaque semaine en mode test), reconnecte-toi.';
+    return st.googleConnected ? 'Connecté.' : 'Non connecté.';
+  });
   /** Presse-papiers : HTTPS ou localhost seulement */
   protected readonly canCopy = Boolean(navigator.clipboard) && isSecureContext;
   protected readonly copied = signal(false);

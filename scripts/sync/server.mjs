@@ -17,6 +17,7 @@ import { accountsLoader, runEnv, userPaths } from './accounts.mjs';
 import { createApp, ensureUserDirs } from './app.mjs';
 import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
+import { oauthConnectRoutes } from './oauth-connect.mjs';
 
 const PORT = Number(process.env.SYNC_PORT ?? 8787);
 const INTERVAL_MS = Number(process.env.SYNC_INTERVAL_MIN ?? 180) * 60_000;
@@ -48,8 +49,11 @@ function startRun(userId, job, onLine) {
   if (!user) throw new Error(`compte ${userId} supprimé`);
   const paths = userPaths(acc, user);
   ensureUserDirs(paths);
+  const owner = acc.users.find((u) => u.role === 'owner');
+  // Client Google du propriétaire, pour les proches qui n'ont pas le leur (google-health.mjs)
+  const env = { ...runEnv(paths, dir), RUNSTAT_GOOGLE_CLIENT: join(userPaths(acc, owner).secrets, 'google-client.json') };
   console.log(`--- ${userId} : ${job.trigger}`);
-  const child = spawn(process.execPath, [join(root, 'scripts/sync/run.mjs'), ...job.args], { cwd: root, env: runEnv(paths, dir) });
+  const child = spawn(process.execPath, [join(root, 'scripts/sync/run.mjs'), ...job.args], { cwd: root, env });
   children.add(child);
   const keep = (chunk, out) => {
     out.write(chunk);
@@ -78,7 +82,8 @@ function plan() {
 
 const queue = new RunQueue({ start: startRun });
 const strava = stravaConnectRoutes();
-const common = { accounts, queue, strava, nextAt: () => nextAt, quotaBytes: QUOTA_BYTES, maxArchive: MAX_ARCHIVE };
+const oauth = oauthConnectRoutes();
+const common = { accounts, queue, strava, oauth, nextAt: () => nextAt, quotaBytes: QUOTA_BYTES, maxArchive: MAX_ARCHIVE };
 
 const listen = (zone, port) =>
   createServer(createApp({ zone, ...common })).listen(port, () => console.log(`API (${zone}) sur le port ${port}`));

@@ -4,7 +4,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter, take } from 'rxjs';
 import { DataService } from './core/data.service';
 import { ThemeService } from './core/theme.service';
-import { SyncService } from './core/sync.service';
+import { CONNECT_SOURCES, SyncService } from './core/sync.service';
 import { PwaService } from './core/pwa.service';
 import { day } from './core/format';
 import { CAPABILITIES, sourcesOf } from './core/sources';
@@ -41,16 +41,16 @@ export class App {
   });
 
   constructor() {
-    // Retour de la connexion Strava (?strava=ok|refus&raison=…) : message bref, puis paramètres retirés de l'adresse
+    // Retour d'une connexion (?strava|coros|google=ok|refus&raison=…) : message bref, puis paramètres retirés de l'adresse
     const router = inject(Router);
     router.events
       .pipe(filter((e) => e instanceof NavigationEnd), take(1), takeUntilDestroyed())
       .subscribe(() => {
         const q = router.routerState.snapshot.root.queryParamMap;
-        const result = q.get('strava');
-        if (!result) return;
-        this.sync.stravaReturned(result, q.get('raison'));
-        void router.navigate([], { queryParams: { strava: null, raison: null }, queryParamsHandling: 'merge', replaceUrl: true });
+        const source = CONNECT_SOURCES.find((s) => q.get(s));
+        if (!source) return;
+        this.sync.connectionReturned(source, q.get(source)!, q.get('raison'));
+        void router.navigate([], { queryParams: { [source]: null, raison: null }, queryParamsHandling: 'merge', replaceUrl: true });
       });
   }
 

@@ -3,7 +3,8 @@
 //   GET  /api/me    → { id, name, role, mode, multi, admin } (compte de la requête)
 //   GET  /api/data/coros.json | routes.json → instantané du compte (nginx y renvoie /data/)
 //   GET  /api/sync  → { running, queued, startedAt, nextAt, state (sync-state.json), log (fin du dernier run),
-//                       stravaClient, stravaConnected, stravaAthlete (présence de l'appli et des jetons, jamais leur contenu),
+//                       stravaClient, stravaConnected, stravaAthlete, corosConnected, googleConnected, googleClient
+//                       (présence des applis et des jetons, jamais leur contenu),
 //                       stravaOrigin (adresse du site pour la connexion Strava) }
 //   POST /api/sync  → 202 lancée ou en file | 409 déjà en cours | 429 trop tôt après la précédente
 //   POST /api/fit?id=<labelId | strava:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
@@ -13,8 +14,9 @@
 //     202 | 400 | 413 | 507
 //   PUT /api/strava/client, GET /api/strava/connect, GET /api/strava/callback → connexion Strava depuis Réglages
 //     (scripts/sync/strava-connect.mjs : les deux GET sont des navigations, protégées par le state lié au compte)
+//   GET /api/coros/connect|callback, /api/google/connect|callback → connexion COROS et Google (oauth-connect.mjs)
 //   GET|PUT /api/admin/users → comptes de l'instance (propriétaire, par le tailnet seulement)
-import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ACTIVITY_ID, InvalidEntry, deleteResult, readJsonFile, saveResult, validateAthlete, validateGoals, validateSources,
@@ -22,6 +24,7 @@ import {
 } from './entries.mjs';
 import { fileKey, readSources } from './sources.mjs';
 import { CALLBACK_PATH, preferredOrigin, stravaStatus } from './strava-connect.mjs';
+import { CONNECT_PATHS, connectStatus } from './oauth-connect.mjs';
 import { resolveUser, saveUsers, userPaths } from './accounts.mjs';
 import { jobs } from './queue.mjs';
 
@@ -83,11 +86,18 @@ function dirSize(dir) {
   return total;
 }
 
-/** Dossiers d'un compte créés au besoin (secrets lisibles par le seul service) */
+/**
+ * Dossiers d'un compte créés au besoin, droits explicites (secrets lisibles par le seul service) : sur le NAS, les ACL
+ * héritées de DSM ouvriraient sinon les nouveaux dossiers en écriture à tous (rwxrwxrwx+).
+ */
 export function ensureUserDirs(paths) {
-  mkdirSync(paths.raw, { recursive: true });
-  mkdirSync(paths.snapshot, { recursive: true });
-  mkdirSync(paths.secrets, { recursive: true, mode: 0o700 });
+  const dirs = [[paths.base, 0o755], [paths.raw, 0o755], [paths.snapshot, 0o755], [paths.secrets, 0o700]];
+  for (const [dir, mode] of dirs) {
+    if (!dir) continue;
+    const fresh = !existsSync(dir);
+    mkdirSync(dir, { recursive: true, mode });
+    if (fresh || mode === 0o700) chmodSync(dir, mode);
+  }
 }
 
 /**
@@ -95,7 +105,7 @@ export function ensureUserDirs(paths) {
  * `strava` : routes de connexion (stravaConnectRoutes) ; `nextAt()` : prochaine synchro planifiée ;
  * `quotaBytes` : place par compte hébergé (instance à plusieurs comptes) ; `maxArchive` : taille d'une archive Strava.
  */
-export function createApp({ zone, accounts, queue, strava, nextAt = () => null, quotaBytes = 2048 * 2 ** 20, maxArchive = 2 * 2 ** 30, log = console, now = Date.now }) {
+export function createApp({ zone, accounts, queue, strava, oauth, nextAt = () => null, quotaBytes = 2048 * 2 ** 20, maxArchive = 2 * 2 ** 30, log = console, now = Date.now }) {
   const sizes = new Map();
   /** Place occupée par un compte, recalculée au plus une fois par minute */
   const used = (id, base) => {
@@ -245,12 +255,19 @@ export function createApp({ zone, accounts, queue, strava, nextAt = () => null, 
     if (!who.user) return send(res, who.status, { error: who.error });
     const { user } = who;
     const paths = userPaths(acc, user);
+    const owner = acc.users.find((u) => u.role === 'owner');
     const ctx = {
       id: user.id,
       raw: paths.raw,
       secrets: paths.secrets,
-      // Connexion Strava : synchro lancée aussitôt si Strava est la source d'activités
-      onConnected: () => readSources(paths.raw).activities === 'strava' && enqueue(user, jobs.full('Strava connecté')),
+      // Client Google du propriétaire : un seul projet Google Cloud par instance
+      googleClientFile: join(userPaths(acc, owner).secrets, 'google-client.json'),
+      // Connexion d'une source : synchro lancée aussitôt si le compte l'utilise
+      onConnected: (source = 'strava') => {
+        const s = readSources(paths.raw);
+        const used = source === 'strava' ? s.activities === 'strava' : source === 'google' ? s.health === 'google' : s.activities === 'coros' || s.health === 'coros';
+        if (used) enqueue(user, jobs.full(`${source} connecté`));
+      },
     };
 
     // Navigations du navigateur (redirections OAuth) : sans en-tête X-RunStat, protégées par le state lié au compte
@@ -261,6 +278,15 @@ export function createApp({ zone, accounts, queue, strava, nextAt = () => null, 
       } catch (e) {
         log.error?.('Connexion Strava :', e.message);
         return send(res, 500, { error: 'connexion Strava impossible' });
+      }
+    }
+    if (CONNECT_PATHS.includes(path)) {
+      if (req.method !== 'GET') return send(res, 405, { error: 'méthode non autorisée' });
+      try {
+        return await oauth.handle(path, ctx, req, res, url);
+      } catch (e) {
+        log.error?.('Connexion :', e.message);
+        return send(res, 500, { error: 'connexion impossible' });
       }
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -330,6 +356,7 @@ export function createApp({ zone, accounts, queue, strava, nextAt = () => null, 
       nextAt: user.mode === 'hosted' ? nextAt() : null,
       state: readState(paths.raw),
       ...stravaStatus(paths.secrets),
+      ...connectStatus(paths.secrets, ctx.googleClientFile),
       stravaOrigin: preferredOrigin(),
     });
   };
