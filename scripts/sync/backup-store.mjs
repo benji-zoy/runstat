@@ -173,3 +173,22 @@ export class BackupStore {
     return true;
   }
 }
+
+/**
+ * Ménage de toutes les sauvegardes du dossier des comptes (toutes les 6 h, server.mjs) : gc() des comptes local-first, et
+ * pour les dossiers de comptes retirés de users.json, sauvegarde restante mise en suppression douce puis purgée après
+ * 30 jours, dossier effacé une fois vide. Les données d'un compte hébergé retiré (data-raw, snapshot, secrets) restent.
+ */
+export function gcAllBackups(usersDir, users, now = Date.now) {
+  if (!existsSync(usersDir)) return;
+  const known = new Map(users.map((u) => [u.id, u]));
+  for (const e of readdirSync(usersDir, { withFileTypes: true })) {
+    if (!e.isDirectory() || e.name === 'auth' || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(e.name)) continue;
+    const user = known.get(e.name);
+    if (user && user.mode !== 'local') continue;
+    const store = new BackupStore(join(usersDir, e.name), now);
+    if (!user) store.softDelete();
+    store.gc();
+    if (!user && !readdirSync(store.base).length) rmSync(store.base, { recursive: true, force: true });
+  }
+}

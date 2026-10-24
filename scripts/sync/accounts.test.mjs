@@ -5,7 +5,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -442,6 +442,27 @@ test('suppression : un proche hébergé efface son compte, jamais celui d’un a
     assert.equal((await fetch(`http://127.0.0.1:${zones.tailnet.address().port}/api/me`, { headers: { 'Tailscale-User-Login': 'bob@exemple.fr' } })).status, 403);
   } finally {
     for (const s of Object.values(zones)) s.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Proches : retirer un proche local-first révoque son accès et met sa sauvegarde en suppression douce', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runstat-retrait-'));
+  writeFileSync(join(dir, 'users.json'), JSON.stringify(USERS));
+  mkdirSync(join(dir, 'carol', 'backup', 'manifests'), { recursive: true });
+  const accounts = accountsLoader(dir, null);
+  const server = await startApp('tailnet', accounts, new RunQueue({ start: () => 0 }));
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/users`, {
+      method: 'PUT',
+      headers: { 'Tailscale-User-Login': 'alice@exemple.fr', 'X-RunStat': 'sync', 'Content-Type': 'application/json' },
+      body: JSON.stringify(USERS.filter((u) => u.id !== 'carol')),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(existsSync(join(dir, 'carol', 'backup')), false);
+    assert.ok(readdirSync(join(dir, 'carol')).some((f) => f.startsWith('backup-supprimee-')));
+  } finally {
+    server.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

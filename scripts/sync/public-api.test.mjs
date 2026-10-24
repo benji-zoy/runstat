@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { accountsLoader } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
-import { BackupStore } from './backup-store.mjs';
+import { BackupStore, gcAllBackups } from './backup-store.mjs';
 import { createPublicApi } from './public-api.mjs';
 import { decodeCbor, verifyRegistration, WebAuthnError } from './webauthn.mjs';
 
@@ -21,6 +21,7 @@ const USERS = [
   { id: 'carol', name: 'Carol', role: 'member', mode: 'local', logins: [] },
   { id: 'dave', name: 'Dave', role: 'member', mode: 'local', logins: [] },
   { id: 'erin', name: 'Erin', role: 'member', mode: 'local', logins: [] },
+  { id: 'frank', name: 'Frank', role: 'member', mode: 'local', logins: [] },
 ];
 const b64 = (b) => Buffer.from(b).toString('base64url');
 const sha = (d) => createHash('sha256').update(d).digest();
@@ -494,4 +495,41 @@ test('suppression du compte local-first : ré-authentification, puis sauvegarde,
   assert.equal((await call('GET', '/auth/session', { token })).status, 401);
   assert.deepEqual(auth().credentials('erin'), []);
   assert.ok(readdirSync(join(dir, 'erin')).some((f) => f.startsWith('backup-supprimee-')));
+});
+
+test('ménage : sauvegarde d’un compte retiré mise en suppression douce puis purgée, données d’un hébergé retiré gardées', () => {
+  const root = mkdtempSync(join(tmpdir(), 'runstat-menage-'));
+  let t = Date.parse('2026-10-24T12:00:00Z');
+  const clock = () => t;
+  try {
+    for (const id of ['frank', 'parti', 'heberge']) mkdirSync(join(root, id), { recursive: true });
+    mkdirSync(join(root, 'auth'));
+    for (const id of ['frank', 'parti']) mkdirSync(join(root, id, 'backup', 'manifests'), { recursive: true });
+    mkdirSync(join(root, 'heberge', 'data-raw'));
+    writeFileSync(join(root, 'heberge', 'data-raw', 'goals.json'), '[]');
+    const users = [{ id: 'frank', mode: 'local' }];
+    gcAllBackups(root, users, clock);
+    assert.ok(existsSync(join(root, 'frank', 'backup')));
+    assert.ok(readdirSync(join(root, 'parti')).some((f) => f.startsWith('backup-supprimee-')));
+    assert.ok(existsSync(join(root, 'heberge', 'data-raw', 'goals.json')));
+    assert.ok(existsSync(join(root, 'auth')));
+    // 31 jours plus tard : sauvegarde purgée, dossier vide effacé ; rien d'autre ne bouge
+    t += 31 * 86_400_000;
+    gcAllBackups(root, users, clock);
+    assert.equal(existsSync(join(root, 'parti')), false);
+    assert.ok(existsSync(join(root, 'frank', 'backup')));
+    assert.ok(existsSync(join(root, 'heberge', 'data-raw', 'goals.json')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('révocation complète : passkeys, sessions, codes et identifiant WebAuthn du compte', async () => {
+  await join_('frank');
+  const store = auth();
+  assert.ok(store.credentials('frank').length && store.handle('frank'));
+  const before = store.handle('frank');
+  store.revokeAll('frank');
+  assert.deepEqual(store.credentials('frank'), []);
+  assert.equal(store.userOfHandle(before), null);
 });
