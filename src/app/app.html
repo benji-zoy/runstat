@@ -1,0 +1,82 @@
+<header class="topbar">
+  <div class="bar">
+    <a class="logo" routerLink="/aujourdhui">RUN<b>STAT</b></a>
+
+    <nav class="tabs" aria-label="Espaces">
+      @for (t of tabs; track t.path) {
+        <a [routerLink]="'/' + t.path" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge">
+          <app-icon [name]="t.icon" />{{ t.label }}
+        </a>
+      }
+    </nav>
+
+    <div class="tools">
+      @if (data()) {
+        <a class="level" routerLink="/souvenirs" [queryParams]="{ section: 'badges', onglet: null, course: null }"
+          queryParamsHandling="merge" [style.--lvl]="level().color" title="Ton niveau (distance cumulée) · badges et souvenirs">
+          <span class="dot"></span><span class="lvl-word">Niveau </span>{{ level().name }}
+        </a>
+      }
+      <a class="icon-btn memories" routerLink="/souvenirs" routerLinkActive="active" [queryParams]="tabParams"
+        queryParamsHandling="merge" aria-label="Souvenirs">
+        <app-icon name="star" />
+      </a>
+      @if (sync.available()) {
+        <button type="button" class="icon-btn sync" [class.spinning]="sync.running()"
+          [class.warn]="sync.problems().length > 0" [disabled]="sync.running()" (click)="sync.trigger()"
+          (mouseenter)="sync.refresh()" [title]="sync.title()" [attr.aria-label]="sync.running() ? 'Synchronisation en cours' : 'Synchroniser les données'">
+          <app-icon name="sync" />
+          @if (sync.notice(); as n) {
+            <span class="sync-notice" role="status">{{ n }}</span>
+          }
+        </button>
+      }
+      @if (sync.available()) {
+        <button type="button" class="icon-btn" (click)="athleteForm.open()" title="Réglages (FC, poids…)" aria-label="Réglages">
+          <app-icon name="settings" />
+        </button>
+      }
+      <button type="button" class="icon-btn" (click)="theme.toggle()"
+        [attr.aria-label]="theme.theme() === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'">
+        <app-icon [name]="theme.theme() === 'dark' ? 'sun' : 'moon'" />
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  @if (pwa.updateReady()) {
+    <div class="banner" role="status">
+      Nouvelle version de RunStat disponible
+      <button type="button" class="btn small primary" (click)="pwa.reload()">Recharger</button>
+    </div>
+  }
+  @if (!pwa.online() && data()) {
+    <div class="banner" role="status">Hors ligne · données du {{ updatedAt() }}</div>
+  }
+  @if (error()) {
+    <p class="card error">{{ error() }}</p>
+  } @else if (data()) {
+    <router-outlet />
+  } @else {
+    <p class="loading muted">Chargement des données…</p>
+  }
+</main>
+
+<footer class="muted">
+  @if (updatedAt()) {
+    Données {{ sourceLabel() }} du {{ updatedAt() }} ·
+  }
+  Distances entre villes à vol d'oiseau · Équivalences approximatives
+</footer>
+
+<app-athlete-form #athleteForm />
+
+<nav class="bottom" aria-label="Espaces">
+  @for (t of mobileTabs; track t.path) {
+    <a [routerLink]="'/' + t.path" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge">
+      <app-icon [name]="t.icon" />
+      <span>{{ t.label }}</span>
+    </a>
+  }
+</nav>

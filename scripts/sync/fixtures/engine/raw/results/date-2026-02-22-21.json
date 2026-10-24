@@ -1,0 +1,18 @@
+{
+ "event": "Semi de Testville",
+ "date": "2026-02-22",
+ "course": "Semi",
+ "distanceKm": 21.0975,
+ "officialSec": 6300,
+ "gunSec": 6320,
+ "rank": 120,
+ "finishers": 1500,
+ "sex": "M",
+ "sexRank": 110,
+ "sexCount": 1000,
+ "category": "SE H",
+ "catRank": 40,
+ "catCount": 300,
+ "source": "https://chrono.example/resultats",
+ "fetchedAt": "2026-02-23"
+}

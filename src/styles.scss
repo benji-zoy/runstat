@@ -1,0 +1,609 @@
+// Thème sombre par défaut ; thème clair via <html data-theme="light"> (bouton de l'en-tête, ThemeService).
+// Toutes les couleurs passent par ces variables, y compris celles des graphiques (ui/palette.ts).
+:root {
+  color-scheme: dark;
+  --bg: #0c0d10;
+  --surface-1: #16171b;
+  --surface-2: #1f2025;
+  --surface-3: #2a2b31;
+  --border: #2a2b31;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8b8a83;
+  --on-accent: #0c0d10;
+
+  // Accent de marque (UI) – orange « sportif »
+  --accent: #ff6a2b;
+  --accent-soft: rgba(255, 106, 43, 0.14);
+  --accent-text: #ffb08a;
+
+  // Séries de données (palette catégorielle validée)
+  --series-1: #3987e5;
+  --series-1-hover: #5598e7;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #9085e9;
+  --series-6: #e87ba4;
+  --ghost: #3a3b42;
+  --neutral: #c3c2b7;
+
+  // Rampe séquentielle (heatmap) : du plus faible au plus fort
+  --seq-1: #104281;
+  --seq-2: #1c5cab;
+  --seq-3: #2a78d6;
+  --seq-4: #5598e7;
+  --seq-5: #86b6ef;
+  --on-seq-lo: #ffffff;
+  --on-seq-hi: #0c0d10;
+
+  // Statuts
+  --good: #0ca30c;
+  --good-text: #5fd35f;
+  --warning: #fab219;
+  --amber: #eda100;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --bad: #e66767;
+  --critical-text: #f07272;
+
+  // Cartes
+  --map-land: #1a1a19;
+  --map-line: #8b8a83;
+
+  --font-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  // Polices auto-hébergées (@fontsource, angular.json) : hors ligne et sans requête vers Google
+  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius: 14px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f4ef;
+  --surface-1: #ffffff;
+  --surface-2: #f0ede6;
+  --surface-3: #e3dfd6;
+  --border: #e3dfd6;
+  --text-primary: #16171b;
+  --text-secondary: #45443f;
+  --text-muted: #74726b;
+  --on-accent: #ffffff;
+
+  --accent: #e0551b;
+  --accent-soft: rgba(224, 85, 27, 0.11);
+  --accent-text: #b8410f;
+
+  --series-1: #2a6fc4;
+  --series-1-hover: #1f5aa5;
+  --series-2: #c24e1f;
+  --series-3: #137e59;
+  --series-4: #9a6600;
+  --series-5: #6a5bd6;
+  --series-6: #c94f80;
+  --ghost: #d6d2c9;
+  --neutral: #6f6d66;
+
+  --seq-1: #d3e3f7;
+  --seq-2: #a3c4ee;
+  --seq-3: #6a9fe0;
+  --seq-4: #3a7acb;
+  --seq-5: #1f5199;
+  --on-seq-lo: #16171b;
+  --on-seq-hi: #ffffff;
+
+  --good: #198a2f;
+  --good-text: #187a2b;
+  --warning: #c98a00;
+  --amber: #b07a00;
+  --serious: #c8602f;
+  --critical: #c62f2f;
+  --bad: #d04545;
+  --critical-text: #b42626;
+
+  --map-land: #ece8df;
+  --map-line: #9a978e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+// Titre de page : seul texte en grandes capitales
+h1 {
+  font-family: var(--font-display);
+  font-size: 2.3rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+// Titre de section
+h2 {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.6rem;
+
+  small {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+}
+
+// Titre de carte
+h3 {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0;
+
+  small {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+}
+
+@media (max-width: 600px) {
+  h1 {
+    font-size: 1.9rem;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+  }
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+// En-tête de page : titre, phrase d'accroche, sous-onglets
+.page-head {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1.75rem;
+
+  .lede {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  min-width: 0;
+  /* Quand une carte est une grille, sa colonne reste dans la largeur de la carte */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+img,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+.section {
+  display: grid;
+  /* minmax(0, 1fr) : une colonne ne s'élargit jamais au-delà de l'écran à cause de son contenu */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+@media (max-width: 600px) {
+  .section {
+    margin-top: 2rem;
+    gap: 0.75rem;
+  }
+}
+
+/* Tableaux larges : ils défilent dans leur conteneur au lieu de faire déborder la page */
+.table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+td.num,
+th.num {
+  text-align: right;
+}
+
+/* Les cellules de texte libre (notes, explications) passent à la ligne */
+td.small,
+td.wrap {
+  white-space: normal;
+  min-width: 10rem;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+
+  > span {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+  }
+}
+
+// Filtres : petites puces carrées (≠ onglets soulignés et bascules segmentées)
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  font: 600 0.82rem var(--font-body);
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.35rem 0.7rem;
+  min-height: 34px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &.active {
+    color: var(--text-primary);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
+
+// Bascule segmentée (période, vue)
+.seg {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  button {
+    font: 600 0.86rem var(--font-body);
+    color: var(--text-secondary);
+    background: none;
+    border: 0;
+    padding: 0.45rem 0.85rem;
+    border-radius: 7px;
+    min-height: 36px;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &.active {
+      background: var(--surface-3);
+      color: var(--text-primary);
+    }
+  }
+}
+
+// Étiquette de tuile chiffrée
+.label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+// Explication repliée sous une carte : « Méthode »
+details.method {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+
+  > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: 'i';
+      display: inline-grid;
+      place-items: center;
+      width: 1.05rem;
+      height: 1.05rem;
+      border: 1.5px solid currentColor;
+      border-radius: 50%;
+      font: 700 0.65rem var(--font-body);
+      font-style: italic;
+    }
+
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+
+  &[open] > summary {
+    margin-bottom: 0.45rem;
+  }
+
+  p {
+    margin: 0 0 0.4rem;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.3rem;
+  }
+}
+
+// Saisie (objectif, bilan, classement, réglages) : fenêtre <dialog>, plein écran en bas sur téléphone
+dialog.sheet {
+  width: min(640px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+
+  &::backdrop {
+    background: rgb(0 0 0 / 0.55);
+  }
+
+  form {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    max-height: calc(100dvh - 2rem);
+  }
+
+  header,
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.1rem;
+  }
+
+  header {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+
+    h2 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+  }
+
+  footer {
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+
+    .spacer {
+      flex: 1;
+    }
+  }
+
+  .body {
+    overflow-y: auto;
+    padding: 1rem 1.1rem;
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+  }
+
+  @media (max-width: 640px) {
+    width: 100vw;
+    max-width: 100vw;
+    margin: auto 0 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 0.75rem;
+
+  // Champ ou groupe de champs sur toute la largeur (un groupe = une ligne)
+  > .wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+
+  input,
+  select,
+  textarea {
+    font: 400 0.95rem var(--font-body);
+    color: var(--text-primary);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.65rem;
+    min-height: 40px;
+    width: 100%;
+    box-sizing: border-box;
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    &.ng-invalid.ng-touched {
+      border-color: var(--critical);
+    }
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 6rem;
+  }
+
+  .hint {
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  > .seg,
+  > .chips {
+    justify-self: start;
+  }
+
+  > summary {
+    cursor: pointer;
+  }
+}
+
+.form-errors {
+  margin: 0;
+  padding: 0.6rem 0.8rem 0.6rem 1.8rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--critical) 14%, transparent);
+  color: var(--critical-text);
+  font-size: 0.85rem;
+}
+
+.btn {
+  font: 600 0.88rem var(--font-body);
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.5rem 1rem;
+  min-height: 40px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  &:hover {
+    border-color: var(--text-muted);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  &.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+
+  &.danger {
+    color: var(--critical-text);
+  }
+
+  &.small {
+    font-size: 0.8rem;
+    padding: 0.3rem 0.7rem;
+    min-height: 32px;
+  }
+}

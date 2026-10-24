@@ -1,0 +1,608 @@
+<app-brief [brief]="brief()" />
+
+@switch (view()) {
+  @case ('predictions') {
+<!-- ===================================================================== -->
+@if (fitness(); as f) {
+  <div class="grid tiles coros">
+    <div class="card stat">
+      <span class="label">VO2max Coros</span>
+      <span class="display big">{{ f.vo2max ?? '–' }}</span>
+    </div>
+    <div class="card stat">
+      <span class="label">Running level</span>
+      <span class="display big">{{ f.runningLevel ?? '–' }}</span>
+    </div>
+    <div class="card stat">
+      <span class="label">Allure seuil</span>
+      <span class="display big">{{ f.thresholdPace ?? '–' }}<small> /km</small></span>
+    </div>
+  </div>
+}
+<section class="section">
+  <h2>Prédictions comparées</h2>
+  @if (best(); as ref) {
+    <p class="muted small">
+      Référence : <b class="txt">{{ ref.label }}</b> — {{ effortLabel(ref.dist) === ref.dist + ' m' ? num(ref.dist / 1000, 2) + ' km' : effortLabel(ref.dist) }}
+      en {{ clock(ref.time) }} le {{ fmt(ref.date) }} (VDOT {{ num(ref.vdot, 1) }}).
+    </p>
+  }
+  <div class="card scroll">
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th></th>
+          @if (sci.caps().corosFitness) {
+            <th class="num">Coros</th>
+          }
+          <th class="num">Daniels (VDOT)</th>
+          <th class="num">Riegel 1,06</th>
+          <th class="num">Riegel pondéré</th>
+          <th class="num">Vitesse critique</th>
+          <th class="num">Vickers</th>
+          <th class="num">Tanda</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (p of predictions(); track p.key) {
+          <tr>
+            <td><b>{{ p.key }}</b></td>
+            @if (sci.caps().corosFitness) {
+              <td class="num">{{ p.coros ? clock(p.coros) : '–' }}</td>
+            }
+            <td class="num">{{ p.vdot ? clock(p.vdot) : '–' }}</td>
+            <td class="num">{{ p.riegel ? clock(p.riegel) : '–' }}</td>
+            <td class="num hl">{{ p.riegelPerso ? clock(p.riegelPerso) : '–' }}</td>
+            <td class="num">{{ p.cs ? clock(p.cs) : '–' }}</td>
+            <td class="num">{{ p.vickers ? clock(p.vickers) : '–' }}</td>
+            <td class="num">{{ p.tanda ? clock(p.tanda) : '–' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="grid three">
+    @if (sci.exponent(); as e) {
+      <div class="card stat">
+        <span class="label">Ton exposant de fatigue (pondéré)</span>
+        <span class="display big">{{ fixed(e.k, 2) }}</span>
+        <span class="muted small">
+          Chrono brut : {{ fixed(e.raw, 2) }} · Riegel suppose 1,06. Mesuré à partir de
+          <b class="txt">{{ e.short.label }}</b> ({{ clock(e.short.time) }}) :
+        </span>
+        <ul class="parts">
+          @for (p of e.parts; track p.label + p.date) {
+            <li>
+              <span>{{ p.label }}</span>
+              <b>{{ fixed(p.k, 2) }}</b>
+              <span class="muted">poids {{ num(p.weight, 2) }}</span>
+              <small class="muted">{{ p.note }}</small>
+            </li>
+          }
+        </ul>
+        <span class="muted small">
+          Une seule course longue ne suffit pas à mesurer ton endurance : elle est combinée à la valeur typique des
+          amateurs, et une course avec un mur compte avec son temps potentiel et un poids réduit.
+        </span>
+      </div>
+    }
+    @if (shape(); as s) {
+      <div class="card stat">
+        <span class="label">Préparation marathon (Runalyze)</span>
+        <span class="display big">{{ num(s.shape) }}<small> %</small></span>
+        <div class="bar"><span [style.width.%]="Math.min(100, s.shape)"></span></div>
+        <span class="muted small">
+          {{ num(s.weekly, 1) }} km/semaine sur 6 mois pour une cible de {{ num(s.weeklyTarget) }} km, et des sorties longues
+          visées vers {{ num(s.longTarget) }} km. Sous 100 %, Runalyze ralentit ses prédictions marathon.
+        </span>
+      </div>
+    }
+    @if (lastMarathon(); as m) {
+      <div class="card stat">
+        <span class="label">Dernier marathon</span>
+        <span class="display big">{{ clock(m.a.durationSec) }}</span>
+        <span class="muted small">{{ m.a.name }} · {{ fmt(m.a.date) }} · {{ pace(m.a.durationSec / m.a.distanceKm) }} /km</span>
+        @if (m.wall?.wall) {
+          <span class="wall">
+            Mur au <b>{{ m.wall!.wallKm }}e km</b> : {{ pace(m.wall!.basePace) }} /km sur les 20 premiers km, puis jusqu'à
+            +{{ num((m.wall!.fade - 1) * 100) }} % sur 5 km.
+          </span>
+          <span class="muted small">
+            Sur la lancée des {{ m.wall!.preWallKm }} premiers km, tu visais environ
+            <b class="txt">{{ clock(m.wall!.potential!) }}</b>.
+          </span>
+        }
+      </div>
+    }
+  </div>
+  <details class="method">
+    <summary>Méthode</summary>
+    <ul>
+      <li><b>Daniels</b> : VDOT (Daniels &amp; Gilbert 1979) de la meilleure performance de référence, puis temps équivalent.</li>
+      <li><b>Riegel</b> : T₂ = T₁ × (D₂/D₁)^k, avec k = 1,06 (Riegel 1981) ou ton exposant pondéré (a priori 1,07 + tes courses longues, mur détecté sur les splits).</li>
+      <li><b>Vitesse critique</b> : t = (d − D′) / CS jusqu'au 10 km ; marathon couru à environ 85 % de CS (Smyth &amp; Muniz-Pumares 2020).</li>
+      <li><b>Vickers &amp; Vertosick 2016</b> : Riegel (exposant 1,07) corrigé par le volume hebdomadaire.</li>
+      <li><b>Tanda 2011</b> : allure marathon = 17,1 + 140·e^(−0,0053·K) + 0,55·P (K = km/semaine, P = allure moyenne des 8 dernières semaines, hors trail).</li>
+    </ul>
+  </details>
+</section>
+
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Vitesse critique <small>16 dernières semaines · fichiers FIT</small></h2>
+  @if (sci.criticalSpeed(); as cs) {
+    <div class="grid three">
+      <div class="card stat">
+        <span class="label">Vitesse critique (CS)</span>
+        <span class="display big">{{ pace(1000 / cs.cs) }}<small> /km</small></span>
+        <span class="muted small">{{ num(cs.cs * 3.6, 1) }} km/h · la frontière entre effort durable et non durable</span>
+      </div>
+      <div class="card stat">
+        <span class="label">Réserve D′</span>
+        <span class="display big">{{ num(cs.dPrime) }}<small> m</small></span>
+        <span class="muted small">distance « en réserve » au-dessus de CS (typiquement 100 à 300 m)</span>
+      </div>
+      <div class="card stat">
+        <span class="label">Qualité de l'ajustement</span>
+        <span class="display big">{{ fixed(cs.r2, 4) }}</span>
+        <span class="muted small">R² sur {{ cs.points.length }} meilleurs efforts de 2 à 25 min</span>
+      </div>
+    </div>
+    <div class="two">
+      <div class="card">
+        <h3>Modèle distance – temps</h3>
+        <app-chart [config]="csChart()" />
+      </div>
+      <div class="card">
+        <h3>Allures d'entraînement dérivées</h3>
+        <div class="table-wrap"><table>
+          <tbody>
+            @for (z of csZones(); track z.label) {
+              <tr>
+                <td>{{ z.label }}</td>
+                <td class="num"><b>{{ z.range }}</b> /km</td>
+                <td class="muted small">{{ z.note }}</td>
+              </tr>
+            }
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p class="muted small">
+      Calculée sur tes séances d'entraînement, sans course récente : ce ne sont pas forcément des efforts maximaux,
+      la vraie CS est sans doute un peu plus rapide. À comparer avec ton allure seuil Coros
+      ({{ store.data()?.fitness?.thresholdPace ?? '–' }} /km).
+    </p>
+  } @else {
+    <p class="muted">Pas encore assez de fichiers FIT récents (il faut au moins 3 meilleurs efforts entre 2 et 25 min).</p>
+  }
+
+  <div class="card">
+    <h3>Courbe d'allure <small class="muted">· meilleure allure tenue selon la durée</small></h3>
+    <app-chart [config]="curveChart()" />
+    <p class="muted small">Les meilleurs efforts par distance, ajustés à la pente, sont dans Records › Segments.</p>
+  </div>
+</section>
+  }
+  @case ('matrice') {
+<app-runner-matrix />
+  }
+  @case ('efficacite') {
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Forme &amp; efficacité</h2>
+  <div class="grid three">
+    <div class="card stat">
+      <span class="label">Indice de forme FC/allure</span>
+      <span class="display big">{{ formNow() ? num(formNow()!, 1) : '–' }}</span>
+      <span class="muted small">
+        @if (formTrend() !== null) {
+          {{ formTrend()! >= 0 ? '+' : '' }}{{ num(formTrend()!, 1) }} par mois sur 6 mois (pente de Theil-Sen).
+        }
+        Méthode Runalyze, non corrigée.
+      </span>
+    </div>
+    <div class="card stat">
+      <span class="label">Efficacité (vitesse / FC)</span>
+      <span class="display big">{{ efTrend() !== null ? (efTrend()! >= 0 ? '+' : '') + num(efTrend()!, 1) : '–' }}<small> % / trimestre</small></span>
+      <span class="muted small">Tendance sur 12 mois des sorties d'endurance comparables (plat, 30 à 100 min).</span>
+    </div>
+    @if (sci.caps().corosFitness) {
+      <div class="card stat">
+        <span class="label">VO2max Coros</span>
+        <span class="display big">{{ store.data()?.fitness?.vo2max ?? '–' }}</span>
+        <span class="muted small">Valeur de type laboratoire : plus élevée que le VDOT, qui reflète la performance réelle.</span>
+      </div>
+    }
+  </div>
+  <div class="card">
+    <h3>Indice de forme et VDOT des courses</h3>
+    <app-chart [config]="formChart()" style="--chart-h: 280px" />
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>Efficacité des sorties d'endurance</h3>
+      <app-chart [config]="efChart()" />
+    </div>
+    <div class="card">
+      <h3>Sorties à FC anormalement haute <small class="muted">· score z robuste &lt; −2,5</small></h3>
+      @if (anomalies().length) {
+        <ul class="anoms">
+          @for (p of anomalies(); track p.activity.id) {
+            <li>
+              <span class="muted">{{ fmt(p.activity.date) }}</span>
+              <span>{{ p.activity.name }}</span>
+              <span class="num">
+                {{ pace(p.activity.durationSec / p.activity.distanceKm) }} à {{ p.activity.avgHr }} bpm
+                @if (p.activity.weather; as w) {
+                  · <span [class.hot]="w.temp >= 25">{{ num(w.temp) }} °C</span>
+                }
+              </span>
+            </li>
+          }
+        </ul>
+        <details class="method">
+          <summary>Pourquoi ?</summary>
+          <p>Chaleur, fatigue, maladie ou capteur optique capricieux : la FC est plus haute que d'habitude pour cette allure.</p>
+        </details>
+      } @else {
+        <p class="muted">Aucune anomalie détectée.</p>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Allure, FC &amp; cadence <small>moyennes mensuelles, 24 mois</small></h2>
+  <div class="three-charts">
+    <div class="card">
+      <h3>Allure moyenne <small class="muted">· route &amp; piste</small></h3>
+      <app-chart [config]="paceTrend()" />
+    </div>
+    <div class="card">
+      <h3>FC moyenne</h3>
+      <app-chart [config]="hrTrend()" />
+    </div>
+    <div class="card">
+      <h3>Cadence moyenne</h3>
+      <app-chart [config]="cadenceTrend()" />
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Chaleur <small>allure corrigée façon Enduraw · météo Open-Meteo</small></h2>
+  <div class="card scroll">
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Séance</th>
+          <th class="num">Temp.</th>
+          <th class="num">Point de rosée</th>
+          <th class="num">Pénalité</th>
+          <th class="num">Allure</th>
+          <th class="num">Corrigée</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (h of hottest(); track h.a.id) {
+          <tr>
+            <td>{{ fmt(h.a.date) }}</td>
+            <td class="name">{{ h.a.name }}</td>
+            <td class="num hot">{{ num(h.a.weather!.temp) }} °C</td>
+            <td class="num">{{ num(h.a.weather!.dew) }} °C</td>
+            <td class="num">{{ num(h.penalty, 1) }} %</td>
+            <td class="num">{{ pace(h.rawPace) }}</td>
+            <td class="num hl">{{ pace(h.adjusted) }}</td>
+          </tr>
+        }
+      </tbody>
+    </table></div>
+    <details class="method">
+      <summary>Méthode</summary>
+      <p>Règle de Hadley : la somme température + point de rosée (en °F) donne le ralentissement attendu. L'allure corrigée
+      estime ce que tu aurais couru par temps idéal (avec l'ajustement à la pente quand le fichier FIT est disponible).
+      Chaque sortie affiche aussi sa météo dans sa fiche.</p>
+    </details>
+  </div>
+</section>
+  }
+  @case ('durabilite') {
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Endurance <small>découplage &amp; durabilité · fichiers FIT</small></h2>
+  <div class="two">
+    <div class="card">
+      <h3>Découplage cardiaque (Pa:HR) <small class="muted">· sorties faciles ≥ 40 min</small></h3>
+      @if (decoupled().length) {
+        <app-chart [config]="decouplingChart()" />
+        <details class="method">
+          <summary>Méthode</summary>
+          <p>Baisse du rapport vitesse/FC entre les deux moitiés (hors 10 premières minutes). <b class="txt">&lt; 5 %</b> : bonne
+          endurance aérobie · <b class="txt">5–10 %</b> : à surveiller · <b class="txt">&gt; 10 %</b> : sortie au-dessus de ton seuil
+          aérobie (Friel).</p>
+        </details>
+      } @else {
+        <p class="muted">Pas encore de sortie analysée.</p>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Durabilité <small>garder son efficacité quand la durée s'allonge · tours au km (FIT ou Coros), 12 mois</small></h2>
+  <details class="method">
+    <summary>Méthode</summary>
+    <p>Efficacité = vitesse ajustée à la pente / FC. On compare le dernier tiers de chaque sortie d'au moins une heure au premier
+    (hors 10 premières minutes) : la « 4e dimension » de la performance d'endurance (Maunder 2021, Jones 2024).
+    {{ dur().runs.length }} sorties régulières analysées (fractionné, tempo et fins accélérées exclus).</p>
+  </details>
+  <div class="grid three">
+    @for (g of [{ key: 'Route', v: dur().road }, { key: 'Trail', v: dur().trail }]; track g.key) {
+      <div class="card stat">
+        <span class="label">Efficacité en fin de sortie · {{ g.key }}</span>
+        @if (g.v; as v) {
+          <span class="display big">{{ signed(-v.median) }} %</span>
+          <span class="muted small">
+            médiane sur {{ v.n }} sorties ·
+            <b class="txt">{{ signed(-v.perHour) }} point{{ Math.abs(v.perHour) >= 2 ? 's' : '' }}</b> par heure de plus
+          </span>
+        } @else {
+          <span class="muted">Pas assez de sorties</span>
+        }
+      </div>
+    }
+    <div class="card stat">
+      <span class="label">Dérive cardiaque à allure égale</span>
+      @if (dur().hrDrift !== null) {
+        <span class="display big">{{ signed(dur().hrDrift!) }} <small>bpm/h</small></span>
+        <span class="muted small">FC gagnée chaque heure à vitesse ajustée identique (régression sur les km)</span>
+      } @else {
+        <span class="muted">–</span>
+      }
+    </div>
+    <div class="card stat">
+      <span class="label">Début de la dégradation</span>
+      @if (durOnset().total) {
+        <span class="display big">{{ durOnset().median !== null ? hm(durOnset().median!) : 'aucun' }}</span>
+        <span class="muted small">
+          médiane des sorties ≥ 1 h 30 où l'efficacité passe durablement sous 95 % ·
+          <b class="txt">{{ durOnset().held }} / {{ durOnset().total }}</b> tiennent jusqu'au bout
+        </span>
+      }
+    </div>
+    <div class="card stat">
+      <span class="label">Tendance</span>
+      @if (dur().trend !== null) {
+        <span class="display big">{{ signed(-dur().trend!) }} <small>pt/mois</small></span>
+        <span class="muted small">{{ dur().trend! < 0 ? 'Ta durabilité s\'améliore' : 'Ta durabilité se dégrade' }} sur les sorties ≥ 1 h 30 (Theil-Sen)</span>
+      } @else {
+        <span class="muted">Pas assez de sorties longues</span>
+      }
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <h3>Courbe de durabilité <small class="muted">· efficacité médiane heure par heure</small></h3>
+      <app-chart [config]="durCurveChart()" />
+      <details class="method">
+        <summary>Méthode</summary>
+        <p>Pour chaque heure de course, l'efficacité médiane des km concernés, rapportée au premier tiers de chaque sortie
+        (au moins deux sorties par heure). Une courbe qui reste vers 100 % = un moteur qui tient la distance.</p>
+      </details>
+    </div>
+    <div class="card">
+      <h3>Perte selon la durée <small class="muted">· une sortie = un point</small></h3>
+      <app-chart [config]="durScatterChart()" />
+      <details class="method">
+        <summary>Méthode</summary>
+        <p>Pointillés : tendance (Theil-Sen). Plus la pente est faible, plus tu es durable.</p>
+      </details>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Profils des dernières sorties longues <small class="muted">· efficacité sur 3 km glissants</small></h3>
+    <app-chart [config]="durProfilesChart()" />
+  </div>
+
+  @if (durTrail().length) {
+    <div class="card">
+      <h3>Durabilité en trail <small class="muted">· montées et descentes, première contre seconde moitié</small></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Sortie</th>
+              <th class="num">Durée</th>
+              <th class="num">D+</th>
+              <th class="num">Efficacité</th>
+              <th class="num">Montées (m/h)</th>
+              <th class="num">Descentes (km/h)</th>
+              <th class="num">Cadence</th>
+              <th class="num">Dérive FC</th>
+              <th class="num">Dégradation</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of durTrail(); track r.activity.id) {
+              <tr>
+                <td>{{ fmt(r.activity.date) }}</td>
+                <td class="name">{{ r.activity.name }}</td>
+                <td class="num">{{ hm(r.hours * 3600) }}</td>
+                <td class="num">{{ r.activity.elevGain ?? '–' }}</td>
+                <td class="num" [class.warn]="r.efLoss > 5" [class.alert]="r.efLoss > 10">{{ signed(-r.efLoss) }} %</td>
+                <td class="num">
+                  @if (r.climb; as c) {
+                    {{ num(c[0]) }} → {{ num(c[1]) }} <small [class.hot]="c[1] < c[0] * 0.9">({{ signed((c[1] / c[0] - 1) * 100, 0) }} %)</small>
+                  } @else { – }
+                </td>
+                <td class="num">
+                  @if (r.descent; as c) {
+                    {{ num(c[0], 1) }} → {{ num(c[1], 1) }} <small [class.hot]="c[1] < c[0] * 0.9">({{ signed((c[1] / c[0] - 1) * 100, 0) }} %)</small>
+                  } @else { – }
+                </td>
+                <td class="num">{{ r.cadence ? num(r.cadence[0]) + ' → ' + num(r.cadence[1]) : '–' }}</td>
+                <td class="num">{{ r.hrDrift !== null ? signed(r.hrDrift) + ' bpm/h' : '–' }}</td>
+                <td class="num">{{ r.onset !== null ? hm(r.onset) : 'tient' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <details class="method">
+        <summary>Méthode</summary>
+        <p>Montées : vitesse ascensionnelle sur les km à plus de 5 % de pente. Descentes : vitesse sur les km qui descendent de plus
+        de 5 % (les quadriceps fatigués freinent davantage). Les arrêts (ravitaillement) sont exclus.</p>
+      </details>
+    </div>
+  }
+</section>
+  }
+  @case ('charge') {
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Forme, fatigue &amp; fraîcheur <small>calculées à partir de la charge de chaque sortie</small></h2>
+  <div class="card">
+    <div class="pmc-head">
+      @if (pmcNow(); as n) {
+        <div class="pmc-now">
+          <div><span class="label">Forme (42 j)</span><span class="display v">{{ num(n.ctl) }}</span></div>
+          <div><span class="label">Fatigue (7 j)</span><span class="display v">{{ num(n.atl) }}</span></div>
+          <div><span class="label">Fraîcheur</span><span class="display v">{{ n.tsb > 0 ? '+' : '' }}{{ num(n.tsb) }}</span></div>
+          <div class="state">
+            <span class="pill" [attr.data-tone]="freshness().tone">{{ freshness().label }}</span>
+            <span class="muted small">{{ freshness().text }}</span>
+          </div>
+        </div>
+      }
+      <div class="seg" role="group" aria-label="Période affichée">
+        @for (r of ranges; track r.days) {
+          <button type="button" [class.active]="range() === r.days" (click)="range.set(r.days)">{{ r.label }}</button>
+        }
+      </div>
+    </div>
+    <app-chart [config]="pmcChart()" style="--chart-h: 280px" />
+    <app-chart [config]="tsbChart()" style="--chart-h: 150px" />
+    <details class="method">
+      <summary>Méthode</summary>
+      <p>Modèle de Banister (comme Strava « Fitness &amp; Freshness » ou TrainingPeaks) : la forme est la moyenne
+      exponentielle de la charge sur 42 jours, la fatigue sur 7 jours, la fraîcheur leur différence.</p>
+    </details>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Charge &amp; intensité</h2>
+  <div class="card">
+    <div class="card-head">
+      <h3>Charge par semaine <small class="muted">· 26 semaines</small></h3>
+      <label class="toggle"><input type="checkbox" id="show-monotony" [checked]="showMonotony()" (change)="showMonotony.set(!showMonotony())" /> Monotonie</label>
+    </div>
+    <app-chart [config]="weeklyLoad()" />
+    <details class="method">
+      <summary>Détail semaine par semaine · monotonie et contrainte de Foster</summary>
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>Semaine du</th>
+          @if (sci.caps().corosLoad) {
+            <th class="num">Charge Coros</th>
+          }
+          <th class="num">TRIMP Banister</th>
+          <th class="num">Monotonie</th>
+          <th class="num">Contrainte</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (w of loadWeeks(); track w.start.getTime()) {
+          <tr>
+            <td>{{ fmtDate(w.start) }}</td>
+            @if (sci.caps().corosLoad) {
+              <td class="num">{{ num(w.load) }}</td>
+            }
+            <td class="num">{{ num(w.trimp) }}</td>
+            <td class="num" [class.warn]="w.monotony > 1.5" [class.alert]="w.monotony > 2">{{ num(w.monotony, 2) }}</td>
+            <td class="num">{{ num(w.strain) }}</td>
+          </tr>
+        }
+      </tbody>
+    </table></div>
+      <p>Monotonie = charge moyenne / écart-type sur 7 jours. Au-delà de 1,5 (orange) ou 2 (rouge), les séances se ressemblent
+      trop : alterner jours durs et faciles réduit le risque de surmenage (Foster 1998).</p>
+    </details>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>Répartition de l'intensité <small class="muted">· 3 zones de Seiler, par mois</small></h3>
+      @if (zonesByMonth().length) {
+        <app-chart [config]="zonesChart()" />
+        <p class="muted small">
+          Au total : {{ num(zonesTotal().pct[0]) }} % facile, {{ num(zonesTotal().pct[1]) }} % modéré,
+          {{ num(zonesTotal().pct[2]) }} % intense → répartition <b class="txt">{{ zonesTotal().model }}</b>
+          @if (zonesTotal().pi !== null) {
+            (index de polarisation {{ num(zonesTotal().pi!, 2) }}, polarisé au-delà de 2 · Treff 2019)
+          }. Seuils estimés à {{ ath().hrMax * 0.8 | number: '1.0-0' }} et {{ ath().hrMax * 0.89 | number: '1.0-0' }} bpm
+          (80 et 89 % de ta FC max).
+        </p>
+      }
+    </div>
+    <div class="card">
+      <h3>Ratio charge aiguë / chronique <small class="muted">· moyennes exponentielles 7 / 28 j</small></h3>
+      @if (corosLoad(); as c) {
+        <p class="muted small">Charge actuelle selon Coros : <span class="pill" [attr.data-tone]="c.tone">{{ c.label }}</span> ratio {{ num(c.ratio, 2) }} (pointillés orange).</p>
+      }
+      <app-chart [config]="acwrChart()" />
+      <details class="method">
+        <summary>Méthode</summary>
+        <p>Indicateur de progression de la charge (Williams 2017). Ce n'est pas un prédicteur fiable de blessure
+        (Impellizzeri 2020), mais des pics au-delà de 1,5 signalent une hausse brutale.
+        @if (sci.caps().loadRatio) {
+          Coros calcule le sien sur 7 et 42 jours.
+        } @else {
+          Charge de chaque sortie : TRIMP de Banister (FC seconde par seconde si le tracé est connu, sinon FC moyenne).
+        }</p>
+      </details>
+    </div>
+  </div>
+</section>
+  }
+  @case ('seances') {
+<!-- ===================================================================== -->
+<section class="section">
+  <h2>Types de séances <small>classification automatique</small></h2>
+  <div class="type-chips">
+    @for (t of typeCounts(); track t.key) {
+      <span class="type-chip" [style.--c]="t.color">{{ t.icon }} {{ t.label }} <b>{{ t.count }}</b></span>
+    }
+  </div>
+  <div class="types">
+    <div class="card">
+      <h3>Classification automatique <small class="muted">· par mois, 18 mois</small></h3>
+      <app-chart [config]="typesChart()" style="--chart-h: 300px" />
+      <details class="method">
+        <summary>Méthode</summary>
+        <p>Règles combinant le nom, {{ sci.caps().trainingEffect ? 'le focus et le TE Coros' : 'le marquage « course » de Strava' }},
+        la régularité des tours (FIT), la durée rapportée à ta médiane des 8 semaines précédentes, la FC et le dénivelé.
+        Le type apparaît aussi dans le Journal.</p>
+      </details>
+    </div>
+    @if (sci.caps().trainingEffect) {
+      <div class="card">
+        <h3>Focus Coros <small class="muted">· depuis le début</small></h3>
+        <app-chart [config]="focusChart()" style="--chart-h: 300px" />
+        <p class="muted small">Le « focus » que la montre attribue à chaque sortie, pour comparer avec la classification.</p>
+      </div>
+    }
+  </div>
+</section>
+  }
+}

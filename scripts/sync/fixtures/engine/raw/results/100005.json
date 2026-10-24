@@ -1,0 +1,17 @@
+{
+ "activityId": "100005",
+ "event": "Trail des Crêtes Fictives",
+ "course": "18 km",
+ "distanceKm": 18.5,
+ "officialSec": 7800,
+ "rank": 50,
+ "finishers": 400,
+ "sex": "M",
+ "sexRank": 45,
+ "sexCount": 300,
+ "category": "SEF",
+ "catRank": 10,
+ "catCount": 80,
+ "source": "https://chrono.example/trail",
+ "fetchedAt": "2026-03-09"
+}

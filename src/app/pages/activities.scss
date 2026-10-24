@@ -1,0 +1,300 @@
+:host {
+  display: block;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+select,
+input[type='search'] {
+  font: 0.88rem var(--font-body);
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  min-height: 38px;
+}
+
+input[type='search'] {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.totals {
+  margin: 1rem 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+
+  b {
+    color: var(--text-primary);
+  }
+}
+
+/* Liste */
+.table-card {
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.arrow {
+  font-size: 0.65rem;
+  margin-left: 0.2rem;
+}
+
+.row {
+  cursor: pointer;
+
+  &:hover,
+  &.open {
+    background: var(--surface-2);
+  }
+}
+
+.name {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-row td {
+  white-space: normal;
+  background: var(--surface-1);
+  padding: 0 0.6rem;
+}
+
+.empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.more {
+  display: block;
+  margin: 0.75rem auto 0;
+  padding: 0.5rem 1.2rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: 600 0.9rem var(--font-body);
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+
+  &:hover {
+    background: var(--surface-3);
+  }
+}
+
+/* Journal */
+.log {
+  overflow-x: auto;
+}
+
+.log-head,
+.log-row {
+  display: grid;
+  grid-template-columns: 4.2rem repeat(7, minmax(2.6rem, 1fr)) 5rem;
+  gap: 0.3rem;
+  align-items: center;
+  min-width: 560px;
+}
+
+.log-head {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-row {
+  border-bottom: 1px solid var(--border);
+  min-height: 3.6rem;
+}
+
+.week-label {
+  font-size: 0.78rem;
+}
+
+.total-h,
+.week-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-day {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  min-height: 3.2rem;
+
+  &.out {
+    opacity: 0.25;
+  }
+}
+
+.bubble {
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  border: 0;
+  background: var(--series-1);
+  color: #fff; /* sur bleu ou vert, dans les deux thèmes */
+  font: 700 0.72rem var(--font-body);
+  cursor: pointer;
+  transition: transform 0.1s;
+
+  &.trail {
+    background: var(--series-3);
+  }
+
+  &:hover {
+    transform: scale(1.08);
+    outline: 2px solid var(--text-primary);
+  }
+}
+
+.legend {
+  font-size: 0.8rem;
+  margin: 0.75rem 0 0;
+}
+
+.leg-trail {
+  color: var(--series-3);
+}
+
+.selected {
+  margin-top: 1rem;
+}
+
+.sel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+
+  h3 small {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    font-weight: 400;
+    text-transform: none;
+  }
+}
+
+.close {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 0;
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+
+/* Liste en cartes : téléphone seulement */
+.mlist {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .table-card {
+    display: none;
+  }
+
+  .mlist {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .toolbar {
+    gap: 0.5rem;
+
+    select {
+      flex: 1 1 40%;
+      min-width: 0;
+    }
+
+    input[type='search'] {
+      flex: 1 1 100%;
+      font-size: 16px; /* évite le zoom automatique d'iOS */
+    }
+  }
+
+  .totals {
+    font-size: 0.85rem;
+  }
+}
+
+.mrun {
+  padding: 0;
+  overflow: hidden;
+
+  &.open {
+    border-color: var(--surface-3);
+  }
+
+  app-activity-detail {
+    display: block;
+    padding: 0 0.9rem 0.9rem;
+  }
+}
+
+.mrun-head {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.m-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.m-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+
+  b {
+    color: var(--text-primary);
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "RunStat",
+  "short_name": "RunStat",
+  "description": "Tableau de bord de course à pied : entraînement, forme, performances et objectifs",
+  "lang": "fr",
+  "dir": "ltr",
+  "display": "standalone",
+  "orientation": "any",
+  "scope": "./",
+  "start_url": "./aujourdhui",
+  "id": "./",
+  "background_color": "#0c0d10",
+  "theme_color": "#0c0d10",
+  "categories": ["sports", "health", "fitness"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Courses", "url": "./courses", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Journal", "url": "./entrainement", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

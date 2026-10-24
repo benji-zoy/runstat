@@ -1,0 +1,14 @@
+/* Contrôle du moteur (npm run check:engine) : la syntaxe doit rester « effaçable » pour le type stripping de Node
+   (pas d'enum, de namespace ni de propriété de paramètre). Angular vérifie aussi ces fichiers à la compilation. */
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vitest/globals"]
+  },
+  "include": ["./**/*.ts"]
+}

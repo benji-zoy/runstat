@@ -1,0 +1,55 @@
+{
+  "name": "runstat",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "data": "node scripts/build-fit.mjs && node scripts/build-data.mjs",
+    "weather": "node scripts/fetch-weather.mjs",
+    "fit-queue": "node scripts/fit-queue.mjs",
+    "health": "node scripts/import-health.mjs",
+    "strava": "node scripts/import-strava.mjs",
+    "deploy": "sh scripts/deploy.sh",
+    "auth": "node scripts/auth.mjs",
+    "spike": "node scripts/spike.mjs",
+    "test:sync": "node --test \"scripts/sync/*.test.mjs\"",
+    "sync": "node scripts/sync/run.mjs",
+    "nas": "sh scripts/nas-data.sh",
+    "check:engine": "tsc -p src/engine/tsconfig.json"
+  },
+  "private": true,
+  "imports": {
+    "#engine/*": "./src/engine/*"
+  },
+  "packageManager": "npm@11.11.0",
+  "dependencies": {
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@angular/service-worker": "^21.2.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "chart.js": "^4.5.1",
+    "leaflet": "^1.9.4",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.25",
+    "@angular/cli": "^21.2.25",
+    "@angular/compiler-cli": "^21.2.0",
+    "@types/leaflet": "^1.9.22",
+    "fake-indexeddb": "^6.2.6",
+    "fit-file-parser": "^6.1.2",
+    "jsdom": "^28.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
+  }
+}

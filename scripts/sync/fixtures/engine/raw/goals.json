@@ -1,0 +1,19 @@
+[
+ {
+  "id": "marathon-test",
+  "name": "Marathon de Testville",
+  "date": "2026-04-12",
+  "startTime": "08:30",
+  "distanceKm": 42.195,
+  "targetSec": 12600,
+  "kind": "road"
+ },
+ {
+  "id": "trail-test",
+  "name": "Trail imaginaire",
+  "date": "2026-05-20",
+  "distanceKm": 30,
+  "elevGain": 1500,
+  "kind": "trail"
+ }
+]

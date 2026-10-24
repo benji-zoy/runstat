@@ -1,0 +1,1 @@
+"Resting Heart Rate — Last 4 days\n========================\n\n2026-01-04: 51 bpm\n2026-01-03: No data\n2026-01-02: 49 bpm\n2026-01-01: 50 bpm"

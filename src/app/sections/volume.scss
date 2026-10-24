@@ -1,0 +1,149 @@
+:host {
+  display: block;
+  --chart-h: 240px;
+}
+
+.card {
+  display: grid;
+  gap: 1rem;
+}
+
+h3 small {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.three {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+}
+
+/* Heatmap */
+.heatmap-wrap {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.heatmap {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+  min-width: 100%;
+  justify-content: space-between;
+}
+
+.days,
+.week {
+  display: grid;
+  grid-template-rows: 1rem repeat(7, 14px);
+  gap: 3px;
+}
+
+.days {
+  font-size: 0.68rem;
+  padding-right: 4px;
+
+  span {
+    line-height: 14px;
+  }
+}
+
+.month {
+  font-size: 0.68rem;
+  white-space: nowrap;
+  width: 14px;
+  overflow: visible;
+}
+
+.cell {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  transition: outline-color 0.1s;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+
+  &:hover {
+    outline-color: var(--text-primary);
+  }
+
+  &.future {
+    visibility: hidden;
+  }
+
+  &[data-level='1'] {
+    background: var(--seq-1);
+  }
+  &[data-level='2'] {
+    background: var(--seq-2);
+  }
+  &[data-level='3'] {
+    background: var(--seq-3);
+  }
+  &[data-level='4'] {
+    background: var(--seq-4);
+  }
+  &[data-level='5'] {
+    background: var(--seq-5);
+  }
+}
+
+.heat-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-size: 0.85rem;
+
+  b {
+    color: var(--text-primary);
+  }
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+
+  .cell {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.reg {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+}
+
+.stat {
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.big {
+  font-size: 3rem;
+
+  small {
+    font-size: 0.4em;
+    color: var(--text-secondary);
+  }
+}
+
+.small {
+  font-size: 0.85rem;
+
+  b {
+    color: var(--text-primary);
+  }
+}
+
+@media (max-width: 600px) {
+  .big {
+    font-size: 2.4rem;
+  }
+}

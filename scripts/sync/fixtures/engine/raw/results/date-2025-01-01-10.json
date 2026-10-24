@@ -1,0 +1,16 @@
+{
+ "event": "Course orpheline",
+ "course": "10 km",
+ "distanceKm": 10,
+ "officialSec": 2600,
+ "rank": 1,
+ "finishers": 2,
+ "sex": "M",
+ "sexRank": 1,
+ "sexCount": 2,
+ "category": "SEM",
+ "catRank": 1,
+ "catCount": 2,
+ "source": "https://chrono.example/x",
+ "fetchedAt": "2025-01-02"
+}

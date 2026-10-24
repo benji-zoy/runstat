@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "runstat",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--port", "4300"],
+      "port": 4300
+    },
+    {
+      "name": "runstat-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--port", "4310", "--proxy-config", "proxy.conf.json"],
+      "port": 4310
+    },
+    {
+      "name": "runstat-sync",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/sync/server.mjs", "--no-schedule"],
+      "port": 8787
+    }
+  ]
+}

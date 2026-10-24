@@ -1,0 +1,39 @@
+# Projet Container Manager (Synology) : dossier /docker/runstat sur le NAS. Container Manager garde sa propre copie de ce
+# fichier : tout changement est à recopier dans Projet › runstat › YAML, puis Arrêter › Nettoyer › Construire.
+# Le site (build Angular) est copié dans ./html par `npm run deploy` ; ./html/data est produit par runstat-sync.
+services:
+  runstat:
+    image: nginx:alpine
+    container_name: runstat
+    ports:
+      - "8080:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  # Synchro COROS + Google Health au démarrage puis toutes les SYNC_INTERVAL_MIN minutes, et à la demande
+  # par le bouton du site (/api/sync, proxy nginx ; port 8787 non publié). scripts/sync/server.mjs.
+  # Chaque run relit les scripts : un `npm run deploy` suffit, sauf changement de server.mjs (redémarrer).
+  runstat-sync:
+    image: node:24-alpine
+    container_name: runstat-sync
+    user: "1026:100" # uid:gid du propriétaire des fichiers de /docker/runstat sur le NAS (id <utilisateur>)
+    working_dir: /app
+    environment:
+      TZ: Europe/Paris
+      RUNSTAT_SECRETS: /secrets
+      SYNC_INTERVAL_MIN: "180"
+      # Adresses du site acceptées pour la connexion Strava (redirect_uri) ; Strava n'accepte que le domaine de rappel
+      # de l'appli de chacun (l'hôte ts.net), l'adresse locale sert si ce domaine est l'IP du NAS.
+      # Valeur réelle seulement dans la copie du YAML de Container Manager (le dépôt est public).
+      SYNC_PUBLIC_ORIGINS: "https://nas.tailXXXX.ts.net,http://192.168.1.10:8080"
+    volumes:
+      - ./app/scripts:/app/scripts:ro
+      - ./app/node_modules:/app/node_modules:ro
+      - ./app/package.json:/app/package.json:ro
+      - ./data-raw:/app/data-raw
+      - ./html/data:/app/public/data
+      - ./secrets:/secrets
+    command: ["node", "scripts/sync/server.mjs"]
+    restart: unless-stopped

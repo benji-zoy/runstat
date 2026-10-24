@@ -1,0 +1,264 @@
+:host {
+  display: block;
+}
+
+.layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    'trip heights'
+    'legends heights'
+    'fun fun';
+
+  @media (max-width: 860px) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'trip' 'heights' 'legends' 'fun';
+  }
+}
+
+.trip {
+  grid-area: trip;
+}
+
+.heights {
+  grid-area: heights;
+}
+
+.legends {
+  grid-area: legends;
+}
+
+.fun {
+  grid-area: fun;
+}
+
+article {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+}
+
+.statement {
+  margin: 0.3rem 0 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+
+  b {
+    color: var(--text-primary);
+  }
+}
+
+p {
+  margin: 0;
+}
+
+.sub {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+
+  b {
+    color: var(--text-primary);
+  }
+}
+
+.small {
+  font-size: 0.88rem;
+}
+
+.txt {
+  color: var(--text-primary);
+}
+
+.hl {
+  font-size: 3rem;
+  color: var(--accent);
+  margin-right: 0.2rem;
+}
+
+/* Trajet */
+.route {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.route-ends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+}
+
+.route-line {
+  position: relative;
+  height: 6px;
+  margin: 0.9rem 0 0.2rem;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, var(--surface-3) 0 10px, transparent 10px 16px);
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    border: 2px solid var(--surface-1);
+  }
+
+  &::before {
+    left: -6px;
+    background: var(--accent);
+  }
+
+  &::after {
+    right: -6px;
+    background: var(--surface-3);
+  }
+}
+
+.route-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.runner {
+  position: absolute;
+  top: -1.55rem;
+  transform: translateX(-50%) scaleX(-1);
+  font-size: 1.3rem;
+}
+
+/* Dénivelé */
+.ladder {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: grid;
+  gap: 0.25rem;
+
+  li {
+    display: grid;
+    grid-template-columns: 1.8rem 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+
+    &.reached {
+      color: var(--text-primary);
+    }
+  }
+
+  .ratio {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.name::first-letter {
+  text-transform: uppercase;
+}
+
+/* Repères */
+.bars {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+  margin-bottom: 0.35rem;
+
+  b {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}
+
+/* Fun */
+.fun-groups {
+  display: grid;
+  margin-top: 0.4rem;
+}
+
+.fun-group {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 0.6rem 1.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+
+  @media (max-width: 860px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fun-head {
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+}
+
+.fun-title {
+  font-weight: 600;
+}
+
+.fun-total {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.6rem;
+
+  @media (max-width: 860px) {
+    grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  }
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  gap: 0.15rem;
+  padding: 0.8rem;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.tile-icon {
+  font-size: 1.5rem;
+}
+
+.tile-value {
+  font-size: 1.9rem;
+}
+
+.tile-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.tile-ref {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

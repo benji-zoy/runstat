@@ -1,0 +1,94 @@
+:host {
+  display: block;
+}
+
+.hero {
+  padding: 1.75rem 0 1.5rem;
+  text-align: center;
+}
+
+.lead {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+}
+
+.big {
+  margin: 0.25rem 0;
+  font-size: clamp(4.2rem, 15vw, 7.5rem);
+  letter-spacing: -0.01em;
+  background: linear-gradient(180deg, var(--text-primary) 30%, var(--accent-text) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  .unit {
+    font-size: 0.35em;
+    margin-left: 0.15em;
+    color: var(--accent);
+    -webkit-text-fill-color: var(--accent);
+  }
+}
+
+.cmp {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--surface-2);
+
+  &.up {
+    color: var(--good-text);
+  }
+
+  &.down {
+    color: var(--serious);
+  }
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+
+  @media (max-width: 700px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+// Une seule bande, cellules séparées par de fins filets
+.kpi {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  box-shadow: -1px -1px 0 var(--border);
+}
+
+.value {
+  font-size: 1.9rem;
+
+  small {
+    font-size: 0.5em;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+}
+
+.delta {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+
+  &.good {
+    color: var(--good-text);
+  }
+
+  &.bad {
+    color: var(--serious);
+  }
+}
