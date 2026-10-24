@@ -9,7 +9,7 @@ if (!zip) {
   process.exit(1);
 }
 const raw = rawDir();
-const r = importStravaArchive(zip, raw);
+const r = await importStravaArchive(zip, raw);
 console.log(
   `Strava : ${r.runs} sorties de course à pied (${r.added} nouvelles), ${r.files} tracés` +
     (r.skipped ? `, ${r.skipped} ignorés` : ''),

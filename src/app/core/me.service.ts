@@ -1,5 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { EntryError } from './entries.service';
+import { EntryError } from './entry-error';
+import { LOCAL_MODE } from './runtime';
 
 /** Compte de la requête (GET /api/me, scripts/sync/app.mjs) */
 export interface Me {
@@ -37,6 +38,8 @@ export class MeService {
   }
 
   async refresh(): Promise<void> {
+    // Appli publique : pas de NAS derrière la même adresse
+    if (LOCAL_MODE) return;
     try {
       const res = await fetch('api/me', { headers: { Accept: 'application/json' }, cache: 'no-store' });
       const type = res.headers.get('content-type') ?? '';

@@ -23,3 +23,7 @@ declare module '*.tcx' {
   const text: string;
   export default text;
 }
+declare module '*.zip' {
+  const bytes: Uint8Array;
+  export default bytes;
+}

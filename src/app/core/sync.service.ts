@@ -1,4 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { LocalService } from './local.service';
+import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
 import { sourcesOf } from './sources';
 
@@ -80,9 +82,11 @@ const AUTH: Record<SourceKey, string> = { coros: 'coros', strava: 'strava', goog
 @Injectable({ providedIn: 'root' })
 export class SyncService {
   private readonly store = inject(DataService);
+  private readonly local = inject(LocalService);
   readonly status = signal<SyncStatus | null>(null);
   readonly available = computed(() => this.status() !== null);
-  readonly running = computed(() => this.status()?.running ?? false);
+  /** Run du NAS, ou calcul sur l'appareil (mode local-first) */
+  readonly running = computed(() => (LOCAL_MODE ? this.local.busy() : (this.status()?.running ?? false)));
   /** Message d'une demande refusée (déjà en cours, trop tôt, service injoignable) */
   readonly notice = signal<string | null>(null);
   /** Sortie dont le FIT est en cours de téléchargement (« Affiner avec le tracé ») */
@@ -137,6 +141,8 @@ export class SyncService {
   }
 
   async refresh(): Promise<void> {
+    // Appli publique : pas de service de synchro derrière la même adresse (synchro sur l'appareil : à venir)
+    if (LOCAL_MODE) return;
     try {
       const res = await fetch('api/sync', { headers: { Accept: 'application/json' }, cache: 'no-store' });
       const type = res.headers.get('content-type') ?? '';
