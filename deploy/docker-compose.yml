@@ -13,6 +13,8 @@ services:
       - "192.168.1.10:8080:80"
       # Tailscale Serve : tailscale serve --bg --https=443 http://127.0.0.1:8090
       - "127.0.0.1:8090:81"
+      # Tailscale Funnel (proches local-first) : tailscale funnel --bg --https=8443 http://127.0.0.1:8091
+      - "127.0.0.1:8091:82"
     volumes:
       - ./html:/usr/share/nginx/html:ro
       - ./nginx:/etc/nginx/conf.d:ro
@@ -20,7 +22,7 @@ services:
     restart: unless-stopped
 
   # Synchro des comptes hébergés au démarrage puis toutes les SYNC_INTERVAL_MIN minutes (un run à la fois), à la demande
-  # par le site, et API du site (/api/…, proxy nginx ; ports 8787 lan et 8788 tailnet non publiés). scripts/sync/server.mjs.
+  # par le site, et API du site (/api/…, proxy nginx ; ports 8787 lan, 8788 tailnet et 8789 public non publiés). scripts/sync/server.mjs.
   # Chaque run relit les scripts : un `npm run deploy` suffit, sauf changement de server.mjs ou app.mjs (redémarrer).
   runstat-sync:
     image: node:24-alpine
@@ -36,6 +38,11 @@ services:
       # Adresses du site acceptées pour la connexion Strava (redirect_uri) ; Strava n'accepte que le domaine de rappel
       # de l'appli de chacun (l'hôte ts.net), l'adresse locale sert si ce domaine est l'IP du NAS.
       SYNC_PUBLIC_ORIGINS: "https://nas.tailXXXX.ts.net,http://192.168.1.10:8080"
+      # Accès public des proches local-first (Funnel) : appli publique (liens d'invitation, CORS, passkeys) et adresse Funnel
+      RUNSTAT_APP_URL: "https://<compte>.github.io/runstat/"
+      RUNSTAT_PUBLIC_URL: "https://nas.tailXXXX.ts.net:8443"
+      # Place de la sauvegarde chiffrée par compte local-first (Mo)
+      RUNSTAT_BACKUP_QUOTA_MB: "1024"
     volumes:
       - ./app/scripts:/app/scripts:ro
       - ./app/node_modules:/app/node_modules:ro

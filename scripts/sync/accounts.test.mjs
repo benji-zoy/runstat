@@ -15,6 +15,7 @@ import { createApp } from './app.mjs';
 import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
 import { oauthConnectRoutes } from './oauth-connect.mjs';
+import { AuthStore } from './auth-store.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '../..');
@@ -128,11 +129,11 @@ let calls;
 let servers;
 const base = {};
 
-function startApp(zone, accounts, queue) {
+function startApp(zone, accounts, queue, extra = {}) {
   const origins = ['https://nas.tailxxxx.ts.net'];
   const strava = stravaConnectRoutes({ origins, log: silent });
   const oauth = oauthConnectRoutes({ origins, log: silent });
-  const server = createServer(createApp({ zone, accounts, queue, strava, oauth, log: silent, quotaBytes: 50_000 }));
+  const server = createServer(createApp({ zone, accounts, queue, strava, oauth, log: silent, quotaBytes: 50_000, ...extra }));
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
@@ -288,6 +289,50 @@ test('API : /api/me et administration réservée au propriétaire par le tailnet
   // Retiré : plus d'accès (ses données restent sur le disque)
   assert.equal((await api('tailnet', '/api/admin/users', { ...owner, body: USERS })).status, 200);
   assert.equal((await api('tailnet', '/api/me', { login: 'dave@exemple.fr' })).status, 403);
+});
+
+test('API : invitation d’un proche local-first et réinitialisation, propriétaire par le tailnet seulement', async () => {
+  const owner = { login: 'alice@exemple.fr', method: 'POST' };
+  // Sans accès public configuré
+  assert.equal((await api('tailnet', '/api/admin/invitations', { ...owner, body: { id: 'erin', name: 'Erin' } })).status, 503);
+  const fresh = await startApp('tailnet', accountsLoader(usersDir, null), new RunQueue({ start: () => 0 }), {
+    appUrl: 'https://app.example/runstat/', publicUrl: 'https://nas.tailxxxx.ts.net:8443',
+  });
+  const at = (path, opts) => fetch(`http://127.0.0.1:${fresh.address().port}${path}`, {
+    method: opts.method ?? 'GET',
+    headers: { 'Tailscale-User-Login': opts.login, 'X-RunStat': 'sync', 'Content-Type': 'application/json' },
+    body: opts.body && JSON.stringify(opts.body),
+  });
+  try {
+    assert.equal((await at('/api/admin/invitations', { login: 'bob@exemple.fr', method: 'POST', body: { id: 'erin', name: 'Erin' } })).status, 403);
+    assert.equal((await api('lan', '/api/admin/invitations', { method: 'POST', body: { id: 'erin', name: 'Erin' } })).status, 403);
+    const r = await at('/api/admin/invitations', { ...owner, body: { id: 'erin', name: 'Erin' } });
+    assert.equal(r.status, 201);
+    const { link } = await r.json();
+    const u = new URL(link);
+    assert.equal(`${u.origin}${u.pathname}`, 'https://app.example/runstat/rejoindre');
+    const frag = new URLSearchParams(u.hash.slice(1));
+    assert.equal(frag.get('nas'), 'https://nas.tailxxxx.ts.net:8443');
+    const auth = new AuthStore(usersDir);
+    assert.equal(auth.findCode(frag.get('code'), 'invite').userId, 'erin');
+    const erin = JSON.parse(readFileSync(join(usersDir, 'users.json'), 'utf8')).find((x) => x.id === 'erin');
+    assert.deepEqual(erin, { id: 'erin', name: 'Erin', role: 'member', mode: 'local', logins: [] });
+    // Compte hébergé : pas d'invitation local-first
+    assert.equal((await at('/api/admin/invitations', { ...owner, body: { id: 'bob' } })).status, 400);
+    // Réinitialisation : ancien lien caduc, nouveau lien
+    const reset = await at('/api/admin/users/erin/reset', owner);
+    assert.equal(reset.status, 200);
+    assert.equal(auth.findCode(frag.get('code'), 'invite'), null);
+    const code2 = new URLSearchParams(new URL((await reset.json()).link).hash.slice(1)).get('code');
+    assert.equal(auth.findCode(code2, 'invite').userId, 'erin');
+    assert.equal((await at('/api/admin/users/bob/reset', owner)).status, 404);
+    // Compte retiré de la liste : plus rien ne vaut
+    const list = JSON.parse(readFileSync(join(usersDir, 'users.json'), 'utf8')).filter((x) => x.id !== 'erin');
+    assert.equal((await at('/api/admin/users', { login: 'alice@exemple.fr', method: 'PUT', body: list })).status, 200);
+    assert.equal(auth.findCode(code2, 'invite'), null);
+  } finally {
+    fresh.close();
+  }
 });
 
 // ---------- migration ----------

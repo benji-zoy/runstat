@@ -32,8 +32,9 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
   sinon l'autre est révoqué.
 - `npm run test:sync` (parseurs, fusions idempotentes, liste blanche, validation de la saisie ; `strava.test.mjs` : archive Strava,
   tracés, santé COROS sur les fixtures fictives de `scripts/sync/fixtures/` ; `strava-connect.test.mjs` : connexion Strava, fetch bouchonné ;
-  `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, file, migration ; `oauth-connect.test.mjs` :
-  connexion COROS et Google, fetch bouchonné), `npm run spike -- coros | google` (dumps bruts).
+  `accounts.test.mjs` : identité par zone, cloisonnement A/B, administration, invitations, file, migration ; `oauth-connect.test.mjs` :
+  connexion COROS et Google, fetch bouchonné ; `public-api.test.mjs` : CORS, passkeys ES256/RS256, sessions et ré-authentification,
+  sauvegarde cloisonnée et versionnée, relais, limites), `npm run spike -- coros | google` (dumps bruts).
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
@@ -135,6 +136,37 @@ compte : écran « Bienvenue » (404 sur `data/coros.json`), puis Réglages et s
   héritées de DSM ouvrent sinon les nouveaux dossiers et fichiers en écriture à tous (`rwxrwxrwx+`).
 - Quota par compte hébergé : `RUNSTAT_USER_QUOTA_MB` (2 Go), 507 au-delà (saisie, archive). Au démarrage, `server.mjs` refuse de
   tourner si `users/` existe sans `users.json` (nouveau YAML monté avant la migration).
+
+### Accès public des proches local-first (Tailscale Funnel, `public-api.mjs`)
+Troisième zone : nginx `:82` (`127.0.0.1:8091`, cible de `tailscale funnel --bg --https=8443`) → port 8789, routeur `public-api.mjs`
+seul : `/auth/`, `/backup/`, `/relay/` (tailles refusées par nginx avant toute authentification, IP du client = valeur la plus à droite
+de `X-Forwarded-For`, posée en `X-Real-IP` par un `map`, pas par `realip` qui passerait avant `allow/deny`). Variables :
+`RUNSTAT_APP_URL` (appli publique, liens d'invitation `…/rejoindre#nas=<RUNSTAT_PUBLIC_URL>&code=…`), `RUNSTAT_PUBLIC_URL` (adresse
+Funnel), `RUNSTAT_APP_ORIGINS` (CORS et origines WebAuthn ; défaut : origine de l'appli), `RUNSTAT_GOOGLE_REDIRECTS`
+(défaut `<appli>connexion/google`), `RUNSTAT_BACKUP_QUOTA_MB` (1 Go). CORS = filtre (403 hors liste) ; la sécurité vient de
+l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
+- Comptes `mode: local` (sans login Tailscale, pas d'accès au tableau de bord). « Proches » › « Créer le lien d'invitation »
+  (`POST /api/admin/invitations`, compte créé au besoin), « Nouveau lien », « Réinitialiser l'accès » (`POST /api/admin/users/<id>/reset` :
+  passkeys, sessions et codes révoqués). Retirer un compte local révoque aussi tout.
+- `auth-store.mjs` (`users/auth/`, 700/600, empreintes seulement) : codes d'invitation (7 jours) et liens de connexion (15 min) à
+  usage unique ; passkeys ; sessions (30 jours glissants, 180 au plus, 20 par compte). `webauthn.mjs` : CBOR maison, ES256 et RS256
+  seulement, UP + UV exigés, `crossOrigin` refusé, rpId = hôte de l'origine, compteur refusé seulement s'il recule (iCloud et Google
+  renvoient 0). Le challenge d'enregistrement n'est émis que contre un code valide et lié à lui ; code consommé et passkey enregistrée
+  sans `await` entre les deux. Ré-authentification par passkey (5 min) exigée pour un lien de connexion, ajouter ou retirer une
+  passkey, supprimer la sauvegarde ; une session ouverte par un lien n'en vaut pas une.
+- `backup-store.mjs` (`users/<id>/backup/`) : objets chiffrés immuables nommés par un HMAC (64 hex, 32 Mio au plus), manifestes
+  versionnés (`If-Match: "v<n>"` / `If-None-Match: *`, 412 si périmé, 409 si des objets manquent) avec en-tête clair (dérivation,
+  clé enveloppée) et blob chiffré ; manifestes et objets gardés 30 jours quel que soit leur nombre (le dernier toujours), ménage toutes
+  les 6 h ; `DELETE /backup` = suppression douce (30 jours).
+- Relais : `POST /relay/google/token` seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
+  avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte). Le reste se fait
+  depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS
+  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement.
+- Limites : `/auth` 30/min par IP et 300/min au total, sauvegarde 1 200 requêtes / 10 min par compte. Journal : méthode, route type,
+  statut, compte ; jamais de corps, jeton, code ni URL relayée.
+- Mise en service (avec l'accord du propriétaire) : variables ci-dessus et port `127.0.0.1:8091:82` dans le YAML de Container Manager,
+  Nettoyer › Construire ; attribut `funnel` dans la politique du tailnet ; `sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8091` ;
+  vérifier depuis l'extérieur (4G) que seuls `/auth`, `/backup`, `/relay` répondent (le reste : 404).
 
 ### Migration d'une instance mono-utilisateur (une fois, avec l'accord du propriétaire)
 1. `npm run nas -- pull` (copie locale), puis `npm run deploy` (scripts, `deploy/nginx/`, compose).
