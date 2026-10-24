@@ -36,7 +36,10 @@
           <app-icon name="users" />
         </button>
       }
-      @if (sync.available()) {
+      @if (local && localService.busy()) {
+        <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
+      }
+      @if (entries.available()) {
         <button type="button" class="icon-btn" (click)="athleteForm.open()" title="Réglages (FC, poids…)" aria-label="Réglages">
           <app-icon name="settings" />
         </button>
@@ -56,6 +59,13 @@
       <button type="button" class="btn small primary" (click)="pwa.reload()">Recharger</button>
     </div>
   }
+  @if (iosHint()) {
+    <div class="banner" role="status">
+      Sur iPhone, ajoute RunStat à l'écran d'accueil (Partager › Sur l'écran d'accueil) : sinon Safari efface tes données après
+      7 jours sans visite.
+      <button type="button" class="btn small" (click)="hideIosHint()">Compris</button>
+    </div>
+  }
   @if (!pwa.online() && data()) {
     <div class="banner" role="status">Hors ligne · données du {{ updatedAt() }}</div>
   }
@@ -64,9 +74,15 @@
   } @else if (empty()) {
     <section class="card empty-account">
       <h2>Bienvenue{{ me.me()?.name ? ', ' + me.me()?.name : '' }}</h2>
-      <p>Ton compte n'a pas encore de données. Ouvre les Réglages : renseigne ta FC et ta morphologie, choisis tes sources
-        (COROS, Strava, santé), connecte-les, puis lance une synchro. Tes données restent dans ton dossier sur le NAS.</p>
-      @if (sync.available()) {
+      @if (local) {
+        <p>Tes données restent sur cet appareil : rien n'est envoyé à un serveur. Ouvre les Réglages : renseigne ta FC et ta
+          morphologie, choisis Strava, puis importe ton archive Strava (strava.com › Paramètres › Mon compte › Télécharger ton
+          archive). Le calcul se fait ici, en quelques minutes.</p>
+      } @else {
+        <p>Ton compte n'a pas encore de données. Ouvre les Réglages : renseigne ta FC et ta morphologie, choisis tes sources
+          (COROS, Strava, santé), connecte-les, puis lance une synchro. Tes données restent dans ton dossier sur le NAS.</p>
+      }
+      @if (entries.available()) {
         <button type="button" class="btn primary" (click)="athleteForm.open()">Ouvrir les Réglages</button>
       }
     </section>

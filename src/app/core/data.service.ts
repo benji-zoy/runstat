@@ -1,9 +1,12 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { LocalService } from './local.service';
+import { LOCAL_MODE } from './runtime';
 import { CorosData } from './models';
 import { parseDay, startOfDay } from './stats';
 
 @Injectable({ providedIn: 'root' })
 export class DataService {
+  private readonly local = inject(LocalService);
   readonly data = signal<CorosData | null>(null);
   readonly error = signal<string | null>(null);
   /** Compte sans données pour l'instant (nouveau compte hébergé : réglages et sources à renseigner, puis synchro) */
@@ -27,8 +30,7 @@ export class DataService {
   loadRoutes(): void {
     if (this.routesLoading) return;
     this.routesLoading = true;
-    fetch('data/routes.json', { cache: 'no-cache' })
-      .then((r) => (r.ok ? r.json() : {}))
+    (LOCAL_MODE ? this.local.routes() : fetch('data/routes.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : {})))
       .then((r) => this.routes.set(r))
       .catch(() => this.routes.set({}));
   }
@@ -43,6 +45,18 @@ export class DataService {
   }
 
   async load(): Promise<void> {
+    if (LOCAL_MODE) {
+      // Appli publique : snapshot calculé sur l'appareil ; aucun encore = compte vide (écran de bienvenue)
+      try {
+        const d = await this.local.snapshot();
+        this.empty.set(!d);
+        this.error.set(null);
+        if (d) this.data.set(d);
+      } catch (e) {
+        this.error.set(`Stockage de l’appareil illisible (${(e as Error).message}).`);
+      }
+      return;
+    }
     try {
       const res = await fetch('data/coros.json', { cache: 'no-cache' });
       // Servi par le NAS pour le compte de la requête : 404 = compte vide, 403 = pas de compte pour ce login

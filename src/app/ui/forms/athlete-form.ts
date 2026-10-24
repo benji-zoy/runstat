@@ -4,6 +4,7 @@ import { EntriesService } from '../../core/entries.service';
 import { ScienceService } from '../../core/science.service';
 import { SyncService } from '../../core/sync.service';
 import { MeService } from '../../core/me.service';
+import { LOCAL_MODE } from '../../core/runtime';
 import { ActivitySource, Athlete, HealthSource } from '../../core/models';
 import { CITY_NAMES, DEFAULT_CITY } from '../../core/equivalences';
 import { FormDialogComponent, errorList, opt } from './form-dialog';
@@ -60,7 +61,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           </select>
           <span class="hint">Point de départ des trajets des équivalences (Souvenirs)</span>
         </label>
-        <p class="hint field wide">Changer la FC max, la FC de repos ou les seuils recalcule les zones de toutes tes sorties sur le NAS
+        <p class="hint field wide">Changer la FC max, la FC de repos ou les seuils recalcule les zones de toutes tes sorties {{ local ? 'sur cet appareil' : 'sur le NAS' }}
           (quelques minutes) ; le reste s'applique tout de suite.</p>
 
         <h3 class="field wide group">Sources des données</h3>
@@ -78,7 +79,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             }
           </div>
         </div>
-        @if (usesCoros()) {
+        @if (!local && usesCoros()) {
           <div class="field wide">Connexion COROS
             <span class="hint">{{ corosConnection() }}</span>
             <div class="upload">
@@ -88,7 +89,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               Une seule connexion à la fois : le jeton COROS change à chaque renouvellement.</span>
           </div>
         }
-        @if (form.controls.health.value === 'google') {
+        @if (!local && form.controls.health.value === 'google') {
           <div class="field wide">Connexion Google Health
             <span class="hint">{{ googleConnection() }}</span>
             @if (sync.status()?.googleClient) {
@@ -102,6 +103,10 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           </div>
         }
         @if (form.controls.activities.value === 'strava') {
+          @if (local) {
+          <p class="hint field wide">Synchro automatique de Strava depuis cet appareil : bientôt. En attendant, importe ton archive ;
+            elle est lue sur l'appareil, rien n'est envoyé.</p>
+        } @else {
           <div class="field wide">Synchro Strava
             <span class="hint">{{ stravaConnection() }}</span>
             @if (!sync.status()?.stravaClient || editingClient()) {
@@ -144,6 +149,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               </div>
             }
           </div>
+          }
           <div class="field wide">Archive Strava
             <span class="hint">Pour tout l'historique : sur strava.com, Paramètres › Mon compte › Télécharger ou supprimer ton compte ›
               Demander une archive. Le zip arrive par e-mail quelques heures plus tard ; envoie-le ici tel quel.</span>
@@ -151,7 +157,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               <label class="btn" [class.disabled]="entries.uploading() !== null || sync.running()">
                 <input type="file" accept=".zip,application/zip" hidden (change)="upload($event)"
                   [disabled]="entries.uploading() !== null || sync.running()" />
-                {{ entries.uploading() !== null ? 'Envoi…' : 'Importer l’archive' }}
+                {{ entries.uploading() !== null ? (local ? 'Import…' : 'Envoi…') : 'Importer l’archive' }}
               </label>
               @if (entries.uploading() !== null) {
                 <progress [value]="entries.uploading()" max="1" aria-label="Envoi de l’archive"></progress>
@@ -161,7 +167,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             <span class="hint">{{ uploadNotice() ?? stravaStatus() }}</span>
           </div>
         }
-        <p class="hint field wide">Changer de source reconstruit toutes les données sur le NAS (quelques minutes).</p>
+        <p class="hint field wide">Changer de source reconstruit toutes les données {{ local ? 'sur cet appareil' : 'sur le NAS' }} (quelques minutes).</p>
       </div>
     </app-form-dialog>
   `,
@@ -186,6 +192,8 @@ export class AthleteFormComponent {
   private readonly sci = inject(ScienceService);
   protected readonly sync = inject(SyncService);
   protected readonly me = inject(MeService);
+  /** Appli publique : données sur l'appareil, pas de connexion aux sources pour l'instant */
+  protected readonly local = LOCAL_MODE;
   protected readonly activitySources = ACTIVITY_SOURCES;
   protected readonly healthSources = HEALTH_SOURCES;
   protected readonly cities = CITY_NAMES;
@@ -353,7 +361,7 @@ export class AthleteFormComponent {
     this.uploadNotice.set(null);
     try {
       await this.entries.uploadStravaArchive(file);
-      this.uploadNotice.set('Archive reçue : import et reconstruction en cours sur le NAS (quelques minutes).');
+      this.uploadNotice.set(this.local ? 'Archive importée sur cet appareil.' : 'Archive reçue : import et reconstruction en cours sur le NAS (quelques minutes).');
     } catch (e) {
       this.errors.set(errorList(e));
     }

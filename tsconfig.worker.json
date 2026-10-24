@@ -1,0 +1,10 @@
+/* Web Workers de l'appli (core/engine.worker.ts : moteur en arrière-plan du mode local-first) */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/worker",
+    "lib": ["es2022", "webworker"],
+    "types": []
+  },
+  "include": ["src/**/*.worker.ts"]
+}

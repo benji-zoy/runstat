@@ -505,7 +505,7 @@ try {
   } else if (archive) {
     log('Import de l’archive Strava…');
     try {
-      const r = importStravaArchive(archive, raw);
+      const r = await importStravaArchive(archive, raw);
       state.stravaArchive = { importedAt: new Date().toISOString(), ...r };
       delete state.lastImportError;
       log(`Archive Strava : ${r.runs} sorties de course à pied (${r.added} nouvelles), ${r.files} tracés`);

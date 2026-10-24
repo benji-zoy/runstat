@@ -1,25 +1,26 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { EntryError } from './entry-error';
+import { LocalService } from './local.service';
+import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
 import { SyncService } from './sync.service';
 import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult } from './models';
 
-/** Refus du service (validation) : un message par champ */
-export class EntryError extends Error {
-  constructor(readonly errors: string[]) {
-    super(errors.join(' ; '));
-  }
-}
+export { EntryError } from './entry-error';
 
 /**
  * Saisie depuis le site (objectifs, bilans, classements, réglages, sources) : écrit dans data-raw/ sur le NAS
  * (scripts/sync/server.mjs → entries.mjs), affiche tout de suite le changement puis recharge après la reconstruction.
- * Sans service de synchro (ng serve, autre hébergement), `available` reste faux et les boutons de saisie sont masqués.
+ * Appli publique (local-first) : écrit dans IndexedDB (core/local.service.ts) avec les mêmes règles, puis recalcule sur l'appareil.
+ * Sans service de synchro ni mode local (ng serve), `available` reste faux et les boutons de saisie sont masqués.
  */
 @Injectable({ providedIn: 'root' })
 export class EntriesService {
   private readonly store = inject(DataService);
   private readonly sync = inject(SyncService);
-  readonly available = this.sync.available;
+  private readonly local = inject(LocalService);
+  /** Peut saisir : NAS joignable, ou mode local-first */
+  readonly available = computed(() => LOCAL_MODE || this.sync.available());
   readonly saving = signal(false);
   /** Envoi de l'archive Strava : part envoyée (0 à 1), null hors envoi */
   readonly uploading = signal<number | null>(null);
@@ -57,6 +58,12 @@ export class EntriesService {
   async uploadStravaArchive(file: File): Promise<void> {
     this.uploading.set(0);
     try {
+      if (LOCAL_MODE) {
+        // Sur l'appareil : lue par morceaux, jamais envoyée ; progression de l'import des tracés
+        await this.local.importArchive(file, (p) => this.uploading.set(p));
+        await this.store.reload();
+        return;
+      }
       const { status, body } = await new Promise<{ status: number; body: { error?: string } }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', 'api/strava/archive');
@@ -83,6 +90,7 @@ export class EntriesService {
 
   /** Appli Strava de l'athlète, écrite dans secrets/ du NAS : le secret n'est jamais relu par le site */
   async saveStravaClient(clientId: string, clientSecret: string): Promise<void> {
+    if (LOCAL_MODE) throw new EntryError(['La synchro Strava depuis l’appareil arrive bientôt : importe ton archive en attendant']);
     await this.send('PUT', 'strava/client', { client_id: clientId, client_secret: clientSecret });
   }
 
@@ -100,6 +108,12 @@ export class EntriesService {
   private async send(method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<{ saved: unknown }> {
     this.saving.set(true);
     try {
+      if (LOCAL_MODE) {
+        const out = await this.local.apply(method, path, body);
+        // Recalcul sur l'appareil (zones FC, prévision météo…) puis rechargement, sans bloquer le formulaire
+        void this.local.rebuild().then(() => this.store.reload(), () => undefined);
+        return out;
+      }
       let res: Response;
       try {
         res = await fetch(`api/${path}`, {

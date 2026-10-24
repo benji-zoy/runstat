@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter, take } from 'rxjs';
@@ -14,6 +14,9 @@ import { IconComponent } from './ui/icon';
 import { AthleteFormComponent } from './ui/forms/athlete-form';
 import { UsersFormComponent } from './ui/forms/users-form';
 import { MeService } from './core/me.service';
+import { EntriesService } from './core/entries.service';
+import { LocalService } from './core/local.service';
+import { LOCAL_MODE } from './core/runtime';
 
 @Component({
   selector: 'app-root',
@@ -27,6 +30,18 @@ export class App {
   protected readonly sync = inject(SyncService);
   protected readonly pwa = inject(PwaService);
   protected readonly me = inject(MeService);
+  protected readonly entries = inject(EntriesService);
+  protected readonly localService = inject(LocalService);
+  /** Appli publique (local-first) : données sur l'appareil */
+  protected readonly local = LOCAL_MODE;
+  /** iPhone / iPad hors appli installée : Safari efface les données d'un site après 7 jours sans visite */
+  protected readonly iosHint = signal(LOCAL_MODE && iosBrowser() && !dismissed('runstat-ios-hint'));
+  protected hideIosHint(): void {
+    this.iosHint.set(false);
+    try {
+      localStorage.setItem('runstat-ios-hint', '1');
+    } catch {}
+  }
   protected readonly empty = this.store.empty;
   protected readonly data = this.store.data;
   protected readonly error = this.store.error;
@@ -56,4 +71,17 @@ export class App {
 
   /** Niveau façon Nike Run Club, affiché à côté du logo */
   protected readonly level = computed(() => levelFor(this.store.activities().reduce((s, a) => s + a.distanceKm, 0)).level);
+}
+
+function iosBrowser(): boolean {
+  const standalone = matchMedia?.('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) && !standalone;
+}
+
+function dismissed(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
 }

@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
-import { openZip } from './zip.mjs';
+import { openAsBlob } from 'node:fs';
+import { blobSource, openZip } from '#engine/archive/zip.ts';
 import {
   activityFromApi, mergeStravaActivities, parseActivitiesCsv, parseArchiveDate, parseCsv, runSportType,
 } from '#engine/parsers/strava.ts';
@@ -82,25 +83,25 @@ test('activities.csv français : décimales à virgule, en-têtes accentués', (
   assert.equal(runs[0].cadence, 172);
 });
 
-test('zip : entrées listées et lues (deflate, stocké)', () => {
-  const zip = openZip(join(fixtures, 'strava', 'export.zip'));
-  try {
-    const names = zip.entries.map((e) => e.name).sort();
-    assert.deepEqual(names, [
-      'activities.csv', 'activities/5551.gpx.gz', 'activities/5552.fit.gz', 'activities/5553.tcx', 'activities/5556.fit.gz', 'evil.gpx',
-    ]);
-    const csv = zip.read(zip.entries.find((e) => e.name === 'activities.csv')).toString('utf8');
-    assert.equal(csv, read('strava', 'export', 'activities.csv'));
-  } finally {
-    zip.close();
-  }
-  assert.throws(() => openZip(join(fixtures, 'strava', 'activities-fr.csv')), /pas une archive zip/);
+test('zip : entrées listées et lues (deflate, stocké), par le moteur', async () => {
+  const open = async (...p) => openZip(blobSource(await openAsBlob(join(fixtures, ...p))));
+  const zip = await open('strava', 'export.zip');
+  const names = zip.entries.map((e) => e.name).sort();
+  assert.deepEqual(names, [
+    'activities.csv', 'activities/5551.gpx.gz', 'activities/5552.fit.gz', 'activities/5553.tcx', 'activities/5556.fit.gz', 'evil.gpx',
+  ]);
+  const csv = new TextDecoder().decode(await zip.read(zip.entries.find((e) => e.name === 'activities.csv')));
+  assert.equal(csv, read('strava', 'export', 'activities.csv'));
+  await assert.rejects(() => open('strava', 'activities-fr.csv'), /pas une archive zip/);
+  // Bombe zip : taille décompressée bornée
+  const small = await openZip(blobSource(await openAsBlob(join(fixtures, 'strava', 'export.zip'))), { maxEntrySize: 10 });
+  await assert.rejects(() => small.read(small.entries.find((e) => e.name === 'activities.csv')), /trop volumineux/);
 });
 
-test('import de l’archive : sorties, tracés, entrée piégée ignorée, idempotent', () => {
+test('import de l’archive : sorties, tracés, entrée piégée ignorée, idempotent', async () => {
   const raw = mkdtempSync(join(tmpdir(), 'runstat-'));
   try {
-    const r = importStravaArchive(join(fixtures, 'strava', 'export.zip'), raw);
+    const r = await importStravaArchive(join(fixtures, 'strava', 'export.zip'), raw);
     assert.deepEqual(r, { runs: 5, added: 5, files: 3, skipped: 1 });
     const list = JSON.parse(readFileSync(stravaFile(raw), 'utf8'));
     assert.deepEqual(list.map((a) => [a.id, a.file ?? null]), [
@@ -116,7 +117,7 @@ test('import de l’archive : sorties, tracés, entrée piégée ignorée, idemp
     );
     assert.ok(!existsSync(join(raw, 'evil.gpx')) && !existsSync(join(raw, '..', 'evil.gpx')));
 
-    const again = importStravaArchive(join(fixtures, 'strava', 'export.zip'), raw);
+    const again = await importStravaArchive(join(fixtures, 'strava', 'export.zip'), raw);
     assert.equal(again.added, 0);
     assert.deepEqual(JSON.parse(readFileSync(stravaFile(raw), 'utf8')), list);
   } finally {

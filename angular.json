@@ -38,8 +38,24 @@
               "node_modules/leaflet/dist/leaflet.css",
               "src/styles.scss"
             ],
-            "allowedCommonJsDependencies": ["leaflet"],
-            "loader": { ".fit": "binary", ".gz": "binary", ".txt": "text", ".jsonl": "text", ".csv": "text", ".tcx": "text" }
+            "allowedCommonJsDependencies": [
+              "leaflet",
+              "buffer",
+              "fit-file-parser"
+            ],
+            "loader": {
+              ".fit": "binary",
+              ".gz": "binary",
+              ".zip": "binary",
+              ".txt": "text",
+              ".jsonl": "text",
+              ".csv": "text",
+              ".tcx": "text"
+            },
+            "webWorkerTsConfig": "tsconfig.worker.json",
+            "define": {
+              "RUNSTAT_LOCAL": "false"
+            }
           },
           "configurations": {
             "production": {
@@ -62,6 +78,61 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "pages": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "1MB",
+                  "maximumError": "2MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "8kB",
+                  "maximumError": "16kB"
+                }
+              ],
+              "outputHashing": "all",
+              "serviceWorker": "ngsw-config.json",
+              "baseHref": "/runstat/",
+              "outputPath": "dist/runstat-pages",
+              "define": {
+                "RUNSTAT_LOCAL": "true"
+              },
+              "assets": [
+                {
+                  "glob": "**/*",
+                  "input": "public",
+                  "ignore": [
+                    "data/**"
+                  ]
+                }
+              ],
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                },
+                "fonts": true
+              }
+            },
+            "local": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "define": {
+                "RUNSTAT_LOCAL": "true"
+              },
+              "assets": [
+                {
+                  "glob": "**/*",
+                  "input": "public",
+                  "ignore": [
+                    "data/**"
+                  ]
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -74,6 +145,9 @@
             },
             "development": {
               "buildTarget": "runstat:build:development"
+            },
+            "local": {
+              "buildTarget": "runstat:build:local"
             }
           },
           "defaultConfiguration": "development"

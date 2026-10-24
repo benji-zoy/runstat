@@ -81,8 +81,11 @@ pour tourner aussi dans le navigateur (local-first, phase 4) : `fit/` (`analyse(
 `snapshot/` (`buildSnapshot` = ex-build-data, textes COROS), `pipeline/build-fit.ts` (cache `fit-derived/` par `FIT_VERSION`),
 `fit-queue.ts`, `sources.ts`. Entrées-sorties par `storage/` : `FileStore` (`list`, `read`, `readText`, `write`, `remove`), deux zones
 `raw` (data-raw) et `snapshot` (public/data) ; `MemoryStore`, `IndexedDbStore` (base `runstat-engine`, un magasin par zone), et
-`NodeStore` côté Node (`scripts/node-storage.mjs`, écriture atomique). Restent en Node : clients API, `run.mjs`, `server.mjs`,
-`zip.mjs` / `strava-archive.mjs`, `import-health.mjs`, `fetch-weather.mjs`.
+`NodeStore` côté Node (`scripts/node-storage.mjs`, écriture atomique). Aussi dans le moteur : `weather.ts` (Open-Meteo, `fetch`
+injecté ; `fetch-weather.mjs` n'est plus qu'une enveloppe), `archive/` (lecteur zip sur une source à accès direct, `Blob` du navigateur ou
+`fs.openAsBlob` de Node, `DecompressionStream` borné ; import de l'archive Strava, enveloppé par `strava-archive.mjs`), `entries.ts`
+(validation de la saisie, réexportée par `entries.mjs`), `pipeline/rebuild.ts` (reconstruction complète sur l'appareil). Restent en Node :
+clients API, `run.mjs`, `server.mjs`, `import-health.mjs`. Pas de `Blob.stream()` dans le moteur (absent de jsdom) : flux construits à la main.
 - Node exécute les `.ts` directement (**type stripping** de Node 24, sans build) : les scripts importent `#engine/…` (champ `imports`
   de `package.json`), le moteur importe avec l'extension `.ts` (`rewriteRelativeImportExtensions` côté Angular) et reste en syntaxe
   effaçable (pas d'enum, de namespace ni de propriété de paramètre : `npm run check:engine`). `src/engine/package.json` le déclare en ESM.
@@ -94,6 +97,26 @@ pour tourner aussi dans le navigateur (local-first, phase 4) : `fit/` (`analyse(
 - Changement du moteur : `npm run data` avant / après sur la même copie de `data-raw/`, puis
   `node scripts/compare-snapshot.mjs <avant> <après>` (coros.json hors generatedAt, routes.json, fit-derived/, missing-details.txt) :
   zéro écart attendu, sauf changement voulu (alors incrémenter `FIT_VERSION` si l'analyse FIT change).
+
+## Appli publique et mode local-first (`core/runtime.ts`, `core/local.service.ts`, `core/engine.worker.ts`)
+
+Une seule base de code, deux constructions : site du NAS (`ng build`, défaut) et appli publique sans données (`ng build -c pages`, GitHub
+Pages sous `/runstat/`, `RUNSTAT_LOCAL` posé par `define`). En local-first, tout reste sur l'appareil : IndexedDB `runstat-engine` (zones
+`raw` et `snapshot`), calculs par le moteur dans un Web Worker (`engine.worker.ts` : `rebuild`, import de l'archive Strava lue par
+morceaux, jamais envoyée), un calcul à la fois, reconstructions regroupées. `DataService` lit le snapshot local (aucun = écran
+« Bienvenue »), `EntriesService` valide avec `src/engine/entries.ts` (mêmes règles que le NAS) puis recalcule ; `available` (saisie) est
+vrai en local, `SyncService.available` (synchro des sources) faux tant que la synchro sur l'appareil n'existe pas (PR 6) ; les connexions
+COROS / Google / Strava des Réglages sont masquées. Météo Open-Meteo depuis le navigateur (hors ligne : snapshot quand même, erreur
+dans `local-state.json`). `navigator.storage.persist()` à la première saisie ; bandeau « écran d'accueil » sur iPhone (Safari efface
+les données après 7 jours sans visite, sauf appli installée). `fit-file-parser` et `buffer` sont des dépendances de l'appli (polyfill
+éprouvé dans le vrai bundle du worker ; versions verrouillées : un changement de version change l'analyse FIT).
+- Build Pages : `baseHref /runstat/`, `data/` exclu des fichiers copiés, `inlineCritical` coupé (gestionnaire `onload` en ligne),
+  puis `scripts/pages-postbuild.mjs` : CSP en balise meta (scripts `'self'` + empreinte du script de thème, `connect-src` limité aux services
+  appelés et aux NAS de `RUNSTAT_NAS_ORIGINS`), `referrer no-referrer`, `404.html` = `index.html` (routes Angular). Vérifier en local :
+  `npx ng build -c pages && node scripts/pages-postbuild.mjs && node scripts/serve-pages.mjs` (config `runstat-pages`, http://localhost:4320/runstat/).
+- `.github/workflows/pages.yml` (main seulement, actions épinglées par SHA, `npm ci`, droits minimaux) : tests, build avec
+  `--define RUNSTAT_NAS_ORIGINS=…` (variable du dépôt, liste d'adresses Funnel → `KNOWN_NAS`), CSP, publication. Mise en service (avec
+  l'accord du propriétaire) : variable `RUNSTAT_NAS_ORIGINS`, Settings › Pages › Source « GitHub Actions ».
 
 ## Saisie depuis le site (`scripts/sync/entries.mjs`, `core/entries.service.ts`, `ui/forms/`)
 
@@ -352,5 +375,5 @@ local via Tailscale uniquement : données personnelles, ne pas ouvrir de port.
 
 - `npx ng test --watch=false` (tests de `src/app/core` et du moteur `src/engine`)
 - `npm run check:engine` (syntaxe compatible avec le type stripping de Node)
-- `npx ng build`
+- `npx ng build` (et `npx ng build -c pages` pour l'appli publique)
 - `npm run test:sync` (synchro, `node:test`)
