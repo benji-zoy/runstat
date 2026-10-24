@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
 done
 
 # Mêmes règles que scripts/sync/accounts.mjs (aucun guillemet ni barre oblique inverse : users.json écrit tel quel)
-echo "$owner" | grep -Eq '^[a-z0-9][a-z0-9-]{0,31}$' || die "--owner : minuscules, chiffres et tirets (ex. benjamin)"
+echo "$owner" | grep -Eq '^[a-z0-9][a-z0-9-]{0,31}$' || die "--owner : minuscules, chiffres et tirets (ex. alex)"
 case "$owner" in auth|backup|users|tmp) die "--owner : identifiant réservé" ;; esac
 echo "$login" | grep -Eq '^[^[:space:]@,"<>\\'"'"']{1,64}@[^[:space:]@,"<>\\'"'"']{1,253}$' || die "--login : login Tailscale (adresse du compte)"
 login=$(echo "$login" | tr 'A-Z' 'a-z')
