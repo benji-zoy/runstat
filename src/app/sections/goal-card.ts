@@ -26,7 +26,7 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
             <h3>{{ g.name }}</h3>
             <p class="muted">
               {{ longDate(g.date) }}{{ g.startTime ? ' · départ ' + startLabel(g.startTime) : '' }} ·
-              {{ num(g.distanceKm, 1) }} km{{ g.elevGain ? ' · ' + num(g.elevGain) + ' m D+' : '' }}
+              {{ num(g.distanceKm, 1) }} km{{ g.elevGain ? ' · ' + num(g.elevGain) + ' m D+' + (g.elevLoss ? ' / ' + num(g.elevLoss) + ' m D−' : '') : '' }}
               @if (g.kind === 'trail') {
                 · {{ num(e.ke) }} km-effort
               }

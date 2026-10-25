@@ -8,7 +8,7 @@
  */
 import type { RaceReference } from './goals';
 import { Activity, Athlete, Goal } from './models';
-import { heatPenalty, wallAnalysis } from './science';
+import { heatPenalty, kmEffort, wallAnalysis } from './science';
 import { clock, pace } from './format';
 import { addDays, parseDay } from './stats';
 
@@ -307,7 +307,7 @@ export function racePlan(p: PlanInput): RacePlan {
   for (const r of p.raceRefs.slice(0, 3)) {
     const a = r.activity;
     if (trail) {
-      lessons.push(`${a.name} : ${frNum(a.distanceKm, 1)} km, ${frNum(a.elevGain ?? 0)} m D+ en ${hm(a.durationSec)}, soit ${pace(r.pace)} par km-effort ; l'objectif fait ${frNum(p.ke / (a.distanceKm + (a.elevGain ?? 0) / 100), 1)} fois plus.`);
+      lessons.push(`${a.name} : ${frNum(a.distanceKm, 1)} km, ${frNum(a.elevGain ?? 0)} m D+ en ${hm(a.durationSec)}, soit ${pace(r.pace)} par km-effort ; l'objectif fait ${frNum(p.ke / kmEffort(a), 1)} fois plus.`);
       continue;
     }
     if (r.splitDiff !== null) {

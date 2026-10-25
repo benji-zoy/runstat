@@ -2,7 +2,7 @@
  * Algorithmes d'analyse issus de la littérature et des outils de référence.
  * Chaque fonction cite sa source ; voir aussi l'onglet Labo.
  */
-import { Activity, Athlete } from './models';
+import { Activity, Athlete, Goal } from './models';
 import { addDays, parseDay } from './stats';
 import { C } from '../ui/palette';
 
@@ -541,10 +541,20 @@ export function heatAdjustedPace(a: Activity): number | null {
   return pace / (1 + heatPenalty(a.weather.temp, a.weather.dew) / 100);
 }
 
-/** Km-effort ITRA : distance + D+ / 100 */
-export function kmEffort(a: Activity): number {
-  return a.distanceKm + (a.elevGain ?? 0) / 100;
+/**
+ * Km-effort : distance + D+ / 100 (ITRA) + D− / 300, pour ne pas invisibiliser la descente, grosse part d'un trail.
+ * D− absent : on suppose une boucle (D− = D+).
+ */
+export function kmEffortOf(distanceKm: number, elevGain?: number | null, elevLoss?: number | null): number {
+  const up = elevGain ?? 0;
+  return distanceKm + up / 100 + (elevLoss ?? up) / 300;
 }
+
+export function kmEffort(a: Activity): number {
+  return kmEffortOf(a.distanceKm, a.elevGain, a.elevLoss);
+}
+
+export const goalKmEffort = (g: Goal) => kmEffortOf(g.distanceKm, g.elevGain, g.elevLoss);
 
 /** Index de polarisation (Treff et al. 2019) ; > 2 = polarisé */
 export function polarizationIndex(z: number[]): number | null {

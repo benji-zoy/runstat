@@ -91,7 +91,7 @@ function validateDebrief(obj: unknown, prefix: string, errors: string[]) {
 /** Un objectif (data-raw/goals.json) */
 export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
   const r = reader(obj, prefix, errors);
-  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief']);
+  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief']);
   const date = r.str('date', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
   if (date && !isRealDate(date)) errors.push(`${prefix}date : date inexistante`);
   const goal = clean({
@@ -101,6 +101,7 @@ export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
     startTime: r.str('startTime', { pattern: TIME, msg: 'heure HH:MM attendue' }),
     distanceKm: r.num('distanceKm', { required: true, min: 0.4, max: 500 }),
     elevGain: r.num('elevGain', { min: 0, max: 30000, int: true }),
+    elevLoss: r.num('elevLoss', { min: 0, max: 30000, int: true }),
     targetSec: r.num('targetSec', { min: 60, max: 72 * 3600, int: true }),
     stretchSec: r.num('stretchSec', { min: 60, max: 72 * 3600, int: true }),
     kind: r.oneOf('kind', ['road', 'trail'], { required: true }),

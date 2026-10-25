@@ -1,6 +1,6 @@
 import { Activity, Athlete, Goal } from './models';
-import { chance, consensus, csTime, freshnessPct, goalContext, normalCdf, trailModels, TRAIL_EXPONENT, evaluateGoal } from './goals';
-import { classifyAll } from './science';
+import { chance, consensus, csTime, freshnessPct, goalContext, normalCdf, trailModels, TRAIL_EXPONENT, evaluateGoal, ultraModel } from './goals';
+import { classifyAll, kmEffortOf } from './science';
 
 const ath: Athlete = { hrMax: 195, hrRest: 50, sex: 'M', weightKg: 70, heightCm: 175, birthday: '1990-01-01' };
 
@@ -48,13 +48,38 @@ describe('modèles', () => {
     expect(freshnessPct(45)).toBeCloseTo(1, 6);
   });
 
+  it('compte le D− à 300 m par km-effort, égal au D+ s\'il est absent', () => {
+    expect(kmEffortOf(10, 500, 300)).toBeCloseTo(10 + 5 + 1, 9);
+    expect(kmEffortOf(10, 600, null)).toBeCloseTo(10 + 6 + 2, 9);
+    expect(kmEffortOf(10)).toBe(10);
+  });
+
   it('extrapole un trail au km-effort', () => {
-    const acts = [run('2026-09-01', 30, 4 * 3600, { kind: 'trail', elevGain: 1000, name: 'Trail des Pics' })];
-    const goal: Goal = { id: 'g', name: 'Ultra', date: '2026-11-29', distanceKm: 80, elevGain: 2200, kind: 'trail' };
+    const acts = [run('2026-09-01', 30, 4 * 3600, { kind: 'trail', elevGain: 1000, elevLoss: 900, name: 'Trail des Pics' })];
+    const goal: Goal = { id: 'g', name: 'Ultra', date: '2026-11-29', distanceKm: 80, elevGain: 2200, elevLoss: 2600, kind: 'trail' };
     const today = new Date(2026, 9, 7);
     const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null);
     const [m] = trailModels(goal, ctx);
-    expect(m.seconds).toBeCloseTo(4 * 3600 * Math.pow(102 / 40, TRAIL_EXPONENT), 3);
+    expect(m.seconds).toBeCloseTo(4 * 3600 * Math.pow((80 + 22 + 2600 / 300) / (30 + 10 + 900 / 300), TRAIL_EXPONENT), 3);
+  });
+
+  it('ajoute un modèle d\'allure à FC d\'ultra à partir des sorties longues', () => {
+    // 5 sorties de 2 h à 5 km/h ajustés ≈ 12 s/km … : tours de 1 km à 6:00/km (gap 360) et FC 157 (LT1 = 80 % de 197)
+    const km = Array.from({ length: 20 }, () => [1000, 360, 157, 20, 20, 360, 0, 170]);
+    const acts: Activity[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(2026, 8, 1 + i * 5);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      acts.push(run(iso, 20, 7200, { km: km as Activity['km'], avgHr: 157 }));
+    }
+    const goal: Goal = { id: 'g', name: 'Ultra', date: '2026-11-29', distanceKm: 80, elevGain: 2200, kind: 'trail' };
+    const today = new Date(2026, 9, 7);
+    const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null);
+    const ultra = ultraModel(goal, ctx)!;
+    // 102 km-effort à 10 km/h, durée allongée par l'usure et 5 % d'arrêts : bien plus que 10,2 h
+    expect(ultra.seconds).toBeGreaterThan(10.2 * 3600 * 1.05);
+    expect(ultra.seconds).toBeLessThan(16 * 3600);
+    expect(ultraModel({ ...goal, distanceKm: 20, elevGain: 0 }, ctx)).toBeNull();
   });
 });
 

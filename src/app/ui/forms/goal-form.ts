@@ -65,6 +65,9 @@ export function goalId(name: string, date: string, taken: string[]): string {
         <label class="field">Dénivelé positif (m)
           <input type="number" formControlName="elevGain" min="0" step="10" inputmode="numeric" />
         </label>
+        <label class="field">Dénivelé négatif (m)
+          <input type="number" formControlName="elevLoss" min="0" step="10" inputmode="numeric" placeholder="= D+ si vide" />
+        </label>
 
         <div class="field wide">Objectif
           <div class="seg">
@@ -120,6 +123,7 @@ export class GoalFormComponent {
     distanceKm: this.fb.control<number | null>(null),
     kind: 'road' as 'road' | 'trail',
     elevGain: this.fb.control<number | null>(null),
+    elevLoss: this.fb.control<number | null>(null),
     target: '',
     stretch: '',
     lat: this.fb.control<number | null>(null),
@@ -138,6 +142,7 @@ export class GoalFormComponent {
       distanceKm: goal?.distanceKm ?? null,
       kind: goal?.kind ?? 'road',
       elevGain: goal?.elevGain ?? null,
+      elevLoss: goal?.elevLoss ?? null,
       target: goal?.targetSec ? clock(goal.targetSec) : '',
       stretch: goal?.stretchSec ? clock(goal.stretchSec) : '',
       lat: goal?.lat ?? null,
@@ -173,6 +178,7 @@ export class GoalFormComponent {
       startTime: v.startTime || undefined,
       distanceKm: v.distanceKm!,
       elevGain: opt(v.elevGain),
+      elevLoss: opt(v.elevLoss),
       targetSec: target ?? undefined,
       stretchSec: stretch ?? undefined,
       kind: v.kind,

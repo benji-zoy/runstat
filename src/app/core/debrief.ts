@@ -9,7 +9,7 @@
 import { GoalEvaluation, chance } from './goals';
 import { PlanBlock, passage, pacingProfile, segmentPaces } from './race-plan';
 import { Activity, Athlete, Goal } from './models';
-import { heatPenalty, kmEffort, timeForVdot, vdot } from './science';
+import { goalKmEffort, heatPenalty, kmEffort, timeForVdot, vdot } from './science';
 import { clock, pace } from './format';
 import { addDays, parseDay } from './stats';
 
@@ -397,7 +397,7 @@ function lessons(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete, next: Goal
 
   // Récupération et suite
   const raceDay = parseDay(goal.date);
-  const recovery = Math.round((goal.kind === 'trail' ? goal.distanceKm + (goal.elevGain ?? 0) / 100 : goal.distanceKm) / 1.609);
+  const recovery = Math.round((goal.kind === 'trail' ? goalKmEffort(goal) : goal.distanceKm) / 1.609);
   const until = addDays(raceDay, recovery).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   let rec = `Récupération : pas de séance intense pendant environ ${recovery} jours (règle « un jour par mile »), soit jusqu'à ${until} ; footings faciles dès que les jambes le permettent.`;
   if (next) {

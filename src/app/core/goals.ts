@@ -9,14 +9,14 @@
  */
 import { Activity, Athlete, Goal, Health } from './models';
 import {
-  CriticalSpeed, ExponentEstimate, Reference, SessionType, bestEfforts, criticalSpeed, heatPenalty, kmEffort,
+  CriticalSpeed, ExponentEstimate, Reference, SessionType, bestEfforts, criticalSpeed, heatPenalty, kmEffort, goalKmEffort,
   officialDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
   wallAnalysis,
 } from './science';
 import { clock } from './format';
 import { RacePlan, racePlan } from './race-plan';
 import { pmc } from './insights';
-import { Durability, durability } from './durability';
+import { Durability, durability, kmLaps } from './durability';
 import { baselineSeries, hrvStatus, rhrStatus, sleepDebt } from './health';
 import { addDays, isoDay, parseDay } from './stats';
 
@@ -137,7 +137,7 @@ export interface RaceReference {
 
 export function raceReferences(goal: Goal, ctx: GoalContext): RaceReference[] {
   const d = officialDistance(goal.distanceKm);
-  const ke = goal.distanceKm + (goal.elevGain ?? 0) / 100;
+  const ke = goalKmEffort(goal);
   const age = (a: Activity) => daysBetween(parseDay(a.date), ctx.ref);
   const races = ctx.acts.filter((a) => ctx.types.get(a.id) === 'race' && age(a) <= 730 && (goal.kind === 'trail' ? isTrail(a) : !isTrail(a)));
   const picked = goal.kind === 'trail'
@@ -303,32 +303,89 @@ export function efProgress(ctx: GoalContext, since: Date): { gain: number; befor
 
 const isTrail = (a: Activity) => a.kind === 'trail' || (a.elevGain ?? 0) / Math.max(0.1, a.distanceKm) > 25;
 
+/** Km-effort à partir duquel un trail est traité comme un ultra (jamais atteint à l'entraînement) */
+const ULTRA_KE = 60;
+/** Part du temps perdue à l'arrêt (ravitaillements) sur un ultra */
+const ULTRA_STOPS = 0.05;
+
+const ageLabel = (days: number) => (days < 60 ? `il y a ${days} j` : `il y a ${Math.round(days / 30.4)} mois`);
+
+/**
+ * Ultra : allure ajustée à la pente que tu tiens à la FC d'ultra (seuil LT1, sinon 80 % de la FC max) sur tes sorties longues
+ * récentes, avec la perte d'efficacité par heure que tes sorties de ≥ 1 h 30 montrent (durabilité), intégrée sur la durée.
+ * Le km-effort sert de distance ajustée (100 m de D+ ou 300 m de D− = 1 km) ; 5 % du temps part en ravitaillements.
+ * Seules les sorties à cette FC comptent (≥ 1 h cumulée entre la 10e minute et la 90e), donc pas besoin d'avoir fait la durée de la course.
+ */
+export function ultraModel(goal: Goal, ctx: GoalContext): Model | null {
+  const ke = goalKmEffort(goal);
+  if (goal.kind !== 'trail' || ke < ULTRA_KE) return null;
+  const hrTarget = ctx.athlete.lt1Hr ?? 0.8 * ctx.athlete.hrMax;
+  const recent = ctx.acts.filter((a) =>
+    daysBetween(parseDay(a.date), ctx.ref) <= 84 && a.durationSec >= 5400 && !['interval', 'tempo'].includes(ctx.types.get(a.id) ?? ''));
+  const laps = recent.flatMap((a) => kmLaps(a).filter((l) => Math.abs(l.hr - hrTarget) <= 6 && l.start >= 600 && l.start < 5400));
+  const sampleSec = laps.reduce((s, l) => s + l.t, 0);
+  if (sampleSec < 3600) return null;
+  const v0 = laps.reduce((s, l) => s + (1000 / l.gap) * l.t, 0) / sampleSec;
+  const t0 = laps.reduce((s, l) => s + (l.start + l.t / 2) * l.t, 0) / sampleSec / 3600;
+
+  const lossPerHour = recent.length
+    ? [...ctx.acts
+      .filter((a) => daysBetween(parseDay(a.date), ctx.ref) <= 112 && !['interval', 'tempo'].includes(ctx.types.get(a.id) ?? ''))
+      .map(durability)
+      .filter((d): d is Durability => d !== null && d.steady && d.hours >= 1.5)
+      .map((d) => d.efLoss / d.hours)].sort((x, y) => x - y)
+    : [];
+  const fade = lossPerHour.length >= 2
+    ? Math.min(0.04, Math.max(0.015, lossPerHour[lossPerHour.length >> 1] / 100))
+    : 0.025;
+
+  const target = ke * 1000;
+  let dist = 0;
+  let t = 0;
+  while (dist < target && t < 40 * 3600) {
+    const h = t / 3600;
+    dist += v0 * Math.max(0.6, 1 - fade * Math.max(0, h - t0)) * 60;
+    t += 60;
+  }
+  const hrTxt = `${Math.round(hrTarget)} bpm`;
+  return {
+    label: 'Allure à FC d\'ultra',
+    seconds: t * (1 + ULTRA_STOPS),
+    weight: sampleSec >= 7200 ? 1.5 : 0.8,
+    note: `${fr(v0 * 3.6, 1)} km/h ajustés à ${hrTxt} sur ${hm(sampleSec)} de sorties longues, −${fr(fade * 100, 1)} %/h de durabilité, +${Math.round(ULTRA_STOPS * 100)} % d'arrêts`,
+  };
+}
+
 /**
  * Trail : chaque sortie trail récente est extrapolée au km-effort de l'objectif (Riegel, k = 1,10),
  * pondérée par sa fraîcheur, sa proximité en km-effort et le fait d'être une course.
  */
 export function trailModels(goal: Goal, ctx: GoalContext): Model[] {
-  const ke = goal.distanceKm + (goal.elevGain ?? 0) / 100;
-  const candidates = ctx.acts
-    .filter((a) => isTrail(a) && kmEffort(a) >= 15 && daysBetween(parseDay(a.date), ctx.ref) <= 365)
+  const ke = goalKmEffort(goal);
+  const isRace = (a: Activity) => ctx.types.get(a.id) === 'race' || /trail (des|de|du)/i.test(a.name);
+  const candidatesWithin = (maxAge: number, only: (a: Activity) => boolean) => ctx.acts
+    .filter((a) => isTrail(a) && kmEffort(a) >= 15 && daysBetween(parseDay(a.date), ctx.ref) <= maxAge && only(a))
     .map((a) => {
       const age = daysBetween(parseDay(a.date), ctx.ref);
       const kea = kmEffort(a);
-      const race = ctx.types.get(a.id) === 'race' || /trail (des|de|du)/i.test(a.name);
       return {
         label: a.name,
         seconds: a.durationSec * Math.pow(ke / kea, TRAIL_EXPONENT),
-        weight: Math.exp(-age / 180) * Math.exp(-Math.abs(Math.log(ke / kea))) * (race ? 1 : 0.4),
-        note: `${a.distanceKm.toFixed(1).replace('.', ',')} km, ${a.elevGain ?? 0} m D+ en ${Math.floor(a.durationSec / 3600)} h ${String(Math.round((a.durationSec % 3600) / 60)).padStart(2, '0')} (${parseDay(a.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })})`,
+        weight: Math.exp(-age / 180) * Math.exp(-Math.abs(Math.log(ke / kea))) * (isRace(a) ? 1 : 0.4),
+        note: `${a.distanceKm.toFixed(1).replace('.', ',')} km, ${a.elevGain ?? 0} m D+ en ${Math.floor(a.durationSec / 3600)} h ${String(Math.round((a.durationSec % 3600) / 60)).padStart(2, '0')} (${parseDay(a.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}, ${ageLabel(age)})`,
       };
     })
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 4);
-  if (candidates.length) return candidates;
+  const ultra = ultraModel(goal, ctx);
+  let candidates = candidatesWithin(365, () => true);
+  // Rien de récent : les courses de 1 à 2 ans, au poids très réduit (elles ne servent qu'à borner)
+  if (!candidates.length && !ultra) candidates = candidatesWithin(730, isRace).map((m) => ({ ...m, weight: m.weight * 0.5 }));
+  if (candidates.length || ultra) return ultra ? [...candidates, ultra] : candidates;
   // Pas de trail récent : extrapolation depuis la route, majorée de 25 % pour le terrain
   const best = ctx.refs[0];
   return best
-    ? [{ label: 'Depuis la route', seconds: riegel(best.time, best.dist, ke * 1000, TRAIL_EXPONENT) * 1.25, weight: 1, note: `${best.label}, +25 % pour le terrain` }]
+    ? [{ label: 'Depuis la route', seconds: riegel(best.time, best.dist, ke * 1000, TRAIL_EXPONENT) * 1.25, weight: 1, note: `${best.label}, +25 % pour le terrain (${ageLabel(daysBetween(parseDay(best.date), ctx.ref))})` }]
     : [];
 }
 
@@ -480,7 +537,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
         advice: elev >= elevTarget ? null : `Ajoute du dénivelé : côtes en semaine, trail le week-end, ≈ ${fr(elevTarget)} m/sem (et de la descente pour les quadriceps).`,
       });
     }
-    const ke = goal.distanceKm + (goal.elevGain ?? 0) / 100;
+    const ke = goalKmEffort(goal);
     const best = ctx.acts.reduce<Activity | null>((m, a) => (!m || kmEffort(a) > kmEffort(m) ? a : m), null);
     const ratio = best ? kmEffort(best) / ke : 0;
     items.push({
@@ -542,19 +599,27 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
     if (runs.length < 2) runs = comparable(1.25);
     runs = runs.slice(-5);
     if (runs.length) {
+      // La dérive cardiaque croît avec la durée : la perte tolérée est proportionnelle à celle de chaque sortie
+      // (2,5 %/h), on ne juge que l'excédent. Sur un ultra, on ne s'entraîne jamais à la durée de la course :
+      // la mesure sur des sorties de 3 h dit peu de chose sur 10 h, son poids est donc réduit.
+      const TOL_PER_HOUR = 2.5;
+      const ultra = baseSec > 5 * 3600;
       const loss = [...runs.map((r) => r.efLoss)].sort((x, y) => x - y)[runs.length >> 1];
-      const score = clamp((15 - loss) / 10);
+      const excess = [...runs.map((r) => r.efLoss - TOL_PER_HOUR * r.hours)].sort((x, y) => x - y)[runs.length >> 1];
+      const score = clamp((10 - excess) / 10);
       const longest = Math.max(...runs.map((r) => r.hours));
       items.push({
         label: `Durabilité ${goal.kind === 'trail' ? 'trail' : 'route'}`,
         value: `${loss > 0 ? '−' : '+'}${fr(Math.abs(loss), 1)} % (${runs.length} sorties)`,
-        target: '≤ 5 %',
+        target: `≤ ${fr(TOL_PER_HOUR, 1)} % par heure`,
         score,
         projected: weeksLeft >= 3 ? clamp(score + 0.3) : score,
-        weight: goal.kind === 'trail' ? 15 : 10,
-        advice: loss <= 5
+        weight: ultra ? 6 : goal.kind === 'trail' ? 15 : 10,
+        advice: excess <= 0
           ? null
-          : `Ton efficacité baisse de ${fr(loss)} % en fin de sortie longue${goal.kind === 'trail' ? ' en trail' : ''} : allonge progressivement les sorties en endurance fondamentale, ravitaille-toi dès la première heure, et finis certaines sorties par 20 min à allure course.`,
+          : ultra
+            ? `Ton efficacité baisse de ${fr(loss)} % en fin de sortie longue, un peu plus que la dérive normale : ravitaille-toi dès la première heure et enchaîne deux longues sorties sur un week-end plutôt que d'en allonger une seule.`
+            : `Ton efficacité baisse de ${fr(loss)} % en fin de sortie longue${goal.kind === 'trail' ? ' en trail' : ''}, plus que la dérive normale pour cette durée : allonge progressivement les sorties en endurance fondamentale, ravitaille-toi dès la première heure, et finis certaines sorties par 20 min à allure course.`,
       });
       if (baseSec > longest * 3600 * 1.3) {
         const note = `Durabilité mesurée jusqu'à ${hm(longest * 3600)} seulement, pour une course d'environ ${hm(baseSec)} : au-delà, c'est une extrapolation.`;
@@ -649,7 +714,7 @@ export interface GoalEvaluation {
 export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Activity[]): GoalEvaluation | null {
   const race = parseDay(goal.date);
   const daysLeft = daysBetween(today, race);
-  const ke = goal.distanceKm + (goal.elevGain ?? 0) / 100;
+  const ke = goalKmEffort(goal);
   const models = goal.kind === 'trail' ? trailModels(goal, ctx) : roadModels(goal, ctx);
   const c = consensus(models);
   if (!c) return null;

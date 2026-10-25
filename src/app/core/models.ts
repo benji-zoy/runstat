@@ -193,6 +193,8 @@ export interface Goal {
   startTime?: string;
   distanceKm: number;
   elevGain?: number;
+  /** Dénivelé négatif (m) ; absent = égal au D+ (boucle) */
+  elevLoss?: number;
   /** Chrono visé (s) ; absent = objectif « finir » */
   targetSec?: number;
   /** Chrono ambitieux d'une fourchette (« 10 h 30 / 11 h » : targetSec = 11 h, stretchSec = 10 h 30) */

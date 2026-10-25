@@ -93,7 +93,9 @@ describe('divers', () => {
     expect(heatPenalty(10, 5)).toBe(0);
     // 30 °C + rosée 20 °C → 86 + 68 = 154 °F → entre 4,5 et 6 %
     expect(heatPenalty(30, 20)).toBeCloseTo(4.5 + 0.4 * 1.5, 6);
-    expect(kmEffort(run('2026-01-01', 22, 1, { elevGain: 2000 }))).toBe(42);
+    expect(kmEffort(run('2026-01-01', 22, 1, { elevGain: 2000, elevLoss: 1500 }))).toBe(22 + 20 + 5);
+    // D− absent : égal au D+
+    expect(kmEffort(run('2026-01-01', 22, 1, { elevGain: 2000 }))).toBeCloseTo(22 + 20 + 2000 / 300, 9);
   });
 
   it('calcule la pente de Theil-Sen et l’index de polarisation', () => {

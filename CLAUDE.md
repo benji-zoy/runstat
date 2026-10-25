@@ -333,13 +333,13 @@ utile pour l'historique et le score de préparation. Affiché dans Forme › Ré
 ## Objectifs (onglet Courses, `src/app/core/goals.ts`)
 
 Saisis dans Courses (bouton « Objectif », « Modifier l'objectif ») ou dans `data-raw/goals.json` (non versionné) : `[{ "id", "name", "date": "AAAA-MM-JJ", "startTime": "HH:MM", "distanceKm",
-"elevGain"?, "targetSec"? (absent = objectif « finir »), "stretchSec"? (bas d'une fourchette, ex. 10 h 30 pour « 10 h 30 / 11 h »), "kind": "road" | "trail", "lat"?, "lon"? }]`.
+"elevGain"?, "elevLoss"? (D−, absent = D+), "targetSec"? (absent = objectif « finir »), "stretchSec"? (bas d'une fourchette, ex. 10 h 30 pour « 10 h 30 / 11 h »), "kind": "road" | "trail", "lat"?, "lon"? }]`.
 `npm run weather` télécharge la prévision des objectifs à moins de 15 jours (lieu indiqué, sinon lieu de sortie habituel)
 dans `data-raw/weather/forecast-<id>.json`, puis `npm run data`.
 Chrono : consensus géométrique des modèles (Coros, course de référence = dernière course sur la même distance à poids 1,5,
 projetée à aujourd'hui par `progressionSince` : volume Tanda × moyenne(allure d'entraînement, ½ gain d'EF), 8 sem. avant / 8 dernières,
 VDOT, Riegel pondéré, VDOT actualisé par l'EF, vitesse critique à poids 0,5) × ajustements (fraîcheur projetée, VFC/FC repos, Hadley, nuit, préparation) ; incertitude log-normale →
-probabilité. Finir : indice de préparation pondéré ; chrono trail extrapolé au km-effort (Riegel k = 1,10).
+probabilité. Finir : indice de préparation pondéré ; chrono trail extrapolé au km-effort (Riegel k = 1,10) ; ultra (≥ 60 km-effort) : modèle « allure à FC d'ultra » (`ultraModel` : allure ajustée à la FC LT1 sur les sorties longues, perte de durabilité par heure, 5 % d'arrêts).
 Stratégie de course (`src/app/core/race-plan.ts`) : allures par tronçon et temps de passage, allure montre corrigée de
 l'écart GPS mesuré sur les courses de référence, cardio, ravitaillement, derniers jours, échauffement, tenue, leçons.
 Une course n'est « référence » que si elle est classée `race` (`RACE_NAME` dans `science.ts` : nom d'épreuve ou millésime ;
@@ -369,7 +369,7 @@ dans Archives (« Temps puce, gels, ressenti ») ; à la main : `"debrief": { "c
 `src/app/core/science.ts` (affichés par `sections/analysis.ts`, réparti entre Performance, Forme et Entraînement) : Daniels/VDOT, Riegel (+ exposant perso mesuré sur les
 courses), Tanda, Vickers, vitesse critique (Smyth & Muniz-Pumares), indice de forme Runalyze, marathon shape,
 TRIMP, Foster, ACWR, classification des séances, EF + anomalies (z-score MAD), Theil-Sen, chaleur (règle de Hadley),
-km-effort ITRA, index de polarisation. `src/engine/fit/analyse.ts` (lancé par `scripts/build-fit.mjs`) : meilleurs efforts, courbe d'allure, GAP (Minetti),
+km-effort (ITRA D+/100, plus D−/300 ; D− absent = D+), index de polarisation. `src/engine/fit/analyse.ts` (lancé par `scripts/build-fit.mjs`) : meilleurs efforts, courbe d'allure, GAP (Minetti),
 zones, découplage Pa:HR, durabilité, tours au km, TRIMP seconde par seconde, tracé GPS.
 Les meilleurs efforts FIT (meilleur passage sur 400 m … marathon dans n'importe quelle sortie) alimentent Performance › Records › Segments (bascule « Ajusté à la pente » : GAP, 16 semaines / tous les FIT)
 (`effortIn` dans `insights.ts` : sans FIT, meilleur km Coros ou allure moyenne d'une sortie de la distance à +5 %).
