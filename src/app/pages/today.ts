@@ -6,7 +6,7 @@ import { ScienceService } from '../core/science.service';
 import { Activity } from '../core/models';
 import { addDays, fastestOver, inRange, maxBy, parseDay, startOfWeek, summarize, weekly } from '../core/stats';
 import { freshnessState, pmc, yearProjection } from '../core/insights';
-import { healthNow, hrvStatus, rhrStatus } from '../core/health';
+import { healthNow, hrvStatus, readinessFor, rhrStatus } from '../core/health';
 import { clock, day, duration, fixed, km, num, pace } from '../core/format';
 import { Brief, BriefComponent } from '../ui/brief';
 import { IconComponent } from '../ui/icon';
@@ -59,8 +59,8 @@ const DAY_MS = 86_400_000;
           @if (health(); as h) { <span class="muted src">{{ sci.healthLabel() }} · {{ shortDay(h.date) }}</span> }
         </span>
         <div class="grid4">
-          @if (health()?.day?.readiness; as r) {
-            <div class="vital"><span class="display v">{{ r }}<small>/100</small></span><span class="muted small">préparation</span></div>
+          @if (readiness(); as r) {
+            <div class="vital"><span class="display v">{{ r.score }}<small>/100</small></span><span class="muted small">préparation{{ r.estimated ? ' estimée' : '' }}</span></div>
           }
           @if (health()?.hrv?.avg7; as hrv) {
             <div class="vital">
@@ -251,6 +251,11 @@ export class TodayPage {
   protected readonly health = computed(() => {
     const h = this.store.data()?.health;
     return h ? healthNow(h) : null;
+  });
+  /** Préparation : score de la source, sinon estimée (l'API Google Health ne la fournit pas) */
+  protected readonly readiness = computed(() => {
+    const h = this.store.data()?.health, now = this.health();
+    return h && now ? readinessFor(h, now.date) : null;
   });
   protected readonly hrvState = computed(() => hrvStatus(this.health()?.hrv));
   protected readonly rhrState = computed(() => rhrStatus(this.health()?.rhr));

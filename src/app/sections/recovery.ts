@@ -3,7 +3,7 @@ import { ChartConfiguration } from 'chart.js';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
 import { ScienceService } from '../core/science.service';
-import { Baseline, Bucket, baselineSeries, efByRecovery, hrvAfterLoad, hrvStatus, rhrStatus, sleepDebt } from '../core/health';
+import { Baseline, Bucket, baselineSeries, efByRecovery, hrvAfterLoad, hrvStatus, readinessFor, rhrStatus, sleepDebt } from '../core/health';
 import { efSeries } from '../core/science';
 import { addDays, isoDay, parseDay } from '../core/stats';
 import { fixed, num } from '../core/format';
@@ -32,7 +32,11 @@ const hm = (min: number) => `${Math.floor(min / 60)} h ${String(Math.round(min %
           @if (today(); as t) {
             <div class="card stat">
               <span class="label">Préparation du jour</span>
-              <span class="display big">{{ t.readiness ?? '–' }}<small>/100</small></span>
+              <span class="display big">{{ readiness()?.score ?? '–' }}<small>/100</small></span>
+              @if (readiness()?.estimated) {
+                <span class="muted small">Estimée par RunStat (ta source ne la fournit pas) : VFC et FC de repos face à ta base, durée de la nuit{{
+                  readiness()!.calibratedOn ? ', poids calés sur ' + readiness()!.calibratedOn + ' jours de ton score Fitbit (écart moyen ' + num(readiness()!.error!) + ' points)' : '' }}.</span>
+              }
               <span class="muted small">
                 Nuit : {{ t.sleepMin ? hm(t.sleepMin) : '–' }}
                 @if (t.sleepScore) { · score {{ t.sleepScore }} }
@@ -168,6 +172,8 @@ export class RecoveryComponent {
   });
   protected readonly days = computed(() => Object.keys(this.health()?.days ?? {}).length);
   protected readonly today = computed(() => this.health()?.days[isoDay(this.last())] ?? null);
+  /** Préparation du dernier jour : score de la source, sinon estimée */
+  protected readonly readiness = computed(() => (this.health() ? readinessFor(this.health()!, this.last()) : null));
 
   private series(metric: 'hrv' | 'rhr') {
     const h = this.health();
@@ -324,8 +330,9 @@ export class RecoveryComponent {
   /** Phrase de la carte : VFC, FC de repos et sommeil des 7 derniers jours */
   protected readonly verdict = computed(() => {
     if (!this.health()) return 'Pas de données de santé : connecte Google Health ou COROS dans les réglages.';
-    const hrv = this.hrvState(), rhr = this.rhrState(), debt = this.debt();
+    const hrv = this.hrvState(), rhr = this.rhrState(), debt = this.debt(), ready = this.readiness();
     const parts = [
+      ready ? `Préparation ${ready.score}/100${ready.estimated ? ' (estimée)' : ''}` : null,
       hrv ? `VFC ${hrv.label.toLowerCase()}` : null,
       rhr ? `FC de repos ${rhr.label.toLowerCase()}` : null,
       debt ? `sommeil ${hm(debt.avg)} en moyenne` : null,

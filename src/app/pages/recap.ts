@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, computed, effect, inject, signal } from '@angular/core';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
 import { summarize, parseDay } from '../core/stats';
@@ -10,6 +10,8 @@ import { clock, day, duration, km, num, pace, smart } from '../core/format';
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const SLIDES = 9;
+/** Plein écran (téléphone) : chaque diapositive reste affichée 6 s, comme une story */
+const SLIDE_MS = 6000;
 
 @Component({
   selector: 'app-recap',
@@ -21,12 +23,28 @@ const SLIDES = 9;
     </div>
 
     @if (r(); as r) {
-      <div class="story" [attr.data-slide]="index()">
+      @if (phone() && !full()) {
+        <!-- Téléphone : le récap s'ouvre en plein écran, comme une story -->
+        <button type="button" class="launch" (click)="open()">
+          <span class="kicker">Ton année {{ year() }}{{ r.partial ? ' (en cours)' : '' }}</span>
+          <span class="mega display">{{ num(r.s.km) }}<small>km</small></span>
+          <span class="lead">{{ r.s.count }} sorties · {{ r.days }} jours à courir</span>
+          <span class="play">Voir mon récap</span>
+        </button>
+      } @else {
+      <div class="story" [class.full]="full()" [attr.data-slide]="index()" [attr.role]="full() ? 'dialog' : null"
+        [attr.aria-modal]="full() ? 'true' : null" [attr.aria-label]="'Récap ' + year()"
+        (touchstart)="touchStart($event)" (touchend)="touchEnd($event)">
         <div class="bars">
           @for (s of slides; track s) {
-            <span [class.done]="s <= index()"></span>
+            <span [class.done]="s < index() || (!full() && s === index())" [class.current]="full() && s === index()"></span>
           }
         </div>
+        @if (full()) {
+          <button type="button" class="close" (click)="close()" aria-label="Fermer le récap">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+        }
         <button type="button" class="zone prev" (click)="go(-1)" aria-label="Précédent"></button>
         <button type="button" class="zone next" (click)="go(1)" aria-label="Suivant"></button>
 
@@ -136,6 +154,7 @@ const SLIDES = 9;
         </div>
         <p class="hint">← → ou clic à gauche / à droite pour naviguer</p>
       </div>
+      }
     }
   `,
   styleUrl: './recap.scss',
@@ -202,6 +221,33 @@ export class RecapPage {
     };
   });
 
+  /** Téléphone : récap en plein écran */
+  protected readonly phone = signal(matchMedia('(max-width: 600px)').matches);
+  protected readonly full = signal(false);
+  private touch: { x: number; y: number } | null = null;
+
+  constructor() {
+    const media = matchMedia('(max-width: 600px)');
+    const onMedia = (e: MediaQueryListEvent) => this.phone.set(e.matches);
+    media.addEventListener('change', onMedia);
+    // Avance automatique en plein écran ; un toucher relance le minuteur de la diapositive affichée
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    effect(() => {
+      clearTimeout(timer);
+      const i = this.index();
+      if (this.full() && i < SLIDES - 1) timer = setTimeout(() => this.index.set(i + 1), SLIDE_MS);
+    });
+    // Pas de défilement de la page derrière la story
+    effect(() => {
+      document.body.style.overflow = this.full() ? 'hidden' : '';
+    });
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(timer);
+      media.removeEventListener('change', onMedia);
+      document.body.style.overflow = '';
+    });
+  }
+
   protected pick(y: number): void {
     this.picked.set(y);
     this.index.set(0);
@@ -211,9 +257,39 @@ export class RecapPage {
     this.index.set(Math.min(SLIDES - 1, Math.max(0, this.index() + step)));
   }
 
+  protected open(): void {
+    this.index.set(0);
+    this.full.set(true);
+  }
+
+  protected close(): void {
+    this.full.set(false);
+  }
+
+  /** Glisser vers le bas : fermer ; vers la gauche ou la droite : diapositive suivante ou précédente */
+  protected touchStart(e: TouchEvent): void {
+    const t = e.changedTouches[0];
+    this.touch = { x: t.clientX, y: t.clientY };
+  }
+
+  protected touchEnd(e: TouchEvent): void {
+    if (!this.touch || !this.full()) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - this.touch.x, dy = t.clientY - this.touch.y;
+    this.touch = null;
+    if (dy > 90 && Math.abs(dy) > Math.abs(dx)) {
+      this.close();
+      e.preventDefault();
+    } else if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+      this.go(dx < 0 ? 1 : -1);
+      e.preventDefault();
+    }
+  }
+
   @HostListener('document:keydown', ['$event'])
   protected onKey(e: KeyboardEvent): void {
     if (e.key === 'ArrowRight') this.go(1);
     if (e.key === 'ArrowLeft') this.go(-1);
+    if (e.key === 'Escape' && this.full()) this.close();
   }
 }

@@ -37,7 +37,7 @@ export const TOPIC_GROUPS: TopicGroup[] = [
   {
     label: 'Forme',
     topics: [
-      { id: 'recuperation', question: 'Suis-je récupéré ?', lede: 'VFC, FC de repos, sommeil et préparation du jour.', health: true },
+      { id: 'recuperation', question: 'Suis-je en forme ?', lede: 'Préparation du jour, VFC, FC de repos et sommeil.', health: true },
       { id: 'charge', question: 'Ma charge est-elle bien dosée ?', lede: 'Frais ou fatigué, charge qui monte trop vite, intensité des séances.' },
       { id: 'progres', question: 'Est-ce que je progresse ?', lede: 'Cours-tu plus vite pour le même effort ? Et l\'effet de la chaleur.' },
       { id: 'endurance', question: 'Mon endurance tient-elle ?', lede: 'Tiens-tu ton allure jusqu\'au bout, et ton cœur s\'emballe-t-il en sortie facile ?' },

@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, effect, inject, input, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, effect, inject, input, signal, viewChild } from '@angular/core';
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 import { ThemeService } from '../core/theme.service';
 import { cssVar, resolveColors } from './palette';
@@ -26,13 +26,46 @@ function applyThemeDefaults(): void {
   Chart.defaults.plugins.tooltip.footerColor = cssVar('--text-secondary');
 }
 
+type ScaleOptions = Record<string, unknown> & { ticks?: Record<string, unknown>; grid?: Record<string, unknown>; title?: { display?: boolean } };
+type Scales = Record<string, ScaleOptions>;
+
+/** Graphiques à axes x / y (les camemberts et radars n'en ont pas) */
+const cartesian = (config: ChartConfiguration) => !['doughnut', 'pie', 'radar', 'polarArea'].includes(config.type as string);
+
 /**
- * Version vignette d'un graphique (cartes de Comprendre) : mêmes données, sans axes, légende, infobulles ni animation.
- * Les options d'origine ne sont pas modifiées (copies superficielles).
+ * Axes affichés, y compris ceux que la configuration masquait. `small` : vignette (3-4 graduations, police 10, grille
+ * horizontale seulement) ; sinon fenêtre agrandie (police 13, titre de l'axe vertical tiré des séries qu'il porte).
  */
-export function miniConfig(config: ChartConfiguration): ChartConfiguration {
+function withAxes(config: ChartConfiguration, small: boolean): Scales {
+  const scales = (config.options?.scales ?? { x: {}, y: {} }) as Scales;
+  const datasets = config.data.datasets as { label?: string; yAxisID?: string }[];
+  return Object.fromEntries(
+    Object.entries(scales).map(([id, s]) => {
+      if (id === 'r') return [id, s];
+      const vertical = id.startsWith('y');
+      const ticks = small
+        ? { ...s.ticks, display: true, maxTicksLimit: vertical ? 3 : 4, maxRotation: 0, autoSkip: true, font: { size: 10 } }
+        : { ...s.ticks, display: true, font: { size: 13 } };
+      const labels = datasets.filter((d) => (d.yAxisID ?? 'y') === id && d.label).map((d) => d.label!);
+      const title = small
+        ? { display: false }
+        : vertical && !s.title?.display && labels.length && labels.length <= 2
+          ? { display: true, text: labels.join(' · '), font: { size: 13 } }
+          : s.title;
+      return [id, { ...s, display: true, ticks, title, grid: small ? { ...s.grid, display: vertical, drawTicks: false } : s.grid }];
+    }),
+  );
+}
+
+/**
+ * Version vignette d'un graphique (cartes de Comprendre) : mêmes données, sans légende, infobulles ni animation ;
+ * axes masqués sur téléphone, discrets sur grand écran (`axes`). Les options d'origine ne sont pas modifiées.
+ */
+export function miniConfig(config: ChartConfiguration, axes = false): ChartConfiguration {
   const options = config.options ?? {};
-  const scales = Object.fromEntries(Object.entries(options.scales ?? { x: {}, y: {} }).map(([id, s]) => [id, { ...s, display: false }]));
+  const scales = axes && cartesian(config)
+    ? withAxes(config, true)
+    : Object.fromEntries(Object.entries(options.scales ?? { x: {}, y: {} }).map(([id, s]) => [id, { ...s, display: false }]));
   return {
     ...config,
     data: {
@@ -53,9 +86,15 @@ export function miniConfig(config: ChartConfiguration): ChartConfiguration {
   };
 }
 
+/** Version agrandie : tous les axes avec leurs graduations, et le titre de l'axe vertical */
+export function zoomConfig(config: ChartConfiguration): ChartConfiguration {
+  if (!cartesian(config)) return config;
+  return { ...config, options: { ...config.options, scales: withAxes(config, false) } as ChartConfiguration['options'] };
+}
+
 /**
  * Enveloppe minimale autour de Chart.js : recrée le graphique quand la config ou le thème change.
- * `mini` : vignette sans axes (cartes) ; sinon un bouton ouvre le même graphique en grand dans une fenêtre.
+ * `mini` : vignette (cartes) ; sinon un bouton ouvre le même graphique en grand, avec tous ses axes, dans une fenêtre.
  */
 @Component({
   selector: 'app-chart',
@@ -78,6 +117,7 @@ export function miniConfig(config: ChartConfiguration): ChartConfiguration {
   styles: `
     :host { display: block; position: relative; height: var(--chart-h, 260px); }
     :host(.mini) { height: var(--mini-h, 72px); pointer-events: none; }
+    :host(.mini.axes) { height: var(--mini-h-axes, 128px); }
     svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .zoom {
       position: absolute; top: -0.25rem; right: -0.25rem; display: grid; place-items: center; width: 2rem; height: 2rem;
@@ -97,7 +137,7 @@ export function miniConfig(config: ChartConfiguration): ChartConfiguration {
       border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text-primary); cursor: pointer;
     }
   `,
-  host: { '[class.mini]': 'mini()' },
+  host: { '[class.mini]': 'mini()', '[class.axes]': 'mini() && wide()' },
 })
 export class ChartComponent {
   readonly config = input.required<ChartConfiguration>();
@@ -109,16 +149,22 @@ export class ChartComponent {
   private readonly theme = inject(ThemeService).theme;
   private chart?: Chart;
   private zoomed?: Chart;
+  /** Grand écran : les vignettes gardent des axes discrets */
+  protected readonly wide = signal(matchMedia('(min-width: 1024px)').matches);
 
   constructor() {
+    const media = matchMedia('(min-width: 1024px)');
+    const onMedia = (e: MediaQueryListEvent) => this.wide.set(e.matches);
+    media.addEventListener('change', onMedia);
     effect(() => {
-      const config = this.mini() ? miniConfig(this.config()) : this.config();
+      const config = this.mini() ? miniConfig(this.config(), this.wide()) : this.config();
       this.theme();
       applyThemeDefaults();
       this.chart?.destroy();
       this.chart = new Chart(this.canvas().nativeElement, resolveColors(config));
     });
     inject(DestroyRef).onDestroy(() => {
+      media.removeEventListener('change', onMedia);
       this.chart?.destroy();
       this.zoomed?.destroy();
     });
@@ -131,7 +177,7 @@ export class ChartComponent {
     dialog.showModal();
     applyThemeDefaults();
     this.zoomed?.destroy();
-    this.zoomed = new Chart(big, resolveColors(this.config()));
+    this.zoomed = new Chart(big, resolveColors(zoomConfig(this.config())));
   }
 
   protected closeZoom(): void {

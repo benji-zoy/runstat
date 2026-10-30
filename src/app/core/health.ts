@@ -168,3 +168,110 @@ export function healthNow(h: Health): { date: Date; day: HealthDay; hrv: Baselin
     rhr: baselineSeries(h, 'rhr', from, last).at(-1),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Préparation du jour : score Google/Fitbit s'il existe, sinon estimé
+// ---------------------------------------------------------------------------
+
+export interface Readiness {
+  score: number;
+  /** Absent de la source (l'API Google Health ne le fournit pas) : calculé par RunStat */
+  estimated: boolean;
+  /** Nombre de jours de score Fitbit qui ont servi à caler l'estimation (0 : poids par défaut) */
+  calibratedOn: number;
+  /** Écart moyen (points) entre l'estimation et le score Fitbit sur ces jours */
+  error: number | null;
+}
+
+/** Écarts du jour à la base personnelle (30 jours précédents) : VFC, FC de repos (inversée), sommeil en heures */
+function readinessFeatures(h: Health, date: Date): [number, number, number] | null {
+  const day = h.days[isoDay(date)];
+  if (!day || day.hrv === undefined || day.rhr === undefined || day.sleepMin === undefined) return null;
+  const base = (m: 'hrv' | 'rhr') => {
+    const xs: number[] = [];
+    for (let i = 1; i <= 30; i++) {
+      const v = h.days[isoDay(addDays(date, -i))]?.[m];
+      if (typeof v === 'number') xs.push(v);
+    }
+    if (xs.length < 10) return null;
+    const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length) || 1;
+    return { mean, sd };
+  };
+  const hrv = base('hrv'), rhr = base('rhr');
+  if (!hrv || !rhr) return null;
+  const clip = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+  return [
+    clip((day.hrv - hrv.mean) / hrv.sd, -3, 3),
+    clip(-(day.rhr - rhr.mean) / rhr.sd, -3, 3),
+    clip((day.sleepMin - 450) / 60, -3, 1.5),
+  ];
+}
+
+/** Poids par défaut (sans historique Fitbit) : 65 de base, la VFC compte le plus */
+const DEFAULT_WEIGHTS = [65, 10, 6, 5];
+
+/**
+ * Moindres carrés : constante + 3 écarts, résolus par élimination de Gauss. Légère pénalité (ridge) sur les poids :
+ * la VFC et la FC de repos bougent souvent ensemble, sans elle le système peut devenir singulier.
+ */
+function fit(rows: [number, number, number][], y: number[]): number[] | null {
+  const n = 4;
+  const a = Array.from({ length: n }, () => new Array<number>(n + 1).fill(0));
+  rows.forEach((r, k) => {
+    const x = [1, ...r];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) a[i][j] += x[i] * x[j];
+      a[i][n] += x[i] * y[k];
+    }
+  });
+  for (let i = 1; i < n; i++) a[i][i] += 1;
+  for (let c = 0; c < n; c++) {
+    const p = a.reduce((best, row, i) => (i >= c && Math.abs(row[c]) > Math.abs(a[best][c]) ? i : best), c);
+    if (Math.abs(a[p][c]) < 1e-9) return null;
+    [a[c], a[p]] = [a[p], a[c]];
+    for (let i = 0; i < n; i++) {
+      if (i === c) continue;
+      const f = a[i][c] / a[c][c];
+      for (let j = c; j <= n; j++) a[i][j] -= f * a[c][j];
+    }
+  }
+  return a.map((row, i) => row[n] / row[i]);
+}
+
+const calibration = new WeakMap<Health, { w: number[]; n: number; error: number | null }>();
+
+/** Poids calés sur les jours où la source donnait son propre score (export Google Takeout / Fitbit) */
+function weightsFor(h: Health): { w: number[]; n: number; error: number | null } {
+  const cached = calibration.get(h);
+  if (cached) return cached;
+  const rows: [number, number, number][] = [], y: number[] = [];
+  for (const [key, day] of Object.entries(h.days)) {
+    if (typeof day.readiness !== 'number') continue;
+    const f = readinessFeatures(h, parseDay(key));
+    if (f) {
+      rows.push(f);
+      y.push(day.readiness);
+    }
+  }
+  const w = rows.length >= 20 ? fit(rows, y) : null;
+  const error = w ? rows.reduce((s, r, k) => s + Math.abs(w[0] + w[1] * r[0] + w[2] * r[1] + w[3] * r[2] - y[k]), 0) / rows.length : null;
+  const out = w ? { w, n: rows.length, error } : { w: DEFAULT_WEIGHTS, n: 0, error: null };
+  calibration.set(h, out);
+  return out;
+}
+
+/**
+ * Préparation d'un jour (0-100). Le score de la source quand il existe ; sinon une estimation à partir de la VFC,
+ * de la FC de repos (écarts à ta base des 30 jours précédents) et de la durée de la nuit, avec des poids calés sur
+ * ton historique de scores Fitbit quand il y en a au moins 20 jours.
+ */
+export function readinessFor(h: Health, date: Date): Readiness | null {
+  const day = h.days[isoDay(date)];
+  if (typeof day?.readiness === 'number') return { score: Math.round(day.readiness), estimated: false, calibratedOn: 0, error: null };
+  const f = readinessFeatures(h, date);
+  if (!f) return null;
+  const { w, n, error } = weightsFor(h);
+  const score = w[0] + w[1] * f[0] + w[2] * f[1] + w[3] * f[2];
+  return { score: Math.round(Math.max(1, Math.min(99, score))), estimated: true, calibratedOn: n, error };
+}

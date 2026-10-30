@@ -328,7 +328,7 @@ sensibles) : `npm run health -- "<chemin vers Takeout/Google Health>"` (chemin m
 puis `npm run data`. Ne lit que FC de repos, VFC, préparation, respiration, température, SpO2, sommeil, poids.
 Attention : le nom du dossier contient une espace insécable, et chaque nuit existe en `sleep_session_v1` et `v2`
 (on garde la plus récente). Depuis, l'API complète automatiquement (`health-api.json`, voir Synchronisation) ; le Takeout reste
-utile pour l'historique et le score de préparation. Affiché dans Comprendre › Suis-je récupéré ? (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
+utile pour l'historique et le score de préparation. Affiché dans Comprendre › Suis-je en forme ? (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
 
 ## Objectifs (onglet Courses, `src/app/core/goals.ts`)
 

@@ -272,3 +272,104 @@
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.6);
 }
+
+// Téléphone : carte de lancement, puis story en plein écran
+.launch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 15rem;
+  padding: 1.6rem 1.4rem;
+  border: 0;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #4a5f12 0%, #1c1e22 55%, #0b0c0e 100%);
+  color: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+
+  .mega {
+    margin: 0.4rem 0 0;
+  }
+
+  .play {
+    margin-top: auto;
+    padding: 0.6rem 1.1rem;
+    border-radius: 999px;
+    background: #c6f432;
+    color: #0b0c0e;
+    font-weight: 700;
+  }
+}
+
+.story.full {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+  padding: calc(3.2rem + env(safe-area-inset-top, 0px)) 1.4rem calc(1.6rem + env(safe-area-inset-bottom, 0px));
+  touch-action: pan-y;
+
+  .bars {
+    top: calc(0.75rem + env(safe-area-inset-top, 0px));
+    left: 0.75rem;
+    right: 0.75rem;
+  }
+
+  .zone {
+    top: calc(3rem + env(safe-area-inset-top, 0px));
+  }
+
+  .hint {
+    display: none;
+  }
+}
+
+.close {
+  position: absolute;
+  top: calc(1.4rem + env(safe-area-inset-top, 0px));
+  right: 0.5rem;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+
+  svg {
+    width: 1.4rem;
+    height: 1.4rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+}
+
+// Barre de la diapositive en cours : se remplit pendant SLIDE_MS (6 s)
+.bars span.current {
+  background: linear-gradient(#fff, #fff) left / 0% 100% no-repeat, rgba(255, 255, 255, 0.3);
+  animation: fill 6s linear forwards;
+}
+
+@keyframes fill {
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars span.current {
+    animation: none;
+    background: #fff;
+  }
+}
