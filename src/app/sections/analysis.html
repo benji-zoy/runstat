@@ -1,3 +1,17 @@
+@if (compact()) {
+  <!-- Carte de Comprendre : le constat en une phrase et un graphique en vignette -->
+  <p class="verdict">{{ brief()?.title ?? 'Pas encore assez de données.' }}</p>
+  @if (view() === 'matrice') {
+    @if (radar(); as r) {
+      <svg class="mini-radar" viewBox="-60 -60 120 120" aria-hidden="true">
+        <polygon [attr.points]="r.frame" class="frame" />
+        <polygon [attr.points]="r.shape" class="shape" />
+      </svg>
+    }
+  } @else if (miniChart(); as c) {
+    <app-chart [config]="c" [mini]="true" />
+  }
+} @else {
 <app-brief [brief]="brief()" />
 
 @switch (view()) {
@@ -605,4 +619,5 @@
   </div>
 </section>
   }
+}
 }

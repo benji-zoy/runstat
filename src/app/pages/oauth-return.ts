@@ -24,7 +24,7 @@ const SOURCES: DeviceSource[] = ['coros', 'strava', 'google'];
   `,
   styles: `
     .back { max-width: 560px; margin: 1.5rem auto; display: grid; gap: 0.8rem; }
-    .back h1 { margin: 0; font-family: var(--font-display); font-size: 1.6rem; }
+    .back h1 { margin: 0; font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.6rem; }
     .back p { margin: 0; }
   `,
 })

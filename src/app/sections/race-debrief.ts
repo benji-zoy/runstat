@@ -216,7 +216,7 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
     :host { display: block; }
     .debrief { display: grid; gap: 1.1rem; }
     header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
-    header h3 { color: var(--text-primary); font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
+    header h3 { color: var(--text-primary); font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
     header p { margin: 0.2rem 0 0; }
     .badge { padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; }
     h4 { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }

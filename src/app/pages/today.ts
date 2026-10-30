@@ -54,7 +54,7 @@ const DAY_MS = 86_400_000;
         </a>
       }
 
-      <a class="card vitals" routerLink="/forme">
+      <a class="card vitals" [routerLink]="health() ? '/comprendre/recuperation' : '/comprendre/charge'">
         <span class="label head">Forme du jour
           @if (health(); as h) { <span class="muted src">{{ sci.healthLabel() }} · {{ shortDay(h.date) }}</span> }
         </span>
@@ -86,7 +86,7 @@ const DAY_MS = 86_400_000;
 
     <section class="section">
       <h2>{{ year }} <small>depuis le 1er janvier</small></h2>
-      <a class="kpis" routerLink="/entrainement" [queryParams]="{ section: 'volume', vue: null, date: null }">
+      <a class="kpis" routerLink="/journal" [queryParams]="{ section: 'volume', vue: null, date: null }">
         <div class="kpi hero">
           <span class="display v">{{ num(ytd().km) }}<small>km</small></span>
           @if (ytdDiff(); as d) {
@@ -107,15 +107,15 @@ const DAY_MS = 86_400_000;
 
     <div class="row row2">
       <section class="card runs">
-        <span class="label head">Dernières sorties <a class="go" routerLink="/entrainement">Journal <app-icon name="arrow" /></a></span>
+        <span class="label head">Dernières sorties <a class="go" routerLink="/journal">Journal <app-icon name="arrow" /></a></span>
         @for (a of latest(); track a.id) {
-          <div class="run">
+          <a class="run" [routerLink]="['/sortie', a.id]">
             <span class="run-date muted">{{ fmtDate(a.date) }}</span>
             <span class="run-name">{{ a.name || 'Sortie' }}</span>
             <span class="run-stat"><b>{{ num(a.distanceKm, 1) }}</b> km</span>
             <span class="run-stat muted">{{ clock(a.durationSec) }}</span>
             <span class="run-stat muted">{{ pace(a.durationSec / a.distanceKm) }}</span>
-          </div>
+          </a>
           @if ($first && hasConditions()) {
             <div class="last-cond">
               <span class="label">Coût des conditions</span>
@@ -128,7 +128,7 @@ const DAY_MS = 86_400_000;
       </section>
 
       <section class="card highlights">
-        <span class="label head">Moments forts {{ year }} <a class="go" routerLink="/performance">Records <app-icon name="arrow" /></a></span>
+        <span class="label head">Moments forts {{ year }} <a class="go" routerLink="/comprendre/records">Records <app-icon name="arrow" /></a></span>
         @for (h of highlights(); track h.label) {
           <div class="hl">
             <span class="label">{{ h.label }}</span>
@@ -173,7 +173,7 @@ const DAY_MS = 86_400_000;
     }
     .kpi { display: grid; gap: 0.3rem; align-content: start; padding: 1rem 1.1rem; box-shadow: -1px -1px 0 var(--border); }
     .kpi.hero .v { font-size: 2.8rem; }
-    .kpi.hero .v small { color: var(--accent); font-family: var(--font-display); font-weight: 800; font-size: 0.45em; }
+    .kpi.hero .v small { color: var(--accent); font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; font-size: 0.45em; }
     .kpi .v { font-size: 1.7rem; }
     .delta { font-size: 0.8rem; font-weight: 600; color: var(--good-text); }
     .delta.down { color: var(--serious); }
@@ -187,7 +187,9 @@ const DAY_MS = 86_400_000;
     .run {
       display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 4.8rem 4.6rem 3.4rem; gap: 0.75rem; align-items: baseline;
       padding: 0.6rem 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums;
+      color: inherit; text-decoration: none; min-height: 44px;
     }
+    .run:hover .run-name { color: var(--accent-text); }
     .run-date { font-size: 0.82rem; }
     .run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .run-stat { text-align: right; }

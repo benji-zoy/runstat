@@ -76,7 +76,7 @@ import { LOCAL_MODE } from '../core/runtime';
   `,
   styles: `
     .privacy { max-width: 720px; margin: 1.5rem auto; line-height: 1.55; }
-    .privacy h1 { margin: 0 0 0.6rem; font-family: var(--font-display); font-size: 1.6rem; }
+    .privacy h1 { margin: 0 0 0.6rem; font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.6rem; }
     .privacy h2 { margin: 1.4rem 0 0.4rem; font-size: 1.05rem; }
     .privacy h3 { margin: 0.8rem 0 0.2rem; font-size: 0.95rem; }
     .privacy ul { margin: 0.2rem 0; padding-left: 1.2rem; display: grid; gap: 0.3rem; }

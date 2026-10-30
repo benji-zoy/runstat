@@ -1,32 +1,34 @@
-// Thème sombre par défaut ; thème clair via <html data-theme="light"> (bouton de l'en-tête, ThemeService).
+// Identité « Piste » : fonds graphite, un seul accent vif (volt), les données d'abord.
+// Thème sombre par défaut ; thème clair via <html data-theme="light"> (Moi › Apparence, ThemeService).
 // Toutes les couleurs passent par ces variables, y compris celles des graphiques (ui/palette.ts).
 :root {
   color-scheme: dark;
-  --bg: #0c0d10;
-  --surface-1: #16171b;
-  --surface-2: #1f2025;
-  --surface-3: #2a2b31;
-  --border: #2a2b31;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #8b8a83;
-  --on-accent: #0c0d10;
+  --bg: #0b0c0e;
+  --surface-1: #141518;
+  --surface-2: #1c1e22;
+  --surface-3: #26292e;
+  --border: #2a2d33;
+  --text-primary: #f2f3f5;
+  --text-secondary: #b4b8bf;
+  --text-muted: #878c94;
 
-  // Accent de marque (UI) – orange « sportif »
-  --accent: #ff6a2b;
-  --accent-soft: rgba(255, 106, 43, 0.14);
-  --accent-text: #ffb08a;
+  // Accent de marque (traits, liens, onglet actif) et aplat des boutons principaux (texte --on-accent)
+  --accent: #c6f432;
+  --accent-soft: rgba(198, 244, 50, 0.12);
+  --accent-text: #d6fa6a;
+  --accent-fill: #c6f432;
+  --on-accent: #0b0c0e;
 
-  // Séries de données (palette catégorielle validée)
-  --series-1: #3987e5;
-  --series-1-hover: #5598e7;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #9085e9;
-  --series-6: #e87ba4;
-  --ghost: #3a3b42;
-  --neutral: #c3c2b7;
+  // Séries de données : écartées de l'accent et des statuts
+  --series-1: #5b9cf5;
+  --series-1-hover: #7aaef7;
+  --series-2: #b28cf5;
+  --series-3: #2cc7b4;
+  --series-4: #f08a5d;
+  --series-5: #f173b0;
+  --series-6: #9aa3af;
+  --ghost: #33363c;
+  --neutral: #b4b8bf;
 
   // Rampe séquentielle (heatmap) : du plus faible au plus fort
   --seq-1: #104281;
@@ -35,73 +37,78 @@
   --seq-4: #5598e7;
   --seq-5: #86b6ef;
   --on-seq-lo: #ffffff;
-  --on-seq-hi: #0c0d10;
+  --on-seq-hi: #0b0c0e;
 
   // Statuts
-  --good: #0ca30c;
-  --good-text: #5fd35f;
-  --warning: #fab219;
-  --amber: #eda100;
-  --serious: #ec835a;
-  --critical: #d03b3b;
-  --bad: #e66767;
-  --critical-text: #f07272;
+  --good: #3ecf8e;
+  --good-text: #5fe0a6;
+  --warning: #f5a524;
+  --amber: #f5a524;
+  --serious: #f08a5d;
+  --critical: #ff5c5c;
+  --bad: #ff6b6b;
+  --critical-text: #ff8a8a;
 
   // Cartes
-  --map-land: #1a1a19;
-  --map-line: #8b8a83;
+  --map-land: #141518;
+  --map-line: #878c94;
 
-  --font-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
   // Polices auto-hébergées (@fontsource, angular.json) : hors ligne et sans requête vers Google
+  --font-display: 'Archivo Variable', 'Arial Narrow', system-ui, sans-serif;
+  // Largeur des titres (axe wdth d'Archivo) : à poser à côté de chaque `font-family: var(--font-display)`
+  --display-stretch: 75%;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --radius: 14px;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 10px;
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f6f4ef;
+  --bg: #f4f5f3;
   --surface-1: #ffffff;
-  --surface-2: #f0ede6;
-  --surface-3: #e3dfd6;
-  --border: #e3dfd6;
-  --text-primary: #16171b;
-  --text-secondary: #45443f;
-  --text-muted: #74726b;
-  --on-accent: #ffffff;
+  --surface-2: #eef0ed;
+  --surface-3: #e2e5e1;
+  --border: #dde0dc;
+  --text-primary: #121417;
+  --text-secondary: #464b52;
+  --text-muted: #686d75;
 
-  --accent: #e0551b;
-  --accent-soft: rgba(224, 85, 27, 0.11);
-  --accent-text: #b8410f;
+  // Le volt ne se lit pas sur fond clair : olive pour les traits et les liens, volt gardé pour les aplats
+  --accent: #527a00;
+  --accent-soft: rgba(82, 122, 0, 0.1);
+  --accent-text: #3f5f00;
+  --accent-fill: #c6f432;
+  --on-accent: #121417;
 
-  --series-1: #2a6fc4;
-  --series-1-hover: #1f5aa5;
-  --series-2: #c24e1f;
-  --series-3: #137e59;
-  --series-4: #9a6600;
-  --series-5: #6a5bd6;
-  --series-6: #c94f80;
-  --ghost: #d6d2c9;
-  --neutral: #6f6d66;
+  --series-1: #2f6fd0;
+  --series-1-hover: #2459a8;
+  --series-2: #7a55d6;
+  --series-3: #0f8a7c;
+  --series-4: #c25a2c;
+  --series-5: #c2457f;
+  --series-6: #69717c;
+  --ghost: #d6d9d4;
+  --neutral: #5c626a;
 
   --seq-1: #d3e3f7;
   --seq-2: #a3c4ee;
   --seq-3: #6a9fe0;
   --seq-4: #3a7acb;
   --seq-5: #1f5199;
-  --on-seq-lo: #16171b;
+  --on-seq-lo: #121417;
   --on-seq-hi: #ffffff;
 
-  --good: #198a2f;
-  --good-text: #187a2b;
-  --warning: #c98a00;
-  --amber: #b07a00;
-  --serious: #c8602f;
-  --critical: #c62f2f;
-  --bad: #d04545;
+  --good: #0a7a6c;
+  --good-text: #0a6b5f;
+  --warning: #a8650a;
+  --amber: #a8650a;
+  --serious: #c25a2c;
+  --critical: #cf3b3b;
+  --bad: #cf3b3b;
   --critical-text: #b42626;
 
-  --map-land: #ece8df;
-  --map-line: #9a978e;
+  --map-land: #eceee9;
+  --map-line: #8a8f96;
 }
 
 * {
@@ -130,7 +137,7 @@ h3 {
 
 // Titre de page : seul texte en grandes capitales
 h1 {
-  font-family: var(--font-display);
+  font-family: var(--font-display); font-stretch: var(--display-stretch);
   font-size: 2.3rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -139,7 +146,7 @@ h1 {
 
 // Titre de section
 h2 {
-  font-family: var(--font-display);
+  font-family: var(--font-display); font-stretch: var(--display-stretch);
   font-size: 1.6rem;
   font-weight: 700;
   line-height: 1.1;
@@ -225,7 +232,7 @@ a {
 }
 
 .display {
-  font-family: var(--font-display);
+  font-family: var(--font-display); font-stretch: var(--display-stretch);
   font-weight: 800;
   line-height: 1;
 }
@@ -240,6 +247,11 @@ img,
 canvas,
 svg {
   max-width: 100%;
+}
+
+/* Leaflet place ses calques (canvas de la carte thermique, SVG des tracés) hors du flux : pas de bornage */
+.leaflet-container :is(canvas, svg, img) {
+  max-width: none;
 }
 
 .section {
@@ -592,8 +604,8 @@ dialog.sheet {
   }
 
   &.primary {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
     color: var(--on-accent);
   }
 
@@ -605,5 +617,34 @@ dialog.sheet {
     font-size: 0.8rem;
     padding: 0.3rem 0.7rem;
     min-height: 32px;
+  }
+}
+
+// Cartes de Comprendre : le constat en une phrase, puis une vignette (graphique, radar, chiffres)
+.verdict {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.mini-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0.2rem 0 0;
+
+  div {
+    display: grid;
+  }
+
+  dt {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+  }
+
+  dd {
+    margin: 0;
+    font: 600 1.05rem var(--font-mono);
   }
 }

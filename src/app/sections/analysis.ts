@@ -66,6 +66,8 @@ const monthFmt = new Intl.DateTimeFormat('fr-FR', { month: 'short', year: '2-dig
 })
 export class AnalysisSection {
   readonly view = input.required<AnalysisView>();
+  /** Carte de Comprendre : constat en une phrase et graphique en vignette, sans le détail */
+  readonly compact = input(false);
 
   protected readonly store = inject(DataService);
   private readonly today = inject(PeriodService).today;
@@ -874,6 +876,32 @@ export class AnalysisSection {
   // -------------------------------------------------------------------------
   // Résumés « En bref » de chaque sous-onglet, calculés sur les mêmes données que les graphiques
   // -------------------------------------------------------------------------
+
+  /** Vignette de la carte : le graphique le plus parlant de chaque vue */
+  protected readonly miniChart = computed<ChartConfiguration | null>(() => {
+    switch (this.view()) {
+      case 'predictions': return this.curveChart();
+      case 'efficacite': return this.efChart();
+      case 'durabilite': return this.durCurveChart();
+      case 'charge': return this.pmcChart();
+      case 'seances': return this.typesChart();
+      case 'matrice': return null;
+    }
+  });
+
+  /** Radar en vignette (Runner Matrix) : six branches, score 0-100 par rapport à ton historique */
+  protected readonly radar = computed(() => {
+    const branches = this.sci.matrix().branches;
+    if (!branches.some((b) => b.score !== null)) return null;
+    const pt = (i: number, r: number) => {
+      const a = -Math.PI / 2 + (i * 2 * Math.PI) / branches.length;
+      return `${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`;
+    };
+    return {
+      frame: branches.map((_, i) => pt(i, 52)).join(' '),
+      shape: branches.map((b, i) => pt(i, 8 + ((b.score ?? 0) / 100) * 44)).join(' '),
+    };
+  });
 
   protected readonly brief = computed<LabSummary | null>(() => {
     switch (this.view()) {

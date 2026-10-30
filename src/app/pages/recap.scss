@@ -20,9 +20,9 @@
   cursor: pointer;
 
   &.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #0c0d10;
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: var(--on-accent);
   }
 }
 
@@ -38,7 +38,7 @@
   padding: 2.2rem 1.6rem 1.6rem;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, #ff6a2b 0%, #b8321a 55%, #3a0f08 100%);
+  background: linear-gradient(160deg, #4a5f12 0%, #1c1e22 55%, #0b0c0e 100%);
   transition: background 0.4s;
 
   &[data-slide='1'] { background: linear-gradient(160deg, #3987e5, #1c3f8a 60%, #0b1630); }
@@ -48,7 +48,7 @@
   &[data-slide='5'] { background: linear-gradient(160deg, #2a1a12, #16171b); }
   &[data-slide='6'] { background: linear-gradient(160deg, #9b6bff, #4b2a9a 60%, #1a0f38); }
   &[data-slide='7'] { background: linear-gradient(160deg, #eda100, #b05a00 60%, #3a1d00); }
-  &[data-slide='8'] { background: linear-gradient(160deg, #ff6a2b, #16171b 70%); }
+  &[data-slide='8'] { background: linear-gradient(160deg, #4a5f12, #141518 70%); }
 }
 
 .bars {

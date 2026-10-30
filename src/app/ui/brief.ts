@@ -32,7 +32,7 @@ export interface Brief {
       background: linear-gradient(90deg, var(--accent-soft), var(--surface-1) 45%);
     }
     .label { color: var(--accent); }
-    .title { font-family: var(--font-display); font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
+    .title { font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
     ul { margin: 0.15rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; color: var(--text-secondary); font-size: 0.9rem; }
     @media (max-width: 600px) { .title { font-size: 1.25rem; } ul { font-size: 0.86rem; } }
   `,

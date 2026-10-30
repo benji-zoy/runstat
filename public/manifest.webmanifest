@@ -9,8 +9,8 @@
   "scope": "./",
   "start_url": "./aujourdhui",
   "id": "./",
-  "background_color": "#0c0d10",
-  "theme_color": "#0c0d10",
+  "background_color": "#0b0c0e",
+  "theme_color": "#0b0c0e",
   "categories": ["sports", "health", "fitness"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
@@ -21,6 +21,6 @@
   ],
   "shortcuts": [
     { "name": "Courses", "url": "./courses", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Journal", "url": "./entrainement", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Journal", "url": "./journal", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

@@ -46,7 +46,7 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 Réglages (`GET|PUT /api/sources`, reconstruction complète). Une seule source d'activités par instance, sans dédoublonnage.
 `run.mjs` ne synchronise que les sources choisies ; `build-data` les recopie dans `sources` et chaque sortie porte `source`.
 L'interface lit `ScienceService.caps()` (`CAPABILITIES`) pour masquer ce que la source ne fournit pas (charge, TE et focus,
-VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé, Forme › Récupération disparaît.
+VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé, la carte Récupération de Comprendre disparaît.
 - **Strava** : identifiants `strava:<id>`, fichiers `strava-<id>` (`fileKey`, pas de « : » sur le partage SMB), `sportType` au code
   COROS (100 route, 101 tapis/virtuel, 102 trail). Sorties dans `data-raw/strava/activities.json` (`src/engine/parsers/strava.ts`).
   Replis dans `build-data` : charge = TRIMP (`fit.trimp`, sinon FC moyenne), meilleur km = effort FIT de 1 000 m, départ = premier
@@ -187,8 +187,8 @@ identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appa
 dans `data-raw/`, puis `run.mjs --rebuild` (reconstruction sans les sources ; une saisie pendant un run en relance une à la fin).
 Le site applique le changement tout de suite (objectifs et bilans sont évalués côté client) puis recharge après la reconstruction.
 Formulaires dans un `<dialog>` commun (`ui/forms/form-dialog.ts`, Reactive Forms, styles `.fields`, `.field`, `.btn` de `styles.scss`) :
-objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Classements : « Saisir »),
-réglages et sources (bouton de l'en-tête). Masqués sans service de synchro (`ng serve` ; avec le service local
+objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Comprendre › classements : « Saisir »),
+réglages et sources (Moi). Masqués sans service de synchro (`ng serve` ; avec le service local
 `node scripts/sync/server.mjs --no-schedule`, config `runstat-sync`, la config `runstat-api` de `.claude/launch.json` relaie `/api` par `proxy.conf.json`). Durées lues par `parseDuration` (`core/format.ts`).
 Chaque saisie ne touche que le compte de la requête (voir Comptes). Sans `users.json` (mono-utilisateur, `ng serve`, poste),
 pas d'authentification : quiconque atteint le service peut écrire.
@@ -319,7 +319,7 @@ l'autre peut être découpé par étapes de séance). Répartir entre sous-agent
 
 Réglages de l'athlète (FC max, FC repos, seuils `lt1Hr`/`lt2Hr`, sexe, poids…) : `data-raw/athlete.json`, modifiable par le bouton
 Réglages de l'en-tête. `raceWeights: { "<id>": 0.5 }` force le poids d'une course dans l'exposant de fatigue (0 = ignorée), réglable
-sur la course dans Classements. Modifié à la main : `node scripts/build-fit.mjs --force` en local puis `npm run nas -- push athlete.json`.
+sur la course dans Comprendre › classements. Modifié à la main : `node scripts/build-fit.mjs --force` en local puis `npm run nas -- push athlete.json`.
 
 ## Santé & sommeil (Google Health)
 
@@ -328,7 +328,7 @@ sensibles) : `npm run health -- "<chemin vers Takeout/Google Health>"` (chemin m
 puis `npm run data`. Ne lit que FC de repos, VFC, préparation, respiration, température, SpO2, sommeil, poids.
 Attention : le nom du dossier contient une espace insécable, et chaque nuit existe en `sleep_session_v1` et `v2`
 (on garde la plus récente). Depuis, l'API complète automatiquement (`health-api.json`, voir Synchronisation) ; le Takeout reste
-utile pour l'historique et le score de préparation. Affiché dans Forme › Récupération (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
+utile pour l'historique et le score de préparation. Affiché dans Comprendre › Suis-je récupéré ? (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
 
 ## Objectifs (onglet Courses, `src/app/core/goals.ts`)
 
@@ -366,17 +366,17 @@ dans Archives (« Temps puce, gels, ressenti ») ; à la main : `"debrief": { "c
 
 ## Algorithmes
 
-`src/app/core/science.ts` (affichés par `sections/analysis.ts`, réparti entre Performance, Forme et Entraînement) : Daniels/VDOT, Riegel (+ exposant perso mesuré sur les
+`src/app/core/science.ts` (affichés par `sections/analysis.ts`, cartes de Comprendre) : Daniels/VDOT, Riegel (+ exposant perso mesuré sur les
 courses), Tanda, Vickers, vitesse critique (Smyth & Muniz-Pumares), indice de forme Runalyze, marathon shape,
 TRIMP, Foster, ACWR, classification des séances, EF + anomalies (z-score MAD), Theil-Sen, chaleur (règle de Hadley),
 km-effort (ITRA D+/100, plus D−/300 ; D− absent = D+), index de polarisation. `src/engine/fit/analyse.ts` (lancé par `scripts/build-fit.mjs`) : meilleurs efforts, courbe d'allure, GAP (Minetti),
 zones, découplage Pa:HR, durabilité, tours au km, TRIMP seconde par seconde, tracé GPS.
-Les meilleurs efforts FIT (meilleur passage sur 400 m … marathon dans n'importe quelle sortie) alimentent Performance › Records › Segments (bascule « Ajusté à la pente » : GAP, 16 semaines / tous les FIT)
+Les meilleurs efforts FIT (meilleur passage sur 400 m … marathon dans n'importe quelle sortie) alimentent Comprendre › Records › Segments (bascule « Ajusté à la pente » : GAP, 16 semaines / tous les FIT)
 (`effortIn` dans `insights.ts` : sans FIT, meilleur km Coros ou allure moyenne d'une sortie de la distance à +5 %).
 `src/app/core/durability.ts` : perte d'efficacité 1er/dernier tiers, dérive de FC à allure égale, début de dégradation,
 montées/descentes en trail, courbe de durabilité heure par heure (sorties régulières seulement).
 
-## Runner Matrix (Performance › Profil, `src/app/core/matrix.ts`, `sections/runner-matrix.ts`)
+## Runner Matrix (Comprendre › Quel coureur suis-je ?, `src/app/core/matrix.ts`, `sections/runner-matrix.ts`)
 
 Inspirée d'Enduraw (méthode non publiée : construction propre). Six branches (Endurance, Montée, Descente, Vitesse,
 Résilience, Physiologie), chacune = moyenne de rangs 0-100 de ses métriques par rapport à l'historique de l'athlète
@@ -389,7 +389,7 @@ pour Vitesse et Endurance (loi puissance entre les records du 1 500 m et du mara
 record tombe) et Physiologie (VO₂max Coros, historique par l'estimation FC recalée, face au VDOT du record du marathon).
 Montée, Descente, Résilience : pas d'étalon mondial fiable, volontairement.
 
-## Se situer (Courses › Classements, `src/app/core/ffa.ts`, `sections/race-standing.ts`)
+## Se situer (Comprendre › Où je me situe face aux autres ?, `src/app/core/ffa.ts`, `sections/race-standing.ts`)
 
 Barème FFA route (athle.fr htmlid=125 hommes / 122 femmes, au 1er janvier 2010, IA → D7, recopié dans `ffa.ts`) : niveau de
 chaque course à 5 / 10 / 15 / 20 km, semi, marathon (temps officiel > temps puce du bilan > montre), niveau acquis = 2 perfs
@@ -403,31 +403,42 @@ de l'athlète (son nom, jamais écrit dans le dépôt), écrire le fichier, puis
 
 ## Interface
 
-Six espaces, une question chacun (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) :
-- **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (Google Health + fraîcheur), année en cours, dernières sorties, 3 moments forts.
-- **Entraînement** (`pages/training.ts`) : Journal (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo, calendrier, régularité),
-  Habitudes (`pages/habits.ts`, Quand / Comment / Où), Séances (classification auto + focus Coros).
-- **Forme** (`pages/fitness.ts`) : Récupération, Charge (Banister, charge hebdo + monotonie, Seiler, ACWR avec le ratio Coros), Efficacité (EF, tendances mensuelles, chaleur).
-- **Performance** (`pages/performance.ts`) : Records (`pages/records.ts` : Sorties / Segments / Par année), Potentiel (prédictions, vitesse critique, courbe d'allure),
-  Durabilité, Profil (Runner Matrix).
-- **Courses** (`pages/goals.ts`) : un sous-onglet par objectif, Archives, Classements.
-- **Souvenirs** (`pages/memories.ts`) : Récap, Badges, Jalons, Équivalences. Sur téléphone, accessible par l'étoile et la pastille de niveau de l'en-tête.
+Quatre espaces (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) et l'avatar « Moi » ; barre latérale sur ordinateur (≥ 1024 px),
+barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `app.scss`) :
+- **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (santé + fraîcheur), année en cours, dernières sorties, 3 moments forts.
+- **Journal** (`pages/journal.ts`) : Sorties (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo,
+  calendrier, régularité). Fiche d'une sortie à sa propre adresse : `/sortie/:id` (`pages/run.ts`).
+- **Courses** (`pages/goals.ts`) : un sous-onglet par objectif, Archives (`?section=classements` → Comprendre).
+- **Comprendre** (`pages/understand.ts`) : une carte par question du coureur (`core/topics.ts`, trois thèmes : Courses et chronos, Forme,
+  Entraînement), avec le constat en une phrase et une vignette ; la carte ouvre `/comprendre/<id>` (`pages/topic.ts`) avec le détail.
+  Chaque section a un mode carte (`[compact]="true"` : `analysis`, `recovery`, `race-standing`, `places`, `habits`, `records`).
+  Questions : prêt (→ Courses), potentiel, records, classements (barème FFA), récupération (avec santé), charge, progrès (efficacité, chaleur),
+  endurance (durabilité), séances, habitudes (Quand / Comment), carte (`sections/places.ts` : carte thermique des parcours `core/heat.ts` +
+  `ui/heat-map.ts`, rendu canvas, cadrée sur la zone la plus fréquentée ; lieux de départ), profil (Runner Matrix).
+- **Moi** (`pages/me.ts`, `/moi`) : niveau et distance, amis (à venir), Souvenirs (`pages/memories.ts` : Récap, Badges, Jalons, Équivalences),
+  réglages : athlète et sources, compte et sauvegarde, proches, apparence, confidentialité. Les fenêtres de saisie restent dans `app.html`
+  et s'ouvrent par `ShellService.open('athlete' | 'users' | 'account')`.
 
-Les analyses scientifiques sont dans `sections/analysis.ts` (`<app-analysis view="predictions | matrice | efficacite | durabilite | charge | seances">`),
-chaque vue ouvre sur un « En bref » (`ui/brief.ts`). Les anciennes adresses (`/labo`, `/records?section=…`, `/apercu`…) sont redirigées (`LEGACY` dans `app.routes.ts`).
+Graphiques (`ui/chart.ts`) : bouton « Agrandir » (fenêtre `<dialog>`) sur chacun ; `[mini]="true"` donne une vignette sans axes (`miniConfig`,
+hauteur `--mini-h`). Les analyses scientifiques sont dans `sections/analysis.ts` (`<app-analysis view="predictions | matrice | efficacite |
+durabilite | charge | seances">`), chaque vue ouvre sur un « En bref » (`ui/brief.ts`). Les anciennes adresses (`/entrainement`, `/forme`,
+`/performance`, `/labo`, `/apercu`…) sont redirigées (`LEGACY` dans `app.routes.ts`).
 
 Sous-onglets avec `ui/subtabs.ts` (`<app-subtabs #st [tabs]="…" />` puis `@switch (st.current())`) : onglets soulignés (`?section=`), ou bascule
 `variant="segment"` pour un second niveau (`param="onglet"` ou `course`) ; ces paramètres sont retirés quand on change d'espace (`TAB_PARAMS`).
 Ne jamais lire `#st` avant sa déclaration dans le gabarit. Trois contrôles, trois apparences : onglets soulignés (navigation), `.seg` (bascule de vue, période),
 `.chip` (filtres). Explications méthodologiques repliées dans `<details class="method"><summary>Méthode</summary>…</details>`.
 
-Thème sombre par défaut, clair au choix (bouton de l'en-tête, `core/theme.service.ts`, `data-theme` sur `<html>`). Toutes les couleurs sont des variables CSS
+Identité « Piste » : fonds graphite, un seul accent jaune-vert (volt, `--accent`), olive en thème clair pour les traits et les liens, volt gardé
+pour les aplats (`--accent-fill`, texte `--on-accent`) ; titres en Archivo condensé (`--font-display` + `font-stretch: var(--display-stretch)` à
+chaque usage), corps en Inter, chiffres en JetBrains Mono (`--font-mono`). Thème sombre par défaut, clair au choix (Moi › Apparence,
+`core/theme.service.ts`, `data-theme` sur `<html>`). Toutes les couleurs sont des variables CSS
 (`styles.scss`) ; dans les graphiques Chart.js et les cartes Leaflet, utiliser les jetons de `ui/palette.ts` (`C.s1`, `alpha(C.accent, 0.3)`…), résolus au dessin
 (`resolveColors` dans `ui/chart.ts`), jamais de couleur hexadécimale en dur. Interface en tutoiement.
 
 Appli installable (PWA) : `@angular/service-worker` (`ngsw-config.json` : coquille en cache, `data/` en `freshness` 4 s puis cache,
 `/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/` (tracé de `ui/icon.ts` sur fond sombre, `favicon.svg`),
-polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
+icônes PNG régénérées depuis des SVG par `qlmanage -t` puis `sips`, polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
 Le service worker n'est actif qu'en HTTPS (adresse Tailscale Serve) ou sur localhost, et seulement en build de production.
 
 ## Auto-hébergement (`deploy/Dockerfile`, `deploy/compose.selfhost.yml`, `docs/auto-hebergement.md`)

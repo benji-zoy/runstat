@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { ChartConfiguration } from 'chart.js';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
@@ -18,6 +18,12 @@ const hm = (min: number) => `${Math.floor(min / 60)} h ${String(Math.round(min %
   selector: 'app-recovery',
   imports: [ChartComponent],
   template: `
+    @if (compact()) {
+      <p class="verdict">{{ verdict() }}</p>
+      @if (hrvNow()) {
+        <app-chart [config]="hrvChart()" [mini]="true" />
+      }
+    } @else {
     @if (health(); as h) {
       <section class="section">
         <h2>Récupération <small>{{ sci.healthLabel() }} · {{ importedAt() }}</small></h2>
@@ -103,6 +109,7 @@ const hm = (min: number) => `${Math.floor(min / 60)} h ${String(Math.round(min %
         }
       </section>
     }
+    }
   `,
   styles: `
     .cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
@@ -114,7 +121,7 @@ const hm = (min: number) => `${Math.floor(min / 60)} h ${String(Math.round(min %
     .small { font-size: 0.82rem; margin: 0; }
     .txt { color: var(--text-primary); }
     h3 small, h4 small { font-family: var(--font-body); font-size: 0.8rem; font-weight: 400; text-transform: none; }
-    h4 { margin: 0; font-family: var(--font-display); font-size: 1.05rem; text-transform: uppercase; color: var(--text-secondary); }
+    h4 { margin: 0; font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.05rem; text-transform: uppercase; color: var(--text-secondary); }
     .sub { margin-top: 0.5rem; }
     .two { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); }
     .three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
@@ -128,6 +135,8 @@ const hm = (min: number) => `${Math.floor(min / 60)} h ${String(Math.round(min %
   `,
 })
 export class RecoveryComponent {
+  /** Carte de Comprendre : le constat en une phrase et une vignette, sans le détail */
+  readonly compact = input(false);
   private readonly store = inject(DataService);
   protected readonly sci = inject(ScienceService);
   private readonly todayDate = inject(PeriodService).today;
@@ -310,5 +319,17 @@ export class RecoveryComponent {
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${num(c.parsed.y ?? 0, 1)} kg` } } },
       },
     };
+  });
+
+  /** Phrase de la carte : VFC, FC de repos et sommeil des 7 derniers jours */
+  protected readonly verdict = computed(() => {
+    if (!this.health()) return 'Pas de données de santé : connecte Google Health ou COROS dans les réglages.';
+    const hrv = this.hrvState(), rhr = this.rhrState(), debt = this.debt();
+    const parts = [
+      hrv ? `VFC ${hrv.label.toLowerCase()}` : null,
+      rhr ? `FC de repos ${rhr.label.toLowerCase()}` : null,
+      debt ? `sommeil ${hm(debt.avg)} en moyenne` : null,
+    ].filter((p): p is string => !!p);
+    return parts.length ? parts.join(' · ') : 'Pas encore assez de nuits pour une base fiable.';
   });
 }

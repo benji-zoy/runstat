@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { Activity } from '../core/models';
 import { DataService } from '../core/data.service';
 import { SubTab, SubTabsComponent } from '../ui/subtabs';
@@ -49,6 +49,15 @@ const EFFORT_LABELS: Record<number, string> = {
   imports: [SubTabsComponent],
   selector: 'app-records',
   template: `
+    @if (compact()) {
+      <dl class="mini-records">
+        @for (e of keyEfforts(); track e.label) {
+          <div><dt>{{ e.label }}</dt><dd>{{ clock(e.time) }}</dd></div>
+        } @empty {
+          <p class="verdict">Pas encore de record mesuré.</p>
+        }
+      </dl>
+    } @else {
     <div class="toolbar">
       <app-subtabs #st [tabs]="subtabs" param="onglet" variant="segment" />
       @if (st.current() !== 'annees') {
@@ -189,6 +198,7 @@ const EFFORT_LABELS: Record<number, string> = {
     }
 
     
+    }
   `,
   styles: `
     .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 1.25rem; }
@@ -205,7 +215,7 @@ const EFFORT_LABELS: Record<number, string> = {
       display: inline-grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 50%;
       font-size: 0.72rem; font-weight: 700; background: var(--surface-2); color: var(--text-muted); align-self: center;
     }
-    .rank[data-rank='0'] { background: var(--accent); color: var(--on-accent); }
+    .rank[data-rank='0'] { background: var(--accent-fill); color: var(--on-accent); }
     .when-cell { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
     .val { font-size: 1.35rem; white-space: nowrap; }
     .pace { font-family: var(--font-body); font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem; }
@@ -218,6 +228,8 @@ const EFFORT_LABELS: Record<number, string> = {
   `,
 })
 export class RecordsPage {
+  /** Carte de Comprendre : le constat en une phrase et une vignette, sans le détail */
+  readonly compact = input(false);
   protected readonly subtabs: SubTab[] = [
     { id: 'sorties', label: 'Sorties' },
     { id: 'segments', label: 'Segments' },
@@ -319,4 +331,11 @@ export class RecordsPage {
       ...efforts,
     ];
   });
+
+  /** Carte : meilleur passage de tous les temps sur les distances de référence */
+  protected readonly keyEfforts = computed(() =>
+    EFFORT_DISTANCES.filter((e) => [5000, 10000, 21097.5, 42195].includes(e.m))
+      .map((e) => ({ label: e.label, time: topEfforts(this.store.activities(), e, 1)[0]?.time ?? null }))
+      .filter((e): e is { label: string; time: number } => e.time !== null),
+  );
 }

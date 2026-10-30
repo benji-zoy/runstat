@@ -86,7 +86,7 @@ p {
 .route-ends {
   display: flex;
   justify-content: space-between;
-  font-family: var(--font-display);
+  font-family: var(--font-display); font-stretch: var(--display-stretch);
   font-weight: 700;
   font-size: 1.1rem;
   text-transform: uppercase;
