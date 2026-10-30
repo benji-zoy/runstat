@@ -437,7 +437,8 @@ chaque usage), corps en Inter, chiffres en JetBrains Mono (`--font-mono`). Thèm
 (`resolveColors` dans `ui/chart.ts`), jamais de couleur hexadécimale en dur. Interface en tutoiement.
 
 Appli installable (PWA) : `@angular/service-worker` (`ngsw-config.json` : coquille en cache, `data/` en `freshness` 4 s puis cache,
-`/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/` (tracé de `ui/icon.ts` sur fond sombre, `favicon.svg`),
+`/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/*-piste.png` et `favicon-piste.svg` (tracé de `ui/icon.ts`, volt sur graphite ; nom suffixé par l'identité : à
+changer avec le logo, sinon nginx (7 jours) et les téléphones gardent l'ancien),
 icônes PNG régénérées depuis des SVG par `qlmanage -t` puis `sips`, polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
 Le service worker n'est actif qu'en HTTPS (adresse Tailscale Serve) ou sur localhost, et seulement en build de production.
 
