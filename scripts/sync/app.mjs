@@ -3,11 +3,11 @@
 //   GET  /api/me    → { id, name, role, mode, multi, admin } (compte de la requête)
 //   GET  /api/data/coros.json | routes.json → instantané du compte (nginx y renvoie /data/)
 //   GET  /api/sync  → { running, queued, startedAt, nextAt, state (sync-state.json), log (fin du dernier run),
-//                       stravaClient, stravaConnected, stravaAthlete, corosConnected, googleConnected, googleClient
-//                       (présence des applis et des jetons, jamais leur contenu),
+//                       stravaClient, stravaConnected, stravaAthlete, corosConnected, googleConnected, googleClient,
+//                       garminConnected, garminExpiresOn (présence des applis, jetons et clés, jamais leur contenu),
 //                       stravaOrigin (adresse du site pour la connexion Strava) }
 //   POST /api/sync  → 202 lancée ou en file | 409 déjà en cours | 429 trop tôt après la précédente
-//   POST /api/fit?id=<labelId | strava:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
+//   POST /api/fit?id=<labelId | strava:id | garmin:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
 //   GET|PUT /api/goals, GET|PUT /api/athlete, GET|PUT /api/sources, GET|PUT|DELETE /api/results/<id>[?replaces=date-….json]
 //     → saisie depuis le site (scripts/sync/entries.mjs), puis reconstruction seule (run.mjs --rebuild) : 200 | 400 | 404
 //   POST /api/strava/archive (corps application/zip, 2 Gio au plus) → import de l'archive Strava puis reconstruction :
@@ -15,6 +15,8 @@
 //   PUT /api/strava/client, GET /api/strava/connect, GET /api/strava/callback → connexion Strava depuis Réglages
 //     (scripts/sync/strava-connect.mjs : les deux GET sont des navigations, protégées par le state lié au compte)
 //   GET /api/coros/connect|callback, /api/google/connect|callback → connexion COROS et Google (oauth-connect.mjs)
+//   PUT|DELETE /api/garmin/key { apiKey, days } → clé personnelle Garmin, essayée auprès de Garmin avant d'être
+//     enregistrée (scripts/sync/garmin.mjs) : 200 | 400
 //   GET|PUT /api/admin/users → comptes de l'instance (propriétaire, par le tailnet seulement)
 //   POST /api/admin/invitations { id, name } → lien d'invitation d'un proche local-first (compte créé au besoin, 7 jours)
 //   POST /api/admin/users/<id>/reset → passkeys, sessions et codes du compte local-first révoqués, nouvelle invitation
@@ -29,6 +31,7 @@ import {
 import { fileKey, readSources } from './sources.mjs';
 import { CALLBACK_PATH, preferredOrigin, stravaStatus } from './strava-connect.mjs';
 import { CONNECT_PATHS, connectStatus } from './oauth-connect.mjs';
+import { garminStatus, removeGarminKey, saveGarminKey } from './garmin.mjs';
 import { resolveUser, saveUsers, userPaths } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
 import { BackupStore } from './backup-store.mjs';
@@ -359,7 +362,10 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       // Connexion d'une source : synchro lancée aussitôt si le compte l'utilise
       onConnected: (source = 'strava') => {
         const s = readSources(paths.raw);
-        const used = source === 'strava' ? s.activities === 'strava' : source === 'google' ? s.health === 'google' : s.activities === 'coros' || s.health === 'coros';
+        const used =
+          source === 'strava' ? s.activities === 'strava'
+          : source === 'google' ? s.health === 'google'
+          : s.activities === source || s.health === source;
         if (used) enqueue(user, jobs.full(`${source} connecté`));
       },
     };
@@ -433,6 +439,19 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
         return send(res, 500, { error: 'écriture impossible' });
       }
     }
+    if (path === '/api/garmin/key') {
+      if (req.method !== 'PUT' && req.method !== 'DELETE') return send(res, 405, { error: 'méthode non autorisée' });
+      try {
+        if (req.method === 'DELETE') return send(res, 200, removeGarminKey(paths.secrets));
+        const status = await saveGarminKey(paths.secrets, await readBody(req));
+        ctx.onConnected('garmin');
+        return send(res, 200, status);
+      } catch (e) {
+        if (e instanceof InvalidEntry) return send(res, 400, { error: e.message, errors: e.errors });
+        log.error?.('Clé Garmin :', e.message);
+        return send(res, 502, { error: 'Garmin injoignable, réessaie plus tard' });
+      }
+    }
     if (path === '/api/strava/archive') {
       if (req.method !== 'POST') return send(res, 405, { error: 'méthode non autorisée' });
       try {
@@ -473,6 +492,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       state: readState(paths.raw),
       ...stravaStatus(paths.secrets),
       ...connectStatus(paths.secrets, ctx.googleClientFile),
+      ...garminStatus(paths.secrets),
       stravaOrigin: preferredOrigin(),
     });
   };

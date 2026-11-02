@@ -1,20 +1,20 @@
 import { Component, computed, inject } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ScienceService } from '../core/science.service';
 import { GoalArchiveComponent } from '../sections/goal-archive';
 import { GoalCardComponent } from '../sections/goal-card';
-import { RaceStandingSection } from '../sections/race-standing';
 import { SubTab, SubTabsComponent } from '../ui/subtabs';
 import { EntriesService } from '../core/entries.service';
 import { GoalFormComponent } from '../ui/forms/goal-form';
 import { IconComponent } from '../ui/icon';
 
 /**
- * Courses : objectifs à venir (indice de confiance, chrono probable, préparation, conseils), Archives (bilans des courses
- * terminées) et Classements (barème FFA, classements officiels).
+ * Courses : objectifs à venir (indice de confiance, chrono probable, préparation, conseils) et Archives (bilans des courses
+ * terminées). Les classements (barème FFA) sont dans Comprendre › Où je me situe face aux autres ?
  */
 @Component({
   selector: 'app-goals',
-  imports: [GoalArchiveComponent, GoalCardComponent, RaceStandingSection, SubTabsComponent, GoalFormComponent, IconComponent],
+  imports: [GoalArchiveComponent, GoalCardComponent, SubTabsComponent, GoalFormComponent, IconComponent],
   template: `
     <header class="page-head">
       <h1>Courses</h1>
@@ -29,8 +29,6 @@ import { IconComponent } from '../ui/icon';
 
     @if (st.current() === 'archives') {
       <app-goal-archive />
-    } @else if (st.current() === 'classements') {
-      <app-race-standing />
     } @else {
       @for (e of goals(); track e.goal.id) {
         @if (e.goal.id === st.current()) {
@@ -55,7 +53,6 @@ import { IconComponent } from '../ui/icon';
       }
     }
 
-    @if (st.current() !== 'classements') {
     <details class="card method">
       <summary>Comment l'indice est calculé</summary>
       <ul>
@@ -76,7 +73,6 @@ import { IconComponent } from '../ui/icon';
         <li>Les seuils de préparation sont des repères d'entraînement usuels, pas des lois : l'indice indique où porter l'effort.</li>
       </ul>
     </details>
-    }
   `,
   styles: `
     :host { display: grid; gap: 1.25rem; }
@@ -89,12 +85,18 @@ import { IconComponent } from '../ui/icon';
   `,
 })
 export class GoalsPage {
+  constructor() {
+    // Ancienne adresse Courses › Classements
+    if (inject(ActivatedRoute).snapshot.queryParamMap.get('section') === 'classements') {
+      void inject(Router).navigateByUrl('/comprendre/classements', { replaceUrl: true });
+    }
+  }
+
   private readonly sci = inject(ScienceService);
   protected readonly entries = inject(EntriesService);
   protected readonly goals = this.sci.upcomingGoals;
   protected readonly subtabs = computed<SubTab[]>(() => [
     ...this.goals().map((e) => ({ id: e.goal.id, label: e.goal.name, badge: e.daysLeft > 0 ? 'J-' + e.daysLeft : 'Jour J' })),
     ...(this.sci.archivedGoals().length ? [{ id: 'archives', label: 'Archives', badge: String(this.sci.archivedGoals().length) }] : []),
-    { id: 'classements', label: 'Classements' },
   ]);
 }

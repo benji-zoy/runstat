@@ -1,63 +1,36 @@
 <header class="topbar">
-  <div class="bar">
-    <a class="logo" routerLink="/aujourdhui">RUN<b>STAT</b></a>
+  <a class="logo" routerLink="/aujourdhui">RUN<b>STAT</b></a>
 
-    <nav class="tabs" aria-label="Espaces">
-      @for (t of tabs; track t.path) {
-        <a [routerLink]="'/' + t.path" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge">
-          <app-icon [name]="t.icon" />{{ t.label }}
-        </a>
-      }
-    </nav>
-
-    <div class="tools">
-      @if (data()) {
-        <a class="level" routerLink="/souvenirs" [queryParams]="{ section: 'badges', onglet: null, course: null }"
-          queryParamsHandling="merge" [style.--lvl]="level().color" title="Ton niveau (distance cumulée) · badges et souvenirs">
-          <span class="dot"></span><span class="lvl-word">Niveau </span>{{ level().name }}
-        </a>
-      }
-      <a class="icon-btn memories" routerLink="/souvenirs" routerLinkActive="active" [queryParams]="tabParams"
-        queryParamsHandling="merge" aria-label="Souvenirs">
-        <app-icon name="star" />
+  <nav class="tabs" aria-label="Espaces">
+    @for (t of tabs; track t.path) {
+      <a [routerLink]="'/' + t.path" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge">
+        <app-icon [name]="t.icon" />{{ t.label }}
       </a>
-      @if (sync.available()) {
-        <button type="button" class="icon-btn sync" [class.spinning]="sync.running()"
-          [class.warn]="sync.problems().length > 0" [disabled]="sync.running()" (click)="sync.trigger()"
-          (mouseenter)="sync.refresh()" [title]="sync.title()" [attr.aria-label]="sync.running() ? 'Synchronisation en cours' : 'Synchroniser les données'">
-          <app-icon name="sync" />
-          @if (sync.notice(); as n) {
-            <span class="sync-notice" role="status">{{ n }}</span>
-          }
-        </button>
-      } @else if (sync.notice(); as n) {
-        <!-- Appli publique sans source connectée : message d'une connexion refusée, sans bouton de synchro -->
-        <span class="sync notice-anchor"><span class="sync-notice" role="status">{{ n }}</span></span>
-      }
-      @if (me.admin()) {
-        <button type="button" class="icon-btn" (click)="usersForm.open()" title="Proches (comptes hébergés)" aria-label="Proches">
-          <app-icon name="users" />
-        </button>
-      }
-      @if (local && localService.busy()) {
-        <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
-      }
-      @if (local) {
-        <button type="button" class="icon-btn" [class.warn]="!!account.lastError()" (click)="accountForm.open()"
-          [title]="account.connected() ? 'Compte et sauvegarde chiffrée' : 'Sauvegarde : aucune'" aria-label="Compte et sauvegarde">
-          <app-icon name="cloud" />
-        </button>
-      }
-      @if (entries.available()) {
-        <button type="button" class="icon-btn" (click)="athleteForm.open()" title="Réglages (FC, poids…)" aria-label="Réglages">
-          <app-icon name="settings" />
-        </button>
-      }
-      <button type="button" class="icon-btn" (click)="theme.toggle()"
-        [attr.aria-label]="theme.theme() === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'">
-        <app-icon [name]="theme.theme() === 'dark' ? 'sun' : 'moon'" />
+    }
+  </nav>
+
+  <div class="tools">
+    @if (sync.available()) {
+      <button type="button" class="icon-btn sync" [class.spinning]="sync.running()"
+        [class.warn]="sync.problems().length > 0" [disabled]="sync.running()" (click)="sync.trigger()"
+        (mouseenter)="sync.refresh()" [title]="sync.title()" [attr.aria-label]="sync.running() ? 'Synchronisation en cours' : 'Synchroniser les données'">
+        <app-icon name="sync" />
+        @if (sync.notice(); as n) {
+          <span class="sync-notice" role="status">{{ n }}</span>
+        }
       </button>
-    </div>
+    } @else if (sync.notice(); as n) {
+      <!-- Appli publique sans source connectée : message d'une connexion refusée, sans bouton de synchro -->
+      <span class="sync notice-anchor"><span class="sync-notice" role="status">{{ n }}</span></span>
+    }
+    @if (local && localService.busy()) {
+      <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
+    }
+    <a class="me" routerLink="/moi" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge"
+      [class.warn]="!!account.lastError()" [attr.aria-label]="'Moi : profil, souvenirs, réglages' + (account.lastError() ? ' (sauvegarde à vérifier)' : '')">
+      <span class="avatar">{{ initial() }}</span>
+      <span class="me-text"><b>Moi</b><small>{{ meLine() }}</small></span>
+    </a>
   </div>
 </header>
 
@@ -117,7 +90,7 @@
 <app-account-form #accountForm />
 
 <nav class="bottom" aria-label="Espaces">
-  @for (t of mobileTabs; track t.path) {
+  @for (t of tabs; track t.path) {
     <a [routerLink]="'/' + t.path" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge">
       <app-icon [name]="t.icon" />
       <span>{{ t.label }}</span>

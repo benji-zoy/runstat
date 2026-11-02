@@ -1,15 +1,15 @@
 // Sources de données d'une instance (data-raw/sources.json) et identifiants de sortie.
 // Une seule source d'activités par instance (pas de dédoublonnage) ; santé au choix ou aucune.
 
-export type ActivitySource = 'coros' | 'strava';
-export type HealthSource = 'google' | 'coros' | 'none';
+export type ActivitySource = 'coros' | 'strava' | 'garmin';
+export type HealthSource = 'google' | 'coros' | 'garmin' | 'none';
 export interface Sources {
   activities: ActivitySource;
   health: HealthSource;
 }
 
-export const ACTIVITY_SOURCES: readonly ActivitySource[] = ['coros', 'strava'];
-export const HEALTH_SOURCES: readonly HealthSource[] = ['google', 'coros', 'none'];
+export const ACTIVITY_SOURCES: readonly ActivitySource[] = ['coros', 'strava', 'garmin'];
+export const HEALTH_SOURCES: readonly HealthSource[] = ['google', 'coros', 'garmin', 'none'];
 /** Sans fichier : le fonctionnement d'origine (COROS + Google Health) */
 export const DEFAULT_SOURCES: Sources = { activities: 'coros', health: 'google' };
 
@@ -24,10 +24,10 @@ export function normalizeSources(s: unknown): Sources {
   };
 }
 
-/** Identifiant de sortie : LabelId COROS (chiffres) ou « strava:<id> » */
-export const ACTIVITY_ID = /^(\d{1,30}|strava:\d{1,30})$/;
+/** Identifiant de sortie : LabelId COROS (chiffres), « strava:<id> » ou « garmin:<id> » */
+export const ACTIVITY_ID = /^(\d{1,30}|(strava|garmin):\d{1,30})$/;
 
 /** Nom de fichier d'une sortie (fit/, fit-derived/, tracks/, results/…) : pas de « : » sur un partage SMB */
 export const fileKey = (id: string): string => id.replace(':', '-');
 /** Inverse de fileKey : « strava-123 » → « strava:123 » */
-export const idFromFileKey = (key: string): string => key.replace(/^strava-(?=\d+$)/, 'strava:');
+export const idFromFileKey = (key: string): string => key.replace(/^(strava|garmin)-(?=\d+$)/, '$1:');

@@ -307,7 +307,7 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
     :host { display: block; }
     .goal { display: grid; gap: 1.1rem; }
     header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
-    header h3 { color: var(--text-primary); font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
+    header h3 { color: var(--text-primary); font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
     header p { margin: 0.2rem 0 0; }
     .countdown { font-size: 2.2rem; color: var(--accent); white-space: nowrap; }
     h4 { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }

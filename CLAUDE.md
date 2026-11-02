@@ -18,10 +18,11 @@ de travailler sur les données. Les objectifs, bilans, classements et réglages 
 `athlete.json` → `build-fit --force` (empreinte `athleteFit` dans l'état ; poids, taille, `raceWeights` ne recalculent pas les FIT). État : `data-raw/sync-state.json` (dernier succès,
 dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/<type>/`. Logs : Container Manager.
 - Clients et synchro dans le moteur (`src/engine/sync/`, les mêmes que sur l'appareil, voir Appli publique) : `coros.ts` (MCP HTTP sans
-  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `google.ts` (API v4 ; filtres en
+  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `garmin.ts` (Personal API,
+  GET sur `READ_PATHS` + `READ_PARAMS`), `google.ts` (API v4 ; filtres en
   snake_case `daily_resting_heart_rate.date`, contrairement à la doc ; jeton par un point injecté), `run-sources.ts` (`sourceSync` : une
   synchro par source, `syncOne` pour « Affiner »), `http.ts` (`fetchRetry`, `ReauthRequired`, `RateLimited`, magasin de jetons `TokenStore`
-  avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
+  avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `garmin.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
   (jetons dans un dossier de secrets : `nodeTokens` de `secrets.mjs`, `savedAt` = date du fichier ; zone raw = `NodeStore`).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
 - Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Connexion depuis le site, pour chaque compte :
@@ -42,11 +43,11 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
-`{ "activities": "coros" | "strava", "health": "google" | "coros" | "none" }`, absent = COROS + Google Health ; modifiable dans
+`{ "activities": "coros" | "strava" | "garmin", "health": "google" | "coros" | "garmin" | "none" }`, absent = COROS + Google Health ; modifiable dans
 Réglages (`GET|PUT /api/sources`, reconstruction complète). Une seule source d'activités par instance, sans dédoublonnage.
 `run.mjs` ne synchronise que les sources choisies ; `build-data` les recopie dans `sources` et chaque sortie porte `source`.
 L'interface lit `ScienceService.caps()` (`CAPABILITIES`) pour masquer ce que la source ne fournit pas (charge, TE et focus,
-VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé, Forme › Récupération disparaît.
+VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé, la carte Récupération de Comprendre disparaît.
 - **Strava** : identifiants `strava:<id>`, fichiers `strava-<id>` (`fileKey`, pas de « : » sur le partage SMB), `sportType` au code
   COROS (100 route, 101 tapis/virtuel, 102 trail). Sorties dans `data-raw/strava/activities.json` (`src/engine/parsers/strava.ts`).
   Replis dans `build-data` : charge = TRIMP (`fit.trimp`, sinon FC moyenne), meilleur km = effort FIT de 1 000 m, départ = premier
@@ -76,6 +77,18 @@ VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé
 - **Santé COROS** (`src/engine/parsers/coros-health.ts`, source `corosHealth` de l'état, jetons COROS) : `queryDailyHealthData` (sommeil, score),
   `querySleepHrv` (VFC, 7 jours par appel), `queryRestingHeartRate` → `data-raw/health-coros.json` (un an au premier passage).
   Pas de poids, de préparation ni de température.
+- **Garmin** (Personal API, pour les Garmin sans abonnement Strava ; `src/engine/sync/garmin.ts`, `parsers/garmin.ts`, champs d'après le
+  Swagger officiel : developer.garmin.com/gc-developer-program/personal/swagger-docs) : chacun crée sa **clé personnelle** sur
+  connect.garmin.com/app/settings/personalApiToken (30 jours à un an, gratuite, sans validation, usage personnel seulement) et la colle
+  dans Réglages › Synchro Garmin (`PUT|DELETE /api/garmin/key`, essayée auprès de Garmin avant d'être gardée : `secrets/garmin-key.json`
+  = `{ apiKey, days, savedOn }`, expiration affichée). Clé → jeton Bearer de 24 h (JWT en texte brut), **sans refresh token** : gardé en
+  mémoire, pas d'appareil principal nécessaire pour lui ; une nouvelle clé lève la pause « ré-autorisation » (`TOKEN_FILE`). Identifiants
+  `garmin:<id>`, fichiers `garmin-<id>`, sorties dans `data-raw/garmin/activities.json` (même forme que Strava, mêmes replis dans
+  `build-data`), FIT tirés du zip d'origine (`/download-service/files/activity/<id>`) dans `fit/garmin-<id>.fit` (`fitPerRun`, arrêt
+  propre sur 429), tout l'historique au premier passage. Santé (`garminHealth` dans l'état) : sommeil (31 jours par appel), VFC, FC de
+  repos (résumés quotidiens), poids → `data-raw/health-garmin.json` (un an au premier passage). L'effet d'entraînement et la VO₂max de
+  la liste ne sont pas repris. **Garmin refuse le CORS** (toutes origines) : dans l'appli publique, tout passe par le relais du NAS
+  (voir Accès public), donc seulement avec un compte.
 
 ## Moteur portable (`src/engine/`)
 
@@ -126,12 +139,14 @@ les données après 7 jours sans visite, sauf appli installée). `fit-file-parse
   nu donne `KNOWN_NAS` vide (écran « Serveur inconnu »).
 
 ### Synchro des sources sur l'appareil (`core/device-sync.service.ts`, `pages/oauth-return.ts`)
-Le moteur de `src/engine/sync/` dans le navigateur (thread principal ; COROS, Strava, Google Health et l'hôte des FIT acceptent le CORS) :
+Le moteur de `src/engine/sync/` dans le navigateur (thread principal ; COROS, Strava, Google Health et l'hôte des FIT acceptent le CORS ;
+Garmin non : `garminRelayFetch` le fait passer par le relais du NAS) :
 `sourceSync(raw, clients, { stage: false })` (pas de réponses brutes : sauvegarde plus légère), puis `rebuild` dans le worker, `fit-queue.txt`
 (COROS), rechargement. À l'ouverture si la dernière tentative date de plus d'une heure, et au bouton de l'en-tête (`SyncService` en local
 lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner avec le tracé » : `syncOne`.
 - Jetons dans la zone raw, `secrets/<nom>.json` (`fileTokenStore`, avec `savedAt`) : chiffrés dans la sauvegarde, donc suivent le compte.
-  Appli Strava de la personne (Client ID + Secret, `validateStravaApp` comme sur le NAS) gardée sur l'appareil, jamais envoyée au NAS.
+  Appli Strava de la personne (Client ID + Secret, `validateStravaApp` comme sur le NAS) gardée sur l'appareil, jamais envoyée au NAS ;
+  clé Garmin (`saveGarminKey`, essayée par le relais) aussi, mais elle transite par le NAS à chaque demande de jeton.
 - **Appareil principal** (`sync-primary.json` : appareil, nom, époque, fusionné par la sauvegarde) : seul à renouveler les jetons (le
   refresh token COROS et Strava change à chaque renouvellement). Renouvellement sous `navigator.locks` (`runstat-jeton-<nom>`, relecture des
   jetons une fois le verrou pris) : avant, `account.sync()` (jetons et appareil principal les plus récents) puis vérification (sans
@@ -146,8 +161,10 @@ lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner
   `GET /relay/google/client`, échange et renouvellement par le relais (le propriétaire déclare `<appli>connexion/google` dans la console
   Google Cloud). Retour vers `/aujourdhui?<source>=ok|refus&raison=…`, puis synchro.
 - Tests : `src/engine/sync/sync.spec.ts` (fetch bouchonné : COROS complet, quota FIT, listes blanches, rotation du jeton avec deux appels
-  simultanés, renouvellement refusé, pause « ré-autorisation » puis reprise, Strava et limite de débit, Google par le relais, « Affiner »),
-  `core/device-sync.service.spec.ts` (appareil principal, sauvegarde verrouillée, appli Strava, retour de connexion), `sync.test.mjs`
+  simultanés, renouvellement refusé, pause « ré-autorisation » puis reprise, Strava et limite de débit, Google par le relais, Garmin : FIT
+  du zip, santé, clé refusée puis remplacée, jeton redemandé une fois, « Affiner »), `parsers/garmin.spec.ts`, snapshot Garmin = celui de
+  Strava aux identifiants près (`build.spec.ts`), `core/device-sync.service.spec.ts` (appareil principal, sauvegarde verrouillée, appli
+  Strava, clé Garmin, retour de connexion), `garmin.test.mjs` (clé sur le NAS), `sync.test.mjs`
   (`run.mjs` réel contre un MCP simulé : `COROS_MCP_URL`).
 
 ### Sauvegarde chiffrée et multi-appareils (`src/engine/backup/`, `core/account.service.ts`, `pages/join.ts`)
@@ -187,8 +204,8 @@ identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appa
 dans `data-raw/`, puis `run.mjs --rebuild` (reconstruction sans les sources ; une saisie pendant un run en relance une à la fin).
 Le site applique le changement tout de suite (objectifs et bilans sont évalués côté client) puis recharge après la reconstruction.
 Formulaires dans un `<dialog>` commun (`ui/forms/form-dialog.ts`, Reactive Forms, styles `.fields`, `.field`, `.btn` de `styles.scss`) :
-objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Classements : « Saisir »),
-réglages et sources (bouton de l'en-tête). Masqués sans service de synchro (`ng serve` ; avec le service local
+objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Comprendre › classements : « Saisir »),
+réglages et sources (Moi). Masqués sans service de synchro (`ng serve` ; avec le service local
 `node scripts/sync/server.mjs --no-schedule`, config `runstat-sync`, la config `runstat-api` de `.claude/launch.json` relaie `/api` par `proxy.conf.json`). Durées lues par `parseDuration` (`core/format.ts`).
 Chaque saisie ne touche que le compte de la requête (voir Comptes). Sans `users.json` (mono-utilisateur, `ng serve`, poste),
 pas d'authentification : quiconque atteint le service peut écrire.
@@ -246,9 +263,15 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   les 6 h (`gcAllBackups` : aussi les dossiers des comptes retirés, dont la sauvegarde restante passe en suppression douce, purgée
   après 30 jours, dossier effacé une fois vide ; données d'un hébergé retiré gardées) ; `DELETE /backup` = suppression douce (30 jours).
 - Relais : `POST /relay/google/token` et `GET /relay/google/client` (identifiant public du client et adresses de retour) seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
-  avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte). Le reste se fait
+  avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte), et
+  `POST /relay/garmin/token` + `GET /relay/garmin/api/<chemin>` (Garmin Personal API relayée telle quelle : clé ou jeton de la personne
+  en `X-Garmin-Authorization`, `Authorization` gardant la session ; chemin et paramètres contrôlés par `allowedRequest` du moteur avant
+  tout appel ; réponse JSON ou zip, 32 Mio au plus, rien gardé ; refus de Garmin marqués `garmin: true` pour ne pas les confondre avec
+  une session expirée ; 600 par heure et par compte ; journal `/relay/garmin/api/:route` sans le chemin ; nginx `location /relay/garmin/`
+  sans tampon, 90 s ; testé par le client du moteur contre le vrai serveur dans `public-api.test.mjs`). Le reste se fait
   depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS
-  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement.
+  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement, et
+  la clé, le jeton et les données Garmin à chaque synchro Garmin.
 - Limites : `/auth` 30/min par IP et 300/min au total, sauvegarde 1 200 requêtes / 10 min par compte. Journal : méthode, route type,
   statut, compte ; jamais de corps, jeton, code ni URL relayée.
 - Mise en service (avec l'accord du propriétaire) : variables ci-dessus et port `127.0.0.1:8091:82` dans le YAML de Container Manager,
@@ -319,7 +342,7 @@ l'autre peut être découpé par étapes de séance). Répartir entre sous-agent
 
 Réglages de l'athlète (FC max, FC repos, seuils `lt1Hr`/`lt2Hr`, sexe, poids…) : `data-raw/athlete.json`, modifiable par le bouton
 Réglages de l'en-tête. `raceWeights: { "<id>": 0.5 }` force le poids d'une course dans l'exposant de fatigue (0 = ignorée), réglable
-sur la course dans Classements. Modifié à la main : `node scripts/build-fit.mjs --force` en local puis `npm run nas -- push athlete.json`.
+sur la course dans Comprendre › classements. Modifié à la main : `node scripts/build-fit.mjs --force` en local puis `npm run nas -- push athlete.json`.
 
 ## Santé & sommeil (Google Health)
 
@@ -328,7 +351,7 @@ sensibles) : `npm run health -- "<chemin vers Takeout/Google Health>"` (chemin m
 puis `npm run data`. Ne lit que FC de repos, VFC, préparation, respiration, température, SpO2, sommeil, poids.
 Attention : le nom du dossier contient une espace insécable, et chaque nuit existe en `sleep_session_v1` et `v2`
 (on garde la plus récente). Depuis, l'API complète automatiquement (`health-api.json`, voir Synchronisation) ; le Takeout reste
-utile pour l'historique et le score de préparation. Affiché dans Forme › Récupération (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
+utile pour l'historique et le score de préparation. Affiché dans Comprendre › Suis-je en forme ? (`src/app/core/health.ts`, `sections/recovery.ts`) et en résumé sur Aujourd'hui.
 
 ## Objectifs (onglet Courses, `src/app/core/goals.ts`)
 
@@ -366,17 +389,17 @@ dans Archives (« Temps puce, gels, ressenti ») ; à la main : `"debrief": { "c
 
 ## Algorithmes
 
-`src/app/core/science.ts` (affichés par `sections/analysis.ts`, réparti entre Performance, Forme et Entraînement) : Daniels/VDOT, Riegel (+ exposant perso mesuré sur les
+`src/app/core/science.ts` (affichés par `sections/analysis.ts`, cartes de Comprendre) : Daniels/VDOT, Riegel (+ exposant perso mesuré sur les
 courses), Tanda, Vickers, vitesse critique (Smyth & Muniz-Pumares), indice de forme Runalyze, marathon shape,
 TRIMP, Foster, ACWR, classification des séances, EF + anomalies (z-score MAD), Theil-Sen, chaleur (règle de Hadley),
 km-effort (ITRA D+/100, plus D−/300 ; D− absent = D+), index de polarisation. `src/engine/fit/analyse.ts` (lancé par `scripts/build-fit.mjs`) : meilleurs efforts, courbe d'allure, GAP (Minetti),
 zones, découplage Pa:HR, durabilité, tours au km, TRIMP seconde par seconde, tracé GPS.
-Les meilleurs efforts FIT (meilleur passage sur 400 m … marathon dans n'importe quelle sortie) alimentent Performance › Records › Segments (bascule « Ajusté à la pente » : GAP, 16 semaines / tous les FIT)
+Les meilleurs efforts FIT (meilleur passage sur 400 m … marathon dans n'importe quelle sortie) alimentent Comprendre › Records › Segments (bascule « Ajusté à la pente » : GAP, 16 semaines / tous les FIT)
 (`effortIn` dans `insights.ts` : sans FIT, meilleur km Coros ou allure moyenne d'une sortie de la distance à +5 %).
 `src/app/core/durability.ts` : perte d'efficacité 1er/dernier tiers, dérive de FC à allure égale, début de dégradation,
 montées/descentes en trail, courbe de durabilité heure par heure (sorties régulières seulement).
 
-## Runner Matrix (Performance › Profil, `src/app/core/matrix.ts`, `sections/runner-matrix.ts`)
+## Runner Matrix (Comprendre › Quel coureur suis-je ?, `src/app/core/matrix.ts`, `sections/runner-matrix.ts`)
 
 Inspirée d'Enduraw (méthode non publiée : construction propre). Six branches (Endurance, Montée, Descente, Vitesse,
 Résilience, Physiologie), chacune = moyenne de rangs 0-100 de ses métriques par rapport à l'historique de l'athlète
@@ -389,7 +412,7 @@ pour Vitesse et Endurance (loi puissance entre les records du 1 500 m et du mara
 record tombe) et Physiologie (VO₂max Coros, historique par l'estimation FC recalée, face au VDOT du record du marathon).
 Montée, Descente, Résilience : pas d'étalon mondial fiable, volontairement.
 
-## Se situer (Courses › Classements, `src/app/core/ffa.ts`, `sections/race-standing.ts`)
+## Se situer (Comprendre › Où je me situe face aux autres ?, `src/app/core/ffa.ts`, `sections/race-standing.ts`)
 
 Barème FFA route (athle.fr htmlid=125 hommes / 122 femmes, au 1er janvier 2010, IA → D7, recopié dans `ffa.ts`) : niveau de
 chaque course à 5 / 10 / 15 / 20 km, semi, marathon (temps officiel > temps puce du bilan > montre), niveau acquis = 2 perfs
@@ -403,31 +426,43 @@ de l'athlète (son nom, jamais écrit dans le dépôt), écrire le fichier, puis
 
 ## Interface
 
-Six espaces, une question chacun (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) :
-- **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (Google Health + fraîcheur), année en cours, dernières sorties, 3 moments forts.
-- **Entraînement** (`pages/training.ts`) : Journal (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo, calendrier, régularité),
-  Habitudes (`pages/habits.ts`, Quand / Comment / Où), Séances (classification auto + focus Coros).
-- **Forme** (`pages/fitness.ts`) : Récupération, Charge (Banister, charge hebdo + monotonie, Seiler, ACWR avec le ratio Coros), Efficacité (EF, tendances mensuelles, chaleur).
-- **Performance** (`pages/performance.ts`) : Records (`pages/records.ts` : Sorties / Segments / Par année), Potentiel (prédictions, vitesse critique, courbe d'allure),
-  Durabilité, Profil (Runner Matrix).
-- **Courses** (`pages/goals.ts`) : un sous-onglet par objectif, Archives, Classements.
-- **Souvenirs** (`pages/memories.ts`) : Récap, Badges, Jalons, Équivalences. Sur téléphone, accessible par l'étoile et la pastille de niveau de l'en-tête.
+Quatre espaces (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) et l'avatar « Moi » ; barre latérale sur ordinateur (≥ 1024 px),
+barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `app.scss`) :
+- **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (santé + fraîcheur), année en cours, dernières sorties, 3 moments forts.
+- **Journal** (`pages/journal.ts`) : Sorties (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo,
+  calendrier, régularité). Fiche d'une sortie à sa propre adresse : `/sortie/:id` (`pages/run.ts`).
+- **Courses** (`pages/goals.ts`) : un sous-onglet par objectif, Archives (`?section=classements` → Comprendre).
+- **Comprendre** (`pages/understand.ts`) : une carte par question du coureur (`core/topics.ts`, trois thèmes : Courses et chronos, Forme,
+  Entraînement), avec le constat en une phrase et une vignette ; la carte ouvre `/comprendre/<id>` (`pages/topic.ts`) avec le détail.
+  Chaque section a un mode carte (`[compact]="true"` : `analysis`, `recovery`, `race-standing`, `places`, `habits`, `records`).
+  Questions : prêt (→ Courses), potentiel, records, classements (barème FFA), récupération (avec santé), charge, progrès (efficacité, chaleur),
+  endurance (durabilité), séances, habitudes (Quand / Comment), carte (`sections/places.ts` : carte thermique des parcours `core/heat.ts` +
+  `ui/heat-map.ts`, rendu canvas, cadrée sur la zone la plus fréquentée ; lieux de départ), profil (Runner Matrix).
+- **Moi** (`pages/me.ts`, `/moi`) : niveau et distance, amis (à venir), Souvenirs (`pages/memories.ts` : Récap, Badges, Jalons, Équivalences),
+  réglages : athlète et sources, compte et sauvegarde, proches, apparence, confidentialité. Les fenêtres de saisie restent dans `app.html`
+  et s'ouvrent par `ShellService.open('athlete' | 'users' | 'account')`.
 
-Les analyses scientifiques sont dans `sections/analysis.ts` (`<app-analysis view="predictions | matrice | efficacite | durabilite | charge | seances">`),
-chaque vue ouvre sur un « En bref » (`ui/brief.ts`). Les anciennes adresses (`/labo`, `/records?section=…`, `/apercu`…) sont redirigées (`LEGACY` dans `app.routes.ts`).
+Graphiques (`ui/chart.ts`) : bouton « Agrandir » (fenêtre `<dialog>`) sur chacun ; `[mini]="true"` donne une vignette sans axes (`miniConfig`,
+hauteur `--mini-h`). Les analyses scientifiques sont dans `sections/analysis.ts` (`<app-analysis view="predictions | matrice | efficacite |
+durabilite | charge | seances">`), chaque vue ouvre sur un « En bref » (`ui/brief.ts`). Les anciennes adresses (`/entrainement`, `/forme`,
+`/performance`, `/labo`, `/apercu`…) sont redirigées (`LEGACY` dans `app.routes.ts`).
 
 Sous-onglets avec `ui/subtabs.ts` (`<app-subtabs #st [tabs]="…" />` puis `@switch (st.current())`) : onglets soulignés (`?section=`), ou bascule
 `variant="segment"` pour un second niveau (`param="onglet"` ou `course`) ; ces paramètres sont retirés quand on change d'espace (`TAB_PARAMS`).
 Ne jamais lire `#st` avant sa déclaration dans le gabarit. Trois contrôles, trois apparences : onglets soulignés (navigation), `.seg` (bascule de vue, période),
 `.chip` (filtres). Explications méthodologiques repliées dans `<details class="method"><summary>Méthode</summary>…</details>`.
 
-Thème sombre par défaut, clair au choix (bouton de l'en-tête, `core/theme.service.ts`, `data-theme` sur `<html>`). Toutes les couleurs sont des variables CSS
+Identité « Piste » : fonds graphite, un seul accent jaune-vert (volt, `--accent`), olive en thème clair pour les traits et les liens, volt gardé
+pour les aplats (`--accent-fill`, texte `--on-accent`) ; titres en Archivo condensé (`--font-display` + `font-stretch: var(--display-stretch)` à
+chaque usage), corps en Inter, chiffres en JetBrains Mono (`--font-mono`). Thème sombre par défaut, clair au choix (Moi › Apparence,
+`core/theme.service.ts`, `data-theme` sur `<html>`). Toutes les couleurs sont des variables CSS
 (`styles.scss`) ; dans les graphiques Chart.js et les cartes Leaflet, utiliser les jetons de `ui/palette.ts` (`C.s1`, `alpha(C.accent, 0.3)`…), résolus au dessin
 (`resolveColors` dans `ui/chart.ts`), jamais de couleur hexadécimale en dur. Interface en tutoiement.
 
 Appli installable (PWA) : `@angular/service-worker` (`ngsw-config.json` : coquille en cache, `data/` en `freshness` 4 s puis cache,
-`/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/` (tracé de `ui/icon.ts` sur fond sombre, `favicon.svg`),
-polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
+`/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/*-piste.png` et `favicon-piste.svg` (tracé de `ui/icon.ts`, volt sur graphite ; nom suffixé par l'identité : à
+changer avec le logo, sinon nginx (7 jours) et les téléphones gardent l'ancien),
+icônes PNG régénérées depuis des SVG par `qlmanage -t` puis `sips`, polices auto-hébergées (`@fontsource`, `angular.json`), bandeaux « Nouvelle version » et « Hors ligne » (`core/pwa.service.ts`).
 Le service worker n'est actif qu'en HTTPS (adresse Tailscale Serve) ou sur localhost, et seulement en build de production.
 
 ## Auto-hébergement (`deploy/Dockerfile`, `deploy/compose.selfhost.yml`, `docs/auto-hebergement.md`)

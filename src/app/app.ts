@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
@@ -19,6 +19,8 @@ import { MeService } from './core/me.service';
 import { EntriesService } from './core/entries.service';
 import { LocalService } from './core/local.service';
 import { LOCAL_MODE } from './core/runtime';
+import { ShellService } from './core/shell.service';
+import { km } from './core/format';
 
 @Component({
   selector: 'app-root',
@@ -51,7 +53,6 @@ export class App {
   protected readonly data = this.store.data;
   protected readonly error = this.store.error;
   protected readonly tabs = TABS;
-  protected readonly mobileTabs = TABS.filter((t) => !t.mobileHidden);
   protected readonly tabParams = TAB_PARAMS;
 
   protected readonly sourceLabel = computed(() => CAPABILITIES[sourcesOf(this.data()).activities].label);
@@ -61,6 +62,12 @@ export class App {
   });
 
   constructor() {
+    // Les pages (Moi) ouvrent les fenêtres de saisie posées une seule fois ici
+    const shell = inject(ShellService);
+    shell.register('athlete', () => this.athleteForm().open());
+    shell.register('users', () => void this.usersForm().open());
+    shell.register('account', () => this.accountForm().open());
+
     // Retour d'une connexion (?strava|coros|google=ok|refus&raison=…) : message bref, puis paramètres retirés de l'adresse
     const router = inject(Router);
     router.events
@@ -78,8 +85,17 @@ export class App {
       });
   }
 
-  /** Niveau façon Nike Run Club, affiché à côté du logo */
-  protected readonly level = computed(() => levelFor(this.store.activities().reduce((s, a) => s + a.distanceKm, 0)).level);
+  private readonly athleteForm = viewChild.required(AthleteFormComponent);
+  private readonly usersForm = viewChild.required(UsersFormComponent);
+  private readonly accountForm = viewChild.required(AccountFormComponent);
+
+  /** Avatar « Moi » : initiale du compte, sinon M */
+  protected readonly initial = computed(() => (this.me.me()?.name?.trim()[0] ?? 'M').toUpperCase());
+  /** Sous le nom (barre latérale) : niveau façon Nike Run Club et distance cumulée */
+  protected readonly meLine = computed(() => {
+    const total = this.store.activities().reduce((s, a) => s + a.distanceKm, 0);
+    return total ? `Niveau ${levelFor(total).level.name} · ${km(total)}` : 'Profil et réglages';
+  });
 }
 
 function iosBrowser(): boolean {

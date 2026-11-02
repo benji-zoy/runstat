@@ -34,5 +34,5 @@ function read(): Theme {
 
 function apply(t: Theme): void {
   document.documentElement.dataset['theme'] = t;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#0c0d10' : '#f6f4ef');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#0b0c0e' : '#f4f5f3');
 }

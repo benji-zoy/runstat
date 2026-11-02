@@ -14,7 +14,8 @@ const nas = (process.env.RUNSTAT_NAS_ORIGINS ?? '')
   .filter(Boolean)
   .map((s) => new URL(s).origin);
 
-// Services appelés directement depuis l'appareil (tous acceptent le CORS de l'appli) et tuiles des cartes
+// Services appelés directement depuis l'appareil (tous acceptent le CORS de l'appli) et tuiles des cartes. Garmin refuse le
+// CORS : il passe par le relais du NAS (/relay/garmin/), déjà couvert par les adresses des NAS.
 const CONNECT = [
   'https://archive-api.open-meteo.com',
   'https://api.open-meteo.com',

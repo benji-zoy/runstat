@@ -2,6 +2,8 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { publicClient, nasOrigin, ApiError, type PublicClient } from '../../engine/backup/api';
 import { TamperedData, WrongPassphrase, newDataKey, normalizeRecovery, recoveryCode, unwrapKey, workKeys, wrapKey, type WorkKeys } from '../../engine/backup/crypto';
 import { Rollback, syncBackup, type BackupHeader, type SyncResult } from '../../engine/backup/sync';
+import { garminRelayFetch } from '../../engine/sync/garmin';
+import type { Fetch } from '../../engine/sync/http';
 import { DataService } from './data.service';
 import { EntryError } from './entry-error';
 import { LocalService } from './local.service';
@@ -272,6 +274,13 @@ export class AccountService {
       r = await api.json<{ code: string }>('POST', '/auth/links');
     }
     return `${appUrl}connexion#nas=${encodeURIComponent(this.state()!.nas)}&lien=${r.code}`;
+  }
+
+  /** `fetch` du client Garmin : la Personal API refuse le CORS, tout passe par le relais du NAS, session de ce compte */
+  garminFetch(): Fetch {
+    const nas = this.state()?.nas;
+    if (!nas) throw new EntryError(['Garmin passe par le NAS qui t’héberge : ouvre d’abord ton compte (invitation)']);
+    return garminRelayFetch(nas, () => this.state()?.token ?? null);
   }
 
   /** Client Google du propriétaire (relais du NAS) : identifiant public et adresses de retour déclarées */

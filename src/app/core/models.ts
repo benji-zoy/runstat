@@ -1,14 +1,14 @@
 export type RunKind = 'road' | 'indoor' | 'trail' | 'track' | 'other';
 
-export type ActivitySource = 'coros' | 'strava';
-export type HealthSource = 'google' | 'coros' | 'none';
+export type ActivitySource = 'coros' | 'strava' | 'garmin';
+export type HealthSource = 'google' | 'coros' | 'garmin' | 'none';
 
 export interface Activity {
-  /** LabelId COROS, ou « strava:<id> » */
+  /** LabelId COROS, « strava:<id> » ou « garmin:<id> » */
   id: string;
   /** Absent dans les instantanés d'avant le choix des sources : COROS */
   source?: ActivitySource;
-  /** Code de sport COROS (100 route, 101 tapis, 102 trail, 103 piste), aussi pour Strava */
+  /** Code de sport COROS (100 route, 101 tapis, 102 trail, 103 piste), aussi pour Strava et Garmin */
   sportType: number;
   kind: RunKind;
   /** Jour local au format YYYY-MM-DD */

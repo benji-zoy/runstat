@@ -31,6 +31,9 @@ export function topPct(rank: number | null, count: number | null): number | null
   selector: 'app-race-standing',
   imports: [ResultFormComponent],
   template: `
+    @if (compact()) {
+      <p class="verdict">{{ verdict() }}</p>
+    } @else {
     <app-result-form #resultForm />
     <section class="section">
       <h2>Se situer <small>barème FFA · classements officiels de tes courses</small></h2>
@@ -165,6 +168,7 @@ export function topPct(rank: number | null, count: number | null): number | null
         <p class="muted small">Case surlignée : ton meilleur niveau sur la distance. Un niveau s'obtient avec un temps inférieur ou égal à la limite.</p>
       </details>
     </section>
+    }
   `,
   styles: `
     :host { display: block; }
@@ -185,6 +189,8 @@ export function topPct(rank: number | null, count: number | null): number | null
   `,
 })
 export class RaceStandingSection {
+  /** Carte de Comprendre : le constat en une phrase et une vignette, sans le détail */
+  readonly compact = input(false);
   /** Filtre d'année de la page Records */
   readonly year = input<number | null>(null);
 
@@ -266,4 +272,12 @@ export class RaceStandingSection {
     const l = ffaLimits(this.sex(), distM);
     return l ? clock(l[i]) : '–';
   }
+
+  /** Phrase de la carte : niveau FFA acquis (2 perfs sur 12 mois) ou meilleur niveau atteint */
+  protected readonly verdict = computed(() => {
+    const confirmed = this.confirmed(), best = this.bestLevel();
+    if (confirmed) return `Niveau FFA acquis : ${confirmed}${best && best !== confirmed ? `, déjà ${best} sur une course` : ''}.`;
+    if (best) return `Meilleur niveau FFA : ${best} (il faut 2 courses sur 12 mois pour l'acquérir).`;
+    return 'Pas encore de course au barème FFA.';
+  });
 }

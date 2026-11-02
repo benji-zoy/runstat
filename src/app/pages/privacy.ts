@@ -30,18 +30,23 @@ import { LOCAL_MODE } from '../core/runtime';
           taille, le nombre et la date des envois. Tes jetons de connexion aux services sont dans cette sauvegarde, chiffrés.</li>
         <li>Google Health passe par un relais du NAS (l'appli Google du propriétaire) : tes jetons Google y <b>transitent en clair</b> à
           chaque renouvellement, sans y être conservés.</li>
+        <li>Garmin refuse les appels depuis un navigateur : chaque synchro Garmin passe par un relais du NAS. Ta clé Garmin, le jeton
+          qu'elle donne et les <b>données renvoyées par Garmin</b> (sorties, fichiers FIT, santé) y <b>transitent en clair</b>, sans y
+          être conservés ni journalisés.</li>
         <li>Sans compte, rien n'est envoyé à un NAS.</li>
       </ul>
       <h3>Tableau de bord hébergé sur le NAS (par Tailscale{{ local ? '' : ', celui que tu utilises' }})</h3>
       <ul>
         <li>Tes données sont <b>en clair</b> dans ton dossier sur le NAS : le propriétaire, administrateur de la machine, peut les lire.</li>
-        <li>Tes jetons de connexion (COROS, Strava, Google) y sont gardés, jamais affichés.</li>
+        <li>Tes jetons de connexion (COROS, Strava, Google) et ta clé Garmin y sont gardés, jamais affichés.</li>
       </ul>
 
       <h2>Services contactés, seulement ceux que tu choisis</h2>
       <ul>
         <li><b>COROS</b> (activités, fichiers FIT, santé) et <b>Strava</b> (activités, tracés) : lecture seule, avec ton autorisation.</li>
         <li><b>Google Health</b> (santé et sommeil) : lecture seule, par le relais du NAS (voir plus haut).</li>
+        <li><b>Garmin Connect</b> (activités, fichiers FIT, santé, poids) : lecture seule, avec ta clé personnelle ; dans l'appli
+          publique, par le relais du NAS (voir plus haut).</li>
         <li><b>Open-Meteo</b> (météo de tes sorties et de tes courses) : coordonnées arrondies à 0,1° (environ 10 km) et dates.</li>
         <li><b>OpenStreetMap</b> (fonds de carte) : ton adresse IP et la zone affichée.</li>
       </ul>
@@ -54,7 +59,7 @@ import { LOCAL_MODE } from '../core/runtime';
         <li>Sauvegarde chiffrée : chaque version est gardée 30 jours, la dernière toujours. Après suppression, elle reste récupérable
           30 jours, puis elle est purgée.</li>
         <li>Sessions : 30 jours sans visite (180 au plus) ; invitations : 7 jours ; liens de connexion : 15 minutes.</li>
-        <li>Journaux du NAS : méthode, adresse type, résultat et compte, jamais le contenu ni les jetons ; conservés selon la rotation des
+        <li>Journaux du NAS : méthode, adresse type, résultat et compte, jamais le contenu, les jetons ni les clés ; conservés selon la rotation des
           journaux du NAS. Les copies de sauvegarde du NAS lui-même (par exemple Hyper Backup) suivent la rotation choisie par le propriétaire.</li>
       </ul>
 
@@ -76,7 +81,7 @@ import { LOCAL_MODE } from '../core/runtime';
   `,
   styles: `
     .privacy { max-width: 720px; margin: 1.5rem auto; line-height: 1.55; }
-    .privacy h1 { margin: 0 0 0.6rem; font-family: var(--font-display); font-size: 1.6rem; }
+    .privacy h1 { margin: 0 0 0.6rem; font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.6rem; }
     .privacy h2 { margin: 1.4rem 0 0.4rem; font-size: 1.05rem; }
     .privacy h3 { margin: 0.8rem 0 0.2rem; font-size: 0.95rem; }
     .privacy ul { margin: 0.2rem 0; padding-left: 1.2rem; display: grid; gap: 0.3rem; }

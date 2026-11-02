@@ -1,16 +1,13 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { ChartConfiguration } from 'chart.js';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
 import { inRange } from '../core/stats';
-import { WEEKDAYS, daytimeStats, histogram, paceOf, punchcard, runnerProfile, startPlaces, weekdayStats } from '../core/insights';
+import { WEEKDAYS, daytimeStats, histogram, paceOf, punchcard, runnerProfile, weekdayStats } from '../core/insights';
 import { km, num, pace } from '../core/format';
 import { PeriodNavComponent } from '../ui/period-nav';
 import { ChartComponent } from '../ui/chart';
 import { SubTab, SubTabsComponent } from '../ui/subtabs';
-import { StartMapComponent } from '../ui/start-map';
-import { RouteMapComponent } from '../ui/route-map';
-import { decodePolyline } from '../core/polyline';
 import { C } from '../ui/palette';
 
 const DIST_EDGES = [0, 5, 8, 10, 12, 15, 18, 21, 25, 30, 42];
@@ -26,8 +23,14 @@ const bar = (color: string = C.s1) => ({
 
 @Component({
   selector: 'app-habits',
-  imports: [PeriodNavComponent, ChartComponent, StartMapComponent, RouteMapComponent, SubTabsComponent],
+  imports: [PeriodNavComponent, ChartComponent, SubTabsComponent],
   template: `
+    @if (compact()) {
+      <p class="verdict">{{ acts().length ? profile().title : 'Pas encore de sortie sur la période.' }}</p>
+      @if (acts().length) {
+        <app-chart [config]="weekdayChart()" [mini]="true" />
+      }
+    } @else {
     <app-period-nav />
 
     @if (acts().length) {
@@ -106,31 +109,10 @@ const bar = (color: string = C.s1) => ({
         </div>
       </section>
         }
-        @case ('ou') {
-      <section class="section">
-        <h2>Où cours-tu ? <small>{{ places().length }} lieux de départ différents</small></h2>
-        <div class="card map-card">
-          <app-start-map [places]="places()" />
-          <ol class="places">
-            @for (p of places().slice(0, 6); track p.lat + ',' + p.lon) {
-              <li>
-                <b>{{ p.count }}</b> sortie{{ p.count > 1 ? 's' : '' }}
-                <span class="muted">· {{ p.names.join(', ') || 'Sans nom' }}</span>
-              </li>
-            }
-          </ol>
-        </div>
-        @if (tracks().length) {
-          <div class="card">
-            <h3>Tes parcours <small class="muted">· {{ tracks().length }} tracés GPS (sorties avec fichier FIT)</small></h3>
-            <app-route-map [tracks]="tracks()" [opacity]="0.45" style="--map-h: 460px" />
-          </div>
-        }
-      </section>
-        }
       }
     } @else {
       <p class="muted empty">Aucune sortie sur cette période.</p>
+    }
     }
   `,
   styles: `
@@ -152,19 +134,17 @@ const bar = (color: string = C.s1) => ({
     .m-label { font-weight: 600; font-size: 0.9rem; }
     .small { font-size: 0.8rem; }
     .two { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
-    .map-card { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); align-items: start; }
     @media (max-width: 600px) { :host { --chart-h: 210px; } .punch { min-width: 520px; } }
-    @media (max-width: 760px) { .map-card { grid-template-columns: minmax(0, 1fr); } }
-    .places { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.5rem; font-size: 0.9rem; }
     .empty { margin-top: 3rem; }
   `,
 })
 export class HabitsPage {
+  /** Carte de Comprendre : le constat en une phrase et une vignette, sans le détail */
+  readonly compact = input(false);
   private readonly store = inject(DataService);
   protected readonly subtabs: SubTab[] = [
     { id: 'quand', label: 'Quand' },
     { id: 'comment', label: 'Comment' },
-    { id: 'ou', label: 'Où' },
   ];
 
   protected readonly ps = inject(PeriodService);
@@ -178,15 +158,6 @@ export class HabitsPage {
   private readonly punchMax = computed(() => Math.max(1, ...this.punch().flat()));
   protected readonly daytimes = computed(() => daytimeStats(this.acts()));
   protected readonly maxDaytime = computed(() => Math.max(...this.daytimes().map((d) => d.count)));
-  protected readonly places = computed(() => startPlaces(this.acts()));
-  protected readonly tracks = computed(() => {
-    const routes = this.store.routes() ?? {};
-    return this.acts().filter((a) => routes[a.id]).map((a) => decodePolyline(routes[a.id]));
-  });
-
-  constructor() {
-    this.store.loadRoutes();
-  }
 
   protected dot(n: number): string {
     return `${Math.round(25 + 75 * Math.sqrt(n / this.punchMax()))}%`;

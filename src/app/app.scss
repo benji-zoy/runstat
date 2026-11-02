@@ -1,3 +1,4 @@
+// Coquille : barre du haut (tablette), barre latérale (ordinateur), barre du bas au pouce (téléphone)
 :host {
   display: block;
   max-width: 1240px;
@@ -9,6 +10,10 @@
   position: sticky;
   top: 0;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 3.6rem;
   margin: 0 -16px;
   padding: env(safe-area-inset-top, 0px) 16px 0;
   background: color-mix(in srgb, var(--bg) 92%, transparent);
@@ -17,16 +22,9 @@
   border-bottom: 1px solid var(--border);
 }
 
-.bar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  min-height: 3.6rem;
-}
-
 .logo {
   flex: none;
-  font-family: var(--font-display);
+  font-family: var(--font-display); font-stretch: var(--display-stretch);
   font-size: 1.55rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -78,27 +76,6 @@
   margin-left: auto;
 }
 
-.level {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid var(--lvl);
-  color: var(--text-primary);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-
-  .dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background: var(--lvl);
-  }
-}
-
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -116,6 +93,66 @@
     color: var(--text-primary);
     background: var(--surface-1);
     border-color: var(--border);
+  }
+}
+
+/* Avatar « Moi » : profil, souvenirs, amis et réglages */
+.me {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  color: var(--text-primary);
+  text-decoration: none;
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px transparent;
+    transition: box-shadow 0.15s;
+  }
+
+  &.active .avatar,
+  &:hover .avatar {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  .me-text {
+    display: none;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+
+    b {
+      font-size: 0.9rem;
+    }
+
+    small {
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &.warn::after {
+    content: '';
+    position: absolute;
+    top: 0.1rem;
+    left: 1.95rem;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    border: 2px solid var(--bg);
+    background: var(--bad);
   }
 }
 
@@ -173,11 +210,6 @@
   }
 }
 
-/* Souvenirs a sa place dans la barre principale ; le raccourci ne sert que sur téléphone */
-.memories {
-  display: none;
-}
-
 .loading,
 .error {
   margin-top: 3rem;
@@ -198,26 +230,113 @@ footer {
   display: none;
 }
 
+/* Ordinateur : barre latérale, contenu à droite */
+@media (min-width: 1024px) {
+  :host {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    column-gap: 2.5rem;
+    max-width: 1480px;
+    padding: 0 32px 3rem 0;
+  }
+
+  .topbar {
+    grid-row: 1 / span 9;
+    align-self: start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+    height: 100vh;
+    margin: 0;
+    padding: 1.6rem 0.9rem 1.2rem;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    backdrop-filter: none;
+  }
+
+  .logo {
+    padding: 0 0.7rem 1.4rem;
+    font-size: 1.7rem;
+  }
+
+  .tabs {
+    flex: none;
+    flex-direction: column;
+    gap: 0.15rem;
+
+    a {
+      min-height: 2.75rem;
+      padding: 0 0.75rem;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      box-shadow: none;
+      --icon: 1.1rem;
+
+      &:hover {
+        background: var(--surface-1);
+      }
+
+      &.active {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+        box-shadow: none;
+      }
+    }
+  }
+
+  .tools {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin: auto 0 0;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .sync .sync-notice {
+    top: auto;
+    bottom: calc(100% + 0.4rem);
+    left: 0;
+    right: auto;
+  }
+
+  .me {
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius);
+
+    &:hover,
+    &.active {
+      background: var(--surface-1);
+    }
+
+    .me-text {
+      display: flex;
+    }
+
+    &.warn::after {
+      left: 2.45rem;
+    }
+  }
+
+  :host > :not(.topbar) {
+    grid-column: 2;
+  }
+}
+
 @media (max-width: 860px) {
   .tabs {
     display: none;
   }
 
-  .memories {
-    display: inline-grid;
-  }
-
-  .bar {
+  .topbar {
     gap: 0.75rem;
     min-height: 3.2rem;
   }
 
   .logo {
     font-size: 1.35rem;
-  }
-
-  .lvl-word {
-    display: none;
   }
 
   :host {
@@ -231,7 +350,7 @@ footer {
     right: 0;
     bottom: 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
     background: color-mix(in srgb, var(--surface-1) 94%, transparent);
     backdrop-filter: blur(12px);
@@ -246,7 +365,7 @@ footer {
       min-height: 3.1rem;
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.66rem;
+      font-size: 0.7rem;
       font-weight: 600;
       --icon: 1.3rem;
       -webkit-tap-highlight-color: transparent;
@@ -259,7 +378,7 @@ footer {
       }
 
       &.active {
-        color: var(--accent);
+        color: var(--accent-text);
       }
     }
   }

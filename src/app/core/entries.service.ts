@@ -97,6 +97,17 @@ export class EntriesService {
     await this.send('PUT', 'strava/client', { client_id: clientId, client_secret: clientSecret });
   }
 
+  /** Clé personnelle Garmin : essayée auprès de Garmin puis gardée (secrets/ du NAS, ou l'appareil), jamais relue par le site */
+  async saveGarminKey(apiKey: string, days: number): Promise<void> {
+    if (LOCAL_MODE) return this.device.saveGarminKey(apiKey, days);
+    await this.send('PUT', 'garmin/key', { apiKey, days });
+  }
+
+  async removeGarminKey(): Promise<void> {
+    if (LOCAL_MODE) return this.device.removeGarminKey();
+    await this.send('DELETE', 'garmin/key');
+  }
+
   /** Classement officiel d'une course ; remplace l'éventuel fichier rattaché par la date */
   async saveResult(activityId: string, result: Omit<RaceResult, 'file'>, replaces?: string): Promise<void> {
     const { activityId: _, ...saved } = (await this.send('PUT', `results/${activityId}${query(replaces)}`, result)).saved as RaceResult & { activityId: string };

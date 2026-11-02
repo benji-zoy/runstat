@@ -2,6 +2,7 @@
 // sources choisies (sources.json, COROS + Google Health par défaut) :
 //   records.txt      -> sortie brute de querySportRecords (liste des activités COROS)
 //   strava/activities.json -> sorties Strava (archive et API, parsers/strava.ts), à la place de records.txt
+//   garmin/activities.json -> sorties Garmin (Personal API, parsers/garmin.ts), à la place de records.txt
 //   details/*.jsonl  -> une ligne JSON par activité (dénivelé, cadence, charge…)
 //   fitness.txt      -> sortie brute de queryFitnessAssessmentOverview
 //   load.txt         -> sortie brute de queryTrainingLoadAssessment
@@ -13,13 +14,14 @@
 //   health.json      -> santé & sommeil (scripts/import-health.mjs, export Google Takeout)
 //   health-api.json  -> santé & sommeil synchronisés par l'API Google Health, prioritaires
 //   health-coros.json -> santé & sommeil COROS (source de santé « coros »)
+//   health-garmin.json -> santé & sommeil Garmin (source de santé « garmin »)
 //   goals.json       -> objectifs de course
 // Tout passe par un FileStore : le même code tourne sur le NAS (Node) et dans le navigateur (IndexedDB).
 import type { FitDerived } from '../fit/types.ts';
 import { firstPoint } from '../fit/analyse.ts';
 import { combineHealth, type Health, type HealthFile } from '../parsers/google.ts';
 import type { StravaActivity } from '../parsers/strava.ts';
-import { fileKey, normalizeSources, type Sources } from '../sources.ts';
+import { fileKey, normalizeSources, type ActivitySource, type Sources } from '../sources.ts';
 import { readJson, type FileStore, type Storage } from '../storage/types.ts';
 import { parseFitness, parseLoad, parseRecords, rawText, SPORTS, toSeconds, type Fitness, type LoadDay } from './coros-text.ts';
 
@@ -47,7 +49,7 @@ export interface Weather {
 /** Sortie du snapshot (voir Activity dans src/app/core/models.ts) */
 export interface SnapshotActivity {
   id: string;
-  source: 'coros' | 'strava';
+  source: ActivitySource;
   sportType: number;
   kind: string;
   date: string;
@@ -133,11 +135,11 @@ interface Detail {
   bestKm?: string | null;
 }
 
-/** Sorties Strava (strava/activities.json) au format Activity ; la foulée est déduite de la cadence */
-function stravaActivities(list: StravaActivity[]): SnapshotActivity[] {
+/** Sorties Strava ou Garmin (<source>/activities.json) au format Activity ; la foulée est déduite de la cadence */
+function externalActivities(list: StravaActivity[], source: ActivitySource): SnapshotActivity[] {
   return list.map((s) => ({
     id: s.id,
-    source: 'strava',
+    source,
     sportType: s.sportType,
     kind: SPORTS[s.sportType] ?? 'other',
     date: s.date,
@@ -184,18 +186,19 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
   const warnings: string[] = [];
   const sources = normalizeSources((await readJson(raw, 'sources.json')) ?? {});
   const athlete = await readJson<Athlete>(raw, 'athlete.json');
-  const strava = sources.activities === 'strava';
+  // Strava ou Garmin : sorties d'une API ou d'une archive, sans les détails, la forme ni la charge COROS
+  const external = sources.activities !== 'coros';
 
-  const recordsText = strava ? null : await raw.readText('records.txt');
-  const activities: SnapshotActivity[] = strava
-    ? stravaActivities((await readJson<StravaActivity[]>(raw, 'strava/activities.json')) ?? [])
+  const recordsText = external ? null : await raw.readText('records.txt');
+  const activities: SnapshotActivity[] = external
+    ? externalActivities((await readJson<StravaActivity[]>(raw, `${sources.activities}/activities.json`)) ?? [], sources.activities)
     : recordsText != null
       ? parseRecords(rawText(recordsText))
       : [];
-  const details = strava ? new Map<string, Detail>() : await readDetails(raw, warnings);
+  const details = external ? new Map<string, Detail>() : await readDetails(raw, warnings);
   const missing: string[] = [];
   for (const a of activities) {
-    if (strava) continue;
+    if (external) continue;
     const d = details.get(a.id);
     if (!d) {
       missing.push(`${a.id} ${a.sportType} ${a.date}`);
@@ -263,7 +266,7 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
 
   // Sans COROS : charge = TRIMP (même calcul que trimp() de src/app/core/science.ts), meilleur km et lieu de départ
   // tirés du tracé
-  if (strava) {
+  if (external) {
     for (const a of activities) {
       if (a.fit?.trimp) a.trainingLoad = a.fit.trimp;
       else if (a.avgHr && athlete) {
@@ -339,18 +342,18 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
     g.forecast = { temp: avg('t'), dew: avg('dew'), rh: avg('rh'), wind: avg('wind'), fetchedAt };
   }
 
-  // Santé : Google (Takeout + API), COROS ou aucune
+  // Santé : Google (Takeout + API), COROS, Garmin ou aucune
   const health = async (): Promise<Health | null> => {
     if (sources.health === 'none') return null;
-    if (sources.health === 'coros') {
-      const h = await readJson<HealthFile>(raw, 'health-coros.json');
+    if (sources.health === 'coros' || sources.health === 'garmin') {
+      const h = await readJson<HealthFile>(raw, `health-${sources.health}.json`);
       return h ? { importedAt: h.updatedAt, syncedAt: h.updatedAt, days: h.days, weight: h.weight ?? [] } : null;
     }
     return combineHealth(await readJson<Health>(raw, 'health.json'), await readJson<HealthFile>(raw, 'health-api.json')) ?? null;
   };
 
   // Forme et charge COROS : seulement avec les activités COROS
-  const corosText = async (file: string) => (strava ? null : await raw.readText(file));
+  const corosText = async (file: string) => (external ? null : await raw.readText(file));
   const fitnessText = await corosText('fitness.txt');
   const loadText = await corosText('load.txt');
   const snapshot: Snapshot = {
@@ -363,7 +366,7 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
     health: await health(),
     goals,
   };
-  return { snapshot, routes, missing: strava ? null : missing, stats: { withFit, withLaps, withWeather, withResult }, warnings };
+  return { snapshot, routes, missing: external ? null : missing, stats: { withFit, withLaps, withWeather, withResult }, warnings };
 }
 
 /** Écrit coros.json et routes.json (zone snapshot) et missing-details.txt (données brutes, COROS seulement) */

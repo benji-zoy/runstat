@@ -1,10 +1,11 @@
 // Une synchronisation des sources choisies (data-raw/sources.json), par le moteur (src/engine/sync/run-sources.ts, le même
 // que dans l'appli publique) :
-//   activités : COROS (activités, détails, forme, charge, FIT) ou Strava (API REST : activités, streams) ;
-//   santé : Google Health, COROS (sommeil, VFC, FC de repos) ou aucune ;
+//   activités : COROS (activités, détails, forme, charge, FIT), Strava (API REST : activités, streams) ou Garmin
+//   (Personal API : activités, FIT) ;
+//   santé : Google Health, COROS (sommeil, VFC, FC de repos), Garmin (sommeil, VFC, FC de repos, poids) ou aucune ;
 // puis reconstruction des données du site (build-fit, build-data, file FIT, météo).
 // Lancé par le conteneur runstat-sync (server.mjs, un compte à la fois), ou à la main :
-//   node scripts/sync/run.mjs [--only coros|strava|google|corosHealth] [--no-build]
+//   node scripts/sync/run.mjs [--only coros|strava|garmin|google|corosHealth|garminHealth] [--no-build]
 //   node scripts/sync/run.mjs --fit <id>        (tracé d'une seule sortie, bouton « Affiner avec le tracé », puis build-fit + build-data)
 //   node scripts/sync/run.mjs --rebuild         (sans les sources : reconstruction après une saisie depuis le site)
 //   node scripts/sync/run.mjs --import-strava <zip>  (archive Strava envoyée depuis le site, supprimée après import)
@@ -17,6 +18,7 @@ import { sourceSync } from '#engine/sync/run-sources.ts';
 import { corosAt } from './coros.mjs';
 import { googleAt } from './google-health.mjs';
 import { stravaAt } from './strava.mjs';
+import { garminAt } from './garmin.mjs';
 import { nodeTokens, secretsDir } from './secrets.mjs';
 import { rawDir } from '../paths.mjs';
 import { NodeStore } from '../node-storage.mjs';
@@ -32,7 +34,7 @@ const fitOnly = args.includes('--fit') ? args[args.indexOf('--fit') + 1] : null;
 const rebuildOnly = args.includes('--rebuild');
 const archive = args.includes('--import-strava') ? args[args.indexOf('--import-strava') + 1] : null;
 if (fitOnly !== null && !ACTIVITY_ID.test(fitOnly ?? '')) {
-  console.error('Usage : --fit <labelId COROS | strava:<id>>');
+  console.error('Usage : --fit <labelId COROS | strava:<id> | garmin:<id>>');
   process.exit(1);
 }
 const sources = readSources(raw);
@@ -42,7 +44,7 @@ const readJson = (file, fallback) => (existsSync(file) ? JSON.parse(readFileSync
 
 const secrets = secretsDir();
 // Clients du compte (rien n'est lu avant le premier appel : Google n'exige son client OAuth qu'au renouvellement du jeton)
-const clients = { tokens: nodeTokens(secrets), coros: corosAt(secrets), strava: stravaAt(secrets), google: googleAt(secrets) };
+const clients = { tokens: nodeTokens(secrets), coros: corosAt(secrets), strava: stravaAt(secrets), google: googleAt(secrets), garmin: garminAt(secrets) };
 const sync = sourceSync(new NodeStore(raw), clients, {
   only,
   overlapDays: Number(process.env.SYNC_OVERLAP_DAYS ?? 3),

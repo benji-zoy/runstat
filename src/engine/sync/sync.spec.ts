@@ -1,10 +1,13 @@
 // Synchro des sources par le moteur (NAS et appareil), fetch bouchonné : COROS (activités, détails, forme, charge, FIT),
 // listes blanches, rotation du jeton, renouvellement sérialisé ou refusé (appareil secondaire), pause « ré-autorisation »,
-// Strava (activités, streams, limite de débit), Google Health par un point de jeton injecté (relais).
+// Strava (activités, streams, limite de débit), Google Health par un point de jeton injecté (relais), Garmin (clé
+// personnelle, FIT dans un zip, santé, clé refusée puis remplacée, limite de débit).
 import { MemoryStore } from '../storage/memory.ts';
+import { zipStream } from '../archive/zip-writer.ts';
 import { corosClient } from './coros.ts';
 import { stravaClient } from './strava.ts';
 import { googleClient } from './google.ts';
+import { GARMIN_KEY_FILE, GARMIN_TOKEN_PATH, garminClient, validateGarminKey } from './garmin.ts';
 import { fileTokenStore, type Fetch, type TokenStore } from './http.ts';
 import { sourceSync } from './run-sources.ts';
 
@@ -83,6 +86,69 @@ async function tokenStore(store: MemoryStore, { expired = false, access = 'acc-0
 }
 
 const quiet = { log: () => {}, sleep: async () => {}, today: () => '2026-03-10' };
+
+const GARMIN_KEY = 'cle-personnelle-garmin-0123456789';
+const b64url = (s: string) => btoa(s).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const jwt = (n: number) => `${b64url('{"alg":"none"}')}.${b64url(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 86_400, n }))}.sig`;
+
+async function zipped(name: string, data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
+  const parts: Uint8Array[] = [];
+  for await (const p of zipStream([{ path: name, data }])) parts.push(p);
+  return new Uint8Array(await new Blob(parts as Uint8Array<ArrayBuffer>[]).arrayBuffer());
+}
+
+/** Serveur Garmin simulé : jeton contre la clé, liste des sorties, fichiers d'origine (zip), santé */
+function fakeGarmin({ limitFitAfter = Infinity, expireFirstBearer = false } = {}) {
+  const calls: string[] = [];
+  let issued = 0;
+  let fits = 0;
+  let expired = !expireFirstBearer;
+  const activity = (id: number, day: string, typeKey = 'running', eventKey = 'uncategorized') => ({
+    activityId: id, activityName: `Sortie ${id}`, startTimeLocal: `${day} 07:30:00`, beginTimestamp: Date.parse(`${day}T06:30:00Z`),
+    activityType: { typeKey }, eventType: { typeKey: eventKey }, distance: 10000, duration: 3000, movingDuration: 2990, averageHR: 150,
+  });
+  const has = (a: string, b: string) => a <= '2026-03-09' && '2026-03-09' <= b;
+  const fetch: Fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const auth = new Headers(init?.headers).get('authorization') ?? '';
+    if (url.pathname === GARMIN_TOKEN_PATH) {
+      calls.push('token');
+      if (init?.method !== 'POST' || auth !== `ApiKey ${GARMIN_KEY}`) return new Response('', { status: 401 });
+      return new Response(jwt(++issued));
+    }
+    calls.push(url.pathname);
+    if (!auth.startsWith('Bearer ')) return new Response('', { status: 401 });
+    // Premier jeton refusé une fois (révoqué entre-temps) : le client doit en redemander un
+    if (!expired) return (expired = true), new Response('', { status: 401 });
+    const q = url.searchParams;
+    const range = url.pathname.match(/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);
+    const [a, b] = range ? [range[1], range[2]] : [q.get('startDate') ?? '', q.get('endDate') ?? ''];
+    switch (true) {
+      case url.pathname === '/activitylist-service/activities/search/activities':
+        return json([activity(1, '2026-03-09'), activity(2, '2026-03-08', 'trail_running', 'race'), activity(3, '2026-03-07', 'running')]);
+      case url.pathname.startsWith('/download-service/files/activity/'):
+        if (++fits > limitFitAfter) return new Response('', { status: 429 });
+        return url.pathname.endsWith('/3') ? new Response('', { status: 404 }) : new Response(await zipped(`${url.pathname.split('/').at(-1)}_ACTIVITY.fit`, FIT), { headers: { 'content-type': 'application/x-zip-compressed' } });
+      case url.pathname === '/sleep-service/sleep/dailySleepSummariesByDate':
+        return json(has(a, b) ? [{ calendarDate: '2026-03-09', sleepTimeSeconds: 27000, deepSleepSeconds: 5400 }] : []);
+      case url.pathname.startsWith('/hrv-service/hrv/daily/'):
+        return has(a, b) ? json({ hrvSummaries: [{ calendarDate: '2026-03-09', lastNightAvg: 62 }] }) : new Response(null, { status: 204 });
+      case url.pathname === '/usersummary-service/v2/dailysummaries':
+        return json({ data: has(a, b) ? [{ calendarDate: '2026-03-09', heartRate: { restingValue: 47 } }] : [] });
+      case url.pathname.startsWith('/weight-service/weight/range/'):
+        return json({ dailyWeightSummaries: has(a, b) ? [{ summaryDate: '2026-03-09', latestWeight: { weight: 70.4 } }] : [] });
+    }
+    throw new Error(`requête inattendue ${url}`);
+  };
+  return { fetch, calls };
+}
+
+async function garminStore(sources = '{"activities":"garmin","health":"garmin"}', key = GARMIN_KEY) {
+  const raw = new MemoryStore({ 'sources.json': sources });
+  const tokens = fileTokenStore(raw);
+  await tokens.write(GARMIN_KEY_FILE, { apiKey: key, days: 365, savedOn: '2026-03-01' });
+  return { raw, tokens };
+}
 
 describe('synchro des sources', () => {
   it('COROS : activités, détails, forme, charge et FIT dans la zone raw, état enregistré', async () => {
@@ -240,5 +306,73 @@ describe('synchro des sources', () => {
     expect(await raw.read('fit/200002.fit')).toEqual(FIT);
     expect((await sync.syncOne('999')).ok).toBe(false);
     expect((await sync.loadState())['lastFitError']).toMatch(/999 : activité 999 inconnue/);
+  });
+  it('Garmin : sorties, FIT extraits des zips, santé ; un seul jeton pour toute la synchro', async () => {
+    const { raw, tokens } = await garminStore();
+    const server = fakeGarmin();
+    const garmin = garminClient({ tokens, fetch: server.fetch });
+    const { state } = await sourceSync(raw, { garmin, tokens }, { ...quiet, stage: false }).syncAll();
+    const list = JSON.parse((await raw.readText('garmin/activities.json'))!);
+    expect(list.map((a: { id: string }) => a.id)).toEqual(['garmin:3', 'garmin:2', 'garmin:1']);
+    expect(list.find((a: { id: string }) => a.id === 'garmin:2')).toMatchObject({ sportType: 102, race: true, file: 'fit' });
+    expect((await raw.list('fit')).sort()).toEqual(['garmin-1.fit', 'garmin-2.fit']);
+    expect(await raw.read('fit/garmin-1.fit')).toEqual(FIT);
+    const health = JSON.parse((await raw.readText('health-garmin.json'))!);
+    expect(health.days['2026-03-09']).toMatchObject({ sleepMain: 450, deepMin: 90, hrv: 62, rhr: 47 });
+    expect(health.weight).toEqual([{ date: '2026-03-09', kg: 70.4 }]);
+    expect(state.garmin?.lastSummary).toMatch(/^3 sorties du 2000-01-01 au 2026-03-10, 3 nouvelles, 2 FIT$/);
+    expect(state.garminHealth?.lastSummary).toMatch(/1 nuits, 1 VFC, 1 FC de repos, 1 pesées/);
+    expect(server.calls.filter((c) => c === 'token')).toHaveLength(1);
+    // Une sortie sans fichier (404) n'est plus redemandée
+    expect(state.garmin?.fitFailures).toEqual({ 'garmin:3': 3 });
+    expect(await raw.list('raw')).toEqual([]);
+  });
+
+  it('Garmin : clé refusée → pause sans appel, reprise avec une nouvelle clé', async () => {
+    const { raw, tokens } = await garminStore('{"activities":"garmin","health":"none"}', 'cle-expiree-garmin-000000000000');
+    const server = fakeGarmin();
+    const garmin = garminClient({ tokens, fetch: server.fetch });
+    const first = await sourceSync(raw, { garmin, tokens }, quiet).syncAll();
+    expect(first.state.garmin?.reauthSince).toBeTruthy();
+    expect(first.state.garmin?.lastError).toMatch(/garmin \(clé refusée ou expirée\)/);
+    server.calls.length = 0;
+    await sourceSync(raw, { garmin, tokens }, quiet).syncAll();
+    expect(server.calls).toEqual([]);
+    await new Promise((r) => setTimeout(r, 5));
+    await tokens.write(GARMIN_KEY_FILE, { apiKey: GARMIN_KEY, days: 90, savedOn: '2026-03-10' });
+    const third = await sourceSync(raw, { garmin, tokens }, quiet).syncAll();
+    expect(third.state.garmin?.reauthSince).toBeUndefined();
+    expect(third.state.garmin?.lastSummary).toMatch(/3 sorties/);
+  });
+
+  it('Garmin : jeton refusé par l’API → un seul nouveau jeton ; arrêt propre à la limite de débit', async () => {
+    const { raw, tokens } = await garminStore('{"activities":"garmin","health":"none"}');
+    const server = fakeGarmin({ limitFitAfter: 1, expireFirstBearer: true });
+    const garmin = garminClient({ tokens, fetch: server.fetch });
+    const { state } = await sourceSync(raw, { garmin, tokens }, quiet).syncAll();
+    expect(server.calls.filter((c) => c === 'token')).toHaveLength(2);
+    expect(state.garmin?.lastSummary).toMatch(/1 FIT \(reste 2\) \(limite de débit atteinte\)/);
+  });
+
+  it('Garmin : rien hors de la liste blanche, « Affiner » télécharge le FIT d’une sortie', async () => {
+    const { raw, tokens } = await garminStore();
+    const server = fakeGarmin();
+    const garmin = garminClient({ tokens, fetch: server.fetch });
+    await expect(garmin.json('/userprofile-service/userprofile/settings')).rejects.toThrow(/non autorisée/);
+    await expect(garmin.json('/sleep-service/sleep/dailySleepSummariesByDate', { startDate: '2026-03-01', endDate: '2026-03-02', foo: 'bar' })).rejects.toThrow(/non autorisée/);
+    expect(server.calls).toEqual([]);
+    await raw.write('garmin/activities.json', JSON.stringify([{ id: 'garmin:2', sportType: 102, name: 'x', date: '2026-03-08', start: 1, durationSec: 1, distanceKm: 1 }]));
+    const sync = sourceSync(raw, { garmin, tokens }, quiet);
+    expect(await sync.syncOne('garmin:2')).toEqual({ ok: true, message: 'FIT de garmin:2 (2026-03-08) téléchargé' });
+    expect(await raw.read('fit/garmin-2.fit')).toEqual(FIT);
+    expect((await sync.syncOne('garmin:9')).ok).toBe(false);
+    expect((await sync.loadState()).coros).toBeUndefined();
+  });
+
+  it('Garmin : validation de la clé saisie', () => {
+    expect(validateGarminKey({ apiKey: `  ${GARMIN_KEY} `, days: '365' }, '2026-03-10')).toEqual({ apiKey: GARMIN_KEY, days: 365, savedOn: '2026-03-10' });
+    expect(() => validateGarminKey({ apiKey: 'court', days: 365 })).toThrow(/Clé/);
+    expect(() => validateGarminKey({ apiKey: GARMIN_KEY, days: 7 })).toThrow(/Durée/);
+    expect(() => validateGarminKey({ apiKey: GARMIN_KEY, days: 30, extra: 1 })).toThrow(/champ inconnu/);
   });
 });

@@ -119,7 +119,7 @@ type Step = 'serveur' | 'accord' | 'passkey' | 'creer' | 'code' | 'deverrouiller
   `,
   styles: `
     .join { max-width: 560px; margin: 1.5rem auto; display: grid; gap: 0.8rem; }
-    .join h1 { margin: 0; font-family: var(--font-display); font-size: 1.6rem; }
+    .join h1 { margin: 0; font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.6rem; }
     .join p { margin: 0; }
     .host { font: 600 0.95rem ui-monospace, monospace; overflow-wrap: anywhere; padding: 0.5rem 0.7rem; background: var(--surface-2); border-radius: var(--radius); }
     .code { font-size: 1.15rem; letter-spacing: 0.04em; user-select: all; }

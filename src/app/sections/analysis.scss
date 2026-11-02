@@ -272,3 +272,24 @@ td.alert {
 details.method .table-wrap {
   margin: 0.25rem 0 0.6rem;
 }
+
+// Carte de Comprendre (mode compact) : radar de la Runner Matrix en vignette
+.mini-radar {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin-top: 0.4rem;
+
+  .frame {
+    fill: none;
+    stroke: var(--surface-3);
+    stroke-width: 1.5;
+  }
+
+  .shape {
+    fill: var(--accent-soft);
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+  }
+}
