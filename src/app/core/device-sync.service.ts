@@ -2,7 +2,8 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { corosClient, type CorosClientInfo } from '../../engine/sync/coros';
 import { stravaAuthorizeUrl, stravaClient, validateStravaApp } from '../../engine/sync/strava';
 import { googleAuthorizeUrl, googleClient } from '../../engine/sync/google';
-import { fileTokenStore, type TokenStore } from '../../engine/sync/http';
+import { GARMIN_KEY_FILE, garminClient, garminKeyExpiry, validateGarminKey, type GarminKey } from '../../engine/sync/garmin';
+import { fileTokenStore, ReauthRequired, type TokenStore } from '../../engine/sync/http';
 import { sourceSync, type SyncState } from '../../engine/sync/run-sources';
 import { fitQueue, fitQueueText } from '../../engine/fit-queue';
 import { InvalidEntry } from '../../engine/entries';
@@ -40,8 +41,8 @@ const random = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 export class NotPrimary extends Error {}
 
 /**
- * Synchro des sources sur l'appareil (appli publique, local-first) : COROS, Strava et Google Health par le moteur
- * (src/engine/sync/), jetons dans la zone raw (secrets/, chiffrés dans la sauvegarde), puis reconstruction.
+ * Synchro des sources sur l'appareil (appli publique, local-first) : COROS, Strava, Garmin (par le relais du NAS) et Google
+ * Health par le moteur (src/engine/sync/), jetons dans la zone raw (secrets/, chiffrés dans la sauvegarde), puis reconstruction.
  * Un seul appareil principal par compte renouvelle les jetons (sync-primary.json) : juste avant, il relit la sauvegarde
  * (jetons et appareil principal les plus récents), et l'envoie aussitôt après. Renouvellements et synchros sous Web Locks
  * (onglets et worker). Connexions OAuth depuis le navigateur : /connexion/<source> (pages/oauth-return.ts).
@@ -55,10 +56,18 @@ export class DeviceSyncService {
   readonly state = signal<SyncState>({});
   readonly primary = signal<Primary | null>(null);
   readonly log = signal<string[]>([]);
-  readonly tokens = signal({ coros: false, stravaClient: false, strava: false, stravaAthlete: null as string | null, google: false });
+  readonly tokens = signal({
+    coros: false,
+    stravaClient: false,
+    strava: false,
+    stravaAthlete: null as string | null,
+    google: false,
+    garmin: false,
+    garminExpiresOn: null as string | null,
+  });
   readonly anyConnected = computed(() => {
     const t = this.tokens();
-    return t.coros || t.strava || t.google;
+    return t.coros || t.strava || t.google || t.garmin;
   });
   /** Identifiant de l'appareil dans le compte ; sans compte, l'appareil est seul */
   private readonly deviceId = computed(() => this.account.state()?.device.id ?? null);
@@ -84,12 +93,15 @@ export class DeviceSyncService {
     this.state.set((await readJson<SyncState>(raw, 'sync-state.json')) ?? {});
     this.primary.set(await readJson<Primary>(raw, PRIMARY_FILE));
     const strava = await tokens.read('strava-tokens.json');
+    const garmin = await tokens.read<GarminKey>(GARMIN_KEY_FILE);
     this.tokens.set({
       coros: Boolean(await tokens.read('coros-tokens.json')),
       stravaClient: Boolean(await tokens.read('strava-client.json')),
       strava: Boolean(strava?.refresh_token),
       stravaAthlete: strava?.athleteName ?? null,
       google: Boolean(await tokens.read('google-tokens.json')),
+      garmin: Boolean(garmin?.apiKey),
+      garminExpiresOn: garminKeyExpiry(garmin),
     });
   }
 
@@ -153,6 +165,8 @@ export class DeviceSyncService {
       coros: corosClient({ tokens, clientName: 'RunStat (appli)' }),
       strava: stravaClient({ tokens }),
       google: this.account.state() ? googleClient({ tokens, token: (p) => this.account.googleToken(p) }) : undefined,
+      // Garmin refuse le CORS : seulement avec un compte, par le relais du NAS
+      garmin: this.account.state() ? garminClient({ tokens, fetch: this.account.garminFetch() }) : undefined,
     };
   }
 
@@ -178,7 +192,7 @@ export class DeviceSyncService {
     return done ?? 'Synchro en cours dans un autre onglet';
   }
 
-  /** « Affiner avec le tracé » : FIT COROS ou streams Strava d'une sortie, puis reconstruction */
+  /** « Affiner avec le tracé » : FIT COROS ou Garmin, ou streams Strava d'une sortie, puis reconstruction */
   async refine(id: string): Promise<{ ok: boolean; message: string }> {
     const r = await withLock('runstat-sources', async () => {
       this.running.set(true);
@@ -224,6 +238,34 @@ export class DeviceSyncService {
     const prev = await tokens.read('strava-client.json');
     await tokens.write('strava-client.json', app);
     if (prev?.client_id !== app.client_id) await raw.remove('secrets/strava-tokens.json');
+    await this.reload();
+  }
+
+  /**
+   * Clé personnelle Garmin (Réglages) : essayée auprès de Garmin par le relais avant d'être gardée (zone raw, chiffrée dans
+   * la sauvegarde) ; une nouvelle clé lève la pause « ré-autorisation ». Cet appareil devient le principal.
+   */
+  async saveGarminKey(apiKey: string, days: number): Promise<void> {
+    let key: GarminKey;
+    try {
+      key = validateGarminKey({ apiKey, days });
+    } catch (e) {
+      throw e instanceof InvalidEntry ? new EntryError(e.errors) : e;
+    }
+    const raw = await this.local.raw();
+    const tokens = fileTokenStore(raw);
+    try {
+      await garminClient({ tokens, fetch: this.account.garminFetch() }).verify(key.apiKey);
+    } catch (e) {
+      throw e instanceof ReauthRequired ? new EntryError(['Clé refusée par Garmin : vérifie-la, ou crée-en une nouvelle']) : e;
+    }
+    await tokens.write(GARMIN_KEY_FILE, key);
+    await this.claim().catch(() => undefined);
+    await this.reload();
+  }
+
+  async removeGarminKey(): Promise<void> {
+    await (await this.local.raw()).remove(`secrets/${GARMIN_KEY_FILE}`);
     await this.reload();
   }
 

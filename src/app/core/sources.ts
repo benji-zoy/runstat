@@ -35,9 +35,19 @@ export const CAPABILITIES: Record<ActivitySource, Capabilities> = {
     fitQuota: false,
     loadLabel: 'Charge (TRIMP)',
   },
+  // Mêmes replis que Strava (TRIMP, efforts FIT) : l'effet d'entraînement et la VO₂max de la montre ne sont pas repris
+  garmin: {
+    label: 'Garmin',
+    corosLoad: false,
+    trainingEffect: false,
+    corosFitness: false,
+    loadRatio: false,
+    fitQuota: false,
+    loadLabel: 'Charge (TRIMP)',
+  },
 };
 
-export const HEALTH_LABELS: Record<HealthSource, string> = { google: 'Google Health', coros: 'COROS', none: '' };
+export const HEALTH_LABELS: Record<HealthSource, string> = { google: 'Google Health', coros: 'COROS', garmin: 'Garmin', none: '' };
 
 /** Sources de l'instantané ; absentes (instantané d'avant le choix des sources) : COROS + Google Health */
 export function sourcesOf(d: Pick<CorosData, 'sources'> | null): { activities: ActivitySource; health: HealthSource } {

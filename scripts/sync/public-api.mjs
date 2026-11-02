@@ -18,10 +18,14 @@
 //   POST /backup/objects/missing { ids } ; PUT|GET /backup/objects/<id> ; DELETE /backup (ré-auth., suppression douce)
 //   POST /relay/google/token                            → échange ou renouvellement du jeton Google, secret du propriétaire ajouté ici
 //   GET  /relay/google/client                           → identifiant (public) du client Google, pour l'adresse de consentement
+//   POST /relay/garmin/token, GET /relay/garmin/api/<chemin> → Garmin Personal API (qui refuse le CORS) relayée telle quelle :
+//     clé ou jeton Garmin de la personne en X-Garmin-Authorization, chemins et paramètres en liste blanche (moteur), rien gardé
 // Journal : méthode, route type, statut, compte ; jamais de corps, de jeton, de code ni d'URL relayée.
 import { createWriteStream, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { allowedRequest, API_KEY_HEADER, BEARER_HEADER, GARMIN_API_URL, GARMIN_TOKEN_PATH, JWT } from '#engine/sync/garmin.ts';
 import { AuthStore } from './auth-store.mjs';
 import { BackupError, BackupStore, MAX_OBJECT, OBJECT_ID } from './backup-store.mjs';
 import { ALGORITHMS, WebAuthnError, challengeOf, verifyAssertion, verifyRegistration } from './webauthn.mjs';
@@ -32,6 +36,9 @@ const MAX_MANIFEST = 12 * 2 ** 20;
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const MAX_CHALLENGES = 500;
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
+/** Réponse Garmin relayée : un fichier d'origine (zip du FIT) tient largement dans 32 Mio */
+const MAX_RELAYED = 32 * 2 ** 20;
+const RELAYED_TYPES = /^(application\/json|application\/x-zip-compressed|application\/zip|application\/octet-stream)\b/;
 
 /** Liste d'origines (séparées par des virgules) → origines normalisées */
 export function parseOrigins(value) {
@@ -110,6 +117,7 @@ export function createPublicApi({
   log = console,
   now = Date.now,
   fetch: fetchImpl = globalThis.fetch,
+  garminApi = GARMIN_API_URL,
 }) {
   const auth = new AuthStore(usersDir, now);
   const challenges = new Map();
@@ -118,6 +126,8 @@ export function createPublicApi({
     authAll: new Limiter(300, 60_000, now),
     backup: new Limiter(1200, 10 * 60_000, now),
     relay: new Limiter(30, 3_600_000, now),
+    // Une synchro Garmin : un jeton, une page d'activités par centaine, un FIT par sortie, la santé par fenêtres de 28 jours
+    garmin: new Limiter(600, 3_600_000, now),
   };
 
   const userById = (id) => accounts().users.find((u) => u.id === id && u.mode === 'local') ?? null;
@@ -364,8 +374,51 @@ export function createPublicApi({
     throw new HttpError(404, 'introuvable');
   }
 
+  /**
+   * Garmin Personal API : clé (POST du jeton) ou jeton Bearer de la personne en X-Garmin-Authorization (Authorization porte
+   * la session), seulement les lectures de la liste blanche du moteur, réponse bornée et jamais conservée.
+   */
+  async function garminRelay(req, path, url, ctx) {
+    const { user } = session(req);
+    ctx.userId = user.id;
+    if (!limits.garmin.take(user.id)) throw new HttpError(429, 'trop de requêtes Garmin : réessaie plus tard');
+    const auth = String(req.headers['x-garmin-authorization'] ?? '');
+    if (req.method === 'POST' && path === '/relay/garmin/token') {
+      if (!API_KEY_HEADER.test(auth)) throw new HttpError(400, 'clé Garmin attendue');
+      req.resume();
+      const r = await fetchImpl(`${garminApi}${GARMIN_TOKEN_PATH}`, { method: 'POST', headers: { Authorization: auth, Accept: '*/*' }, signal: AbortSignal.timeout(20_000) });
+      const text = (await r.text()).slice(0, 16_384).trim();
+      const token = text.startsWith('{') ? String(JSON.parse(text)['access_token'] ?? '') : text;
+      if (r.ok && JWT.test(token)) return { status: 200, stream: Readable.from([token]), headers: { 'Content-Type': 'text/plain; charset=utf-8' } };
+      // `garmin` : refus de Garmin, pas de la session RunStat (le client ne met en pause la source que dans ce cas)
+      if (r.status === 400 || r.status === 401 || r.status === 403) throw new HttpError(401, 'clé refusée par Garmin', { garmin: true });
+      throw new HttpError(r.status === 429 ? 429 : 502, r.status === 429 ? 'limite de débit Garmin atteinte' : 'Garmin injoignable');
+    }
+    const garminPath = path.slice('/relay/garmin/api'.length);
+    if (req.method !== 'GET' || !path.startsWith('/relay/garmin/api/')) throw new HttpError(404, 'introuvable');
+    if (!BEARER_HEADER.test(auth)) throw new HttpError(400, 'jeton Garmin attendu');
+    if (!allowedRequest(garminPath, url.searchParams)) throw new HttpError(400, 'requête Garmin refusée (lecture seule)');
+    const r = await fetchImpl(`${garminApi}${garminPath}${url.search}`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(60_000) });
+    if (r.status === 401 || r.status === 403) return (await r.body?.cancel(), { status: r.status, body: { error: 'jeton refusé par Garmin', garmin: true } });
+    if ([204, 404, 429].includes(r.status)) return (await r.body?.cancel(), { status: r.status });
+    const type = r.headers.get('content-type') ?? '';
+    if (r.status !== 200 || !RELAYED_TYPES.test(type) || Number(r.headers.get('content-length') ?? 0) > MAX_RELAYED)
+      return (await r.body?.cancel(), { status: 502, body: { error: 'réponse Garmin inattendue' } });
+    // Lue entièrement, bornée : un flux coupé au milieu laisserait au client un fichier tronqué
+    const chunks = [];
+    let size = 0;
+    for await (const c of r.body ?? []) {
+      size += c.length;
+      if (size > MAX_RELAYED) throw new HttpError(502, 'réponse Garmin trop volumineuse');
+      chunks.push(c);
+    }
+    const body = Buffer.concat(chunks);
+    return { status: 200, stream: Readable.from([body]), headers: { 'Content-Type': type.split(';')[0], 'Content-Length': body.length } };
+  }
+
   /** Jeton Google : secret client du propriétaire ajouté ici, seulement les échanges prévus, réponse filtrée */
-  async function relayRoutes(req, res, path, ctx) {
+  async function relayRoutes(req, res, path, ctx, url) {
+    if (path.startsWith('/relay/garmin/')) return garminRelay(req, path, url, ctx);
     if (req.method === 'GET' && path === '/relay/google/client') {
       ctx.userId = session(req).user.id;
       const client = googleClient();
@@ -424,7 +477,8 @@ export function createPublicApi({
     const origin = req.headers.origin;
     const area = /^\/(auth|backup|relay)(\/|$)/.exec(path)?.[1];
     const ctx = { userId: null };
-    const template = path.replace(/\/[A-Za-z0-9_-]{20,}$/, '/:id').replace(/\/\d+$/, '/:n');
+    // Chemin relayé à Garmin jamais journalisé (identifiants de sortie, dates)
+    const template = path.startsWith('/relay/garmin/api/') ? '/relay/garmin/api/:route' : path.replace(/\/[A-Za-z0-9_-]{20,}$/, '/:id').replace(/\/\d+$/, '/:n');
     const finish = (status, body, headers = {}, stream) => {
       log.log?.(`public ${req.method} ${template} ${status} ${ctx.userId ?? '-'}`);
       const h = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...cors(origin && appOrigins.includes(origin) ? origin : null), ...headers };
@@ -441,7 +495,7 @@ export function createPublicApi({
       if (!origin) return finish(400, { error: 'pré-vérification sans origine' });
       return finish(204, undefined, {
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE',
-        'Access-Control-Allow-Headers': 'authorization, content-type, if-match, if-none-match',
+        'Access-Control-Allow-Headers': 'authorization, content-type, if-match, if-none-match, x-garmin-authorization',
         'Access-Control-Max-Age': '600',
       });
     }
@@ -451,7 +505,7 @@ export function createPublicApi({
     if (area === 'auth' && (!limits.authIp.take(ip) || !limits.authAll.take('*')))
       return finish(429, { error: 'trop de tentatives : réessaie dans une minute' });
     try {
-      const out = await (area === 'auth' ? authRoutes : area === 'backup' ? backupRoutes : relayRoutes)(req, res, path, ctx);
+      const out = await (area === 'auth' ? authRoutes : area === 'backup' ? backupRoutes : relayRoutes)(req, res, path, ctx, url);
       return finish(out.status, out.body, out.headers, out.stream);
     } catch (e) {
       if (e instanceof HttpError) return finish(e.status, { error: e.message, ...e.extra });

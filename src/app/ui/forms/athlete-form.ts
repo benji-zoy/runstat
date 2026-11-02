@@ -10,21 +10,25 @@ import { DeviceSyncService, type DeviceSource } from '../../core/device-sync.ser
 import { LOCAL_MODE } from '../../core/runtime';
 import { ActivitySource, Athlete, HealthSource } from '../../core/models';
 import { CITY_NAMES, DEFAULT_CITY } from '../../core/equivalences';
+import { GARMIN_KEY_DAYS, GARMIN_KEY_PAGE } from '../../../engine/sync/garmin';
 import { FormDialogComponent, errorList, opt } from './form-dialog';
 
 const ACTIVITY_SOURCES: { id: ActivitySource; label: string }[] = [
   { id: 'coros', label: 'COROS' },
   { id: 'strava', label: 'Strava' },
+  { id: 'garmin', label: 'Garmin' },
 ];
 const HEALTH_SOURCES: { id: HealthSource; label: string }[] = [
   { id: 'google', label: 'Google Health' },
   { id: 'coros', label: 'COROS' },
+  { id: 'garmin', label: 'Garmin' },
   { id: 'none', label: 'Aucune' },
 ];
 
 const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-/** Réglages (bouton de l'en-tête) : FC, seuils, sexe, poids, taille, naissance, sources des données, connexion et archive Strava */
+/** Réglages (bouton de l'en-tête) : FC, seuils, sexe, poids, taille, naissance, sources des données, connexions (COROS, Google,
+ * Strava et son archive, clé Garmin) */
 @Component({
   selector: 'app-athlete-form',
   imports: [ReactiveFormsModule, RouterLink, FormDialogComponent],
@@ -176,6 +180,42 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             <span class="hint">{{ uploadNotice() ?? stravaStatus() }}</span>
           </div>
         }
+        @if (usesGarmin()) {
+          <div class="field wide">Synchro Garmin
+            <span class="hint">{{ garminConnection() }}</span>
+            @if (local && !account.connected()) {
+              <!-- sans compte, pas de relais : rien à saisir -->
+            } @else if (!sync.status()?.garminConnected || editingGarmin()) {
+              <span class="hint">Garmin donne à chacun une clé personnelle, gratuite et sans abonnement (2 minutes, depuis un ordinateur) :</span>
+              <ol class="steps hint">
+                <li>Ouvre la page <a [href]="garminKeyPage" target="_blank" rel="noopener">« Personal API Key »</a> de Garmin Connect
+                  (connecte-toi à ton compte Garmin si besoin).</li>
+                <li>« Create Key », accepte les conditions, choisis la durée (un an : moins de clés à refaire), puis « Create ».</li>
+                <li>Copie la clé tout de suite (Garmin ne l’affiche qu’une fois) et colle-la ici, avec la même durée.</li>
+              </ol>
+              <div class="client" (keydown.enter)="$event.preventDefault(); saveGarminKey()">
+                <input type="password" [formControl]="garminKey" autocomplete="off" placeholder="Clé Garmin" aria-label="Clé Garmin" />
+                <select [formControl]="garminDays" aria-label="Durée de la clé">
+                  @for (d of garminKeyDays; track d) {
+                    <option [ngValue]="d">{{ d === 365 ? '1 an' : d + ' jours' }}</option>
+                  }
+                </select>
+                <button type="button" class="btn" [disabled]="entries.saving() || busy()" (click)="saveGarminKey()">Enregistrer la clé</button>
+                @if (sync.status()?.garminConnected) {
+                  <button type="button" class="btn" (click)="editingGarmin.set(false)">Annuler</button>
+                }
+              </div>
+              <span class="hint">Garmin vérifie la clé avant qu’elle soit gardée. {{ local
+                ? 'Elle reste sur cet appareil (et dans ta sauvegarde chiffrée) ; comme Garmin refuse les appels depuis un navigateur, chaque synchro passe par le NAS qui t’héberge, sans rien y garder.'
+                : 'Elle reste sur le NAS' }} et ne s’affiche plus ensuite.</span>
+            } @else {
+              <div class="upload">
+                <button type="button" class="btn" (click)="editGarmin()">Changer de clé</button>
+                <button type="button" class="btn" [disabled]="entries.saving() || busy()" (click)="removeGarmin()">Retirer la clé</button>
+              </div>
+            }
+          </div>
+        }
         <p class="hint field wide">Changer de source reconstruit toutes les données {{ local ? 'sur cet appareil' : 'sur le NAS' }} (quelques minutes).</p>
         @if (!local && sync.available()) {
           <h3 class="field wide group">Mes données</h3>
@@ -252,6 +292,25 @@ export class AthleteFormComponent {
     if (st?.state.coros?.reauthSince || st?.state.corosHealth?.reauthSince) return 'À ré-autoriser : COROS a refusé les jetons, reconnecte-toi.';
     return st?.corosConnected ? 'Connecté.' : 'Non connecté.';
   });
+  protected usesGarmin(): boolean {
+    return this.form.controls.activities.value === 'garmin' || this.form.controls.health.value === 'garmin';
+  }
+  /** État de la clé Garmin (sur le NAS ou l'appareil) : jamais la clé elle-même */
+  protected readonly garminConnection = computed(() => {
+    const st = this.sync.status();
+    if (this.local && !this.account.connected()) return 'Indisponible sans compte : Garmin passe par le NAS qui t’héberge (lien d’invitation).';
+    if (st?.state.garmin?.reauthSince || st?.state.garminHealth?.reauthSince) return 'Clé refusée ou expirée : crée-en une nouvelle sur Garmin Connect.';
+    if (!st?.garminConnected) return 'Aucune clé enregistrée.';
+    const exp = st.garminExpiresOn;
+    if (!exp) return 'Clé enregistrée.';
+    const soon = Date.parse(`${exp}T12:00:00`) - Date.now() < 14 * 86_400_000;
+    return `Clé enregistrée, valable jusque vers le ${new Date(`${exp}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${soon ? ' : pense à en créer une nouvelle' : ''}.`;
+  });
+  protected readonly garminKeyPage = GARMIN_KEY_PAGE;
+  protected readonly garminKeyDays = GARMIN_KEY_DAYS;
+  protected readonly editingGarmin = signal(false);
+  protected readonly garminKey = new FormControl('', { nonNullable: true });
+  protected readonly garminDays = new FormControl<number>(365, { nonNullable: true });
   protected readonly googleConnection = computed(() => {
     const st = this.sync.status();
     if (this.local && !st?.googleClient) return 'Indisponible sans compte : Google Health passe par le NAS qui t’héberge (lien d’invitation).';
@@ -311,6 +370,9 @@ export class AthleteFormComponent {
     this.errors.set([]);
     this.uploadNotice.set(null);
     this.editingClient.set(false);
+    this.editingGarmin.set(false);
+    this.garminKey.reset();
+    this.garminDays.reset();
     this.deleting.set(false);
     this.deleteConfirm.reset();
     this.clientId.reset();
@@ -441,6 +503,41 @@ export class AthleteFormComponent {
       this.editingClient.set(false);
     } catch (e) {
       this.errors.set(errorList(e));
+    }
+  }
+
+  protected editGarmin(): void {
+    this.garminKey.reset();
+    this.editingGarmin.set(true);
+  }
+
+  protected async saveGarminKey(): Promise<void> {
+    const key = this.garminKey.value.trim();
+    if (!key) return this.errors.set(['Colle la clé affichée par Garmin Connect']);
+    this.errors.set([]);
+    this.busy.set(true);
+    try {
+      await this.entries.saveGarminKey(key, this.garminDays.value);
+      await this.sync.refresh();
+      this.garminKey.reset();
+      this.editingGarmin.set(false);
+    } catch (e) {
+      this.errors.set(errorList(e));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async removeGarmin(): Promise<void> {
+    this.errors.set([]);
+    this.busy.set(true);
+    try {
+      await this.entries.removeGarminKey();
+      await this.sync.refresh();
+    } catch (e) {
+      this.errors.set(errorList(e));
+    } finally {
+      this.busy.set(false);
     }
   }
 

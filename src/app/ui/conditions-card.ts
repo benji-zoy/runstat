@@ -57,7 +57,7 @@ import { clock, pace } from '../core/format';
             </button>
             <span class="muted small">
               {{ notice() ?? (caps().fitQuota ? 'Télécharge le fichier FIT (quota COROS : 50 par jour) pour le vent, l’altitude et le dénivelé exacts.'
-                : 'Télécharge le tracé seconde par seconde depuis Strava pour le vent, l’altitude et le dénivelé exacts.') }}
+                : 'Télécharge le tracé seconde par seconde depuis ' + caps().label + ' pour le vent, l’altitude et le dénivelé exacts.') }}
             </span>
           </p>
         } @else if (notice(); as n) {

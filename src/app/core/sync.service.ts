@@ -39,6 +39,9 @@ interface SyncStatus {
   corosConnected?: boolean;
   googleConnected?: boolean;
   googleClient?: boolean;
+  /** Clé personnelle Garmin enregistrée (jamais exposée) et expiration approximative (AAAA-MM-JJ) */
+  garminConnected?: boolean;
+  garminExpiresOn?: string | null;
   /** Adresse du site pour la connexion Strava (SYNC_PUBLIC_ORIGINS, HTTPS d'abord), null sur le poste */
   stravaOrigin?: string | null;
 }
@@ -71,11 +74,25 @@ const CONNECT_LABELS = { strava: 'Strava', coros: 'COROS', google: 'Google Healt
 export type ConnectSource = keyof typeof CONNECT_LABELS;
 export const CONNECT_SOURCES = Object.keys(CONNECT_LABELS) as ConnectSource[];
 
-/** Clés de sync-state.json : source d'activités, puis source de santé (corosHealth : santé COROS) */
-const SOURCES = { coros: 'COROS', strava: 'Strava', google: 'Google Health', corosHealth: 'COROS santé' } as const;
+/** Clés de sync-state.json : source d'activités, puis source de santé (corosHealth, garminHealth : santé COROS, Garmin) */
+const SOURCES = {
+  coros: 'COROS',
+  strava: 'Strava',
+  garmin: 'Garmin',
+  google: 'Google Health',
+  corosHealth: 'COROS santé',
+  garminHealth: 'Garmin santé',
+} as const;
 type SourceKey = keyof typeof SOURCES;
-/** Commande de ré-autorisation : la santé COROS partage les jetons COROS */
-const AUTH: Record<SourceKey, string> = { coros: 'coros', strava: 'strava', google: 'google', corosHealth: 'coros' };
+/** Commande de ré-autorisation : la santé COROS ou Garmin partage les jetons ou la clé de sa source */
+const AUTH: Record<SourceKey, string> = {
+  coros: 'coros',
+  strava: 'strava',
+  garmin: 'garmin',
+  google: 'google',
+  corosHealth: 'coros',
+  garminHealth: 'garmin',
+};
 
 /**
  * Synchro à la demande par le service runstat-sync du NAS (/api/sync, proxy nginx), ou sur l'appareil en local-first
@@ -105,6 +122,8 @@ export class SyncService {
       corosConnected: t.coros,
       googleConnected: t.google,
       googleClient: this.account.connected(),
+      garminConnected: t.garmin,
+      garminExpiresOn: t.garminExpiresOn,
       stravaOrigin: null,
     };
   });
@@ -122,7 +141,8 @@ export class SyncService {
   /** Sources synchronisées par cette instance (data-raw/sources.json) */
   readonly active = computed<SourceKey[]>(() => {
     const s = sourcesOf(this.store.data());
-    const health: SourceKey | null = s.health === 'google' ? 'google' : s.health === 'coros' ? 'corosHealth' : null;
+    const health: SourceKey | null =
+      s.health === 'google' ? 'google' : s.health === 'coros' ? 'corosHealth' : s.health === 'garmin' ? 'garminHealth' : null;
     return [s.activities, ...(health ? [health] : [])];
   });
   readonly label = (key: SourceKey) => SOURCES[key];
@@ -134,7 +154,8 @@ export class SyncService {
     const out: string[] = [];
     for (const key of this.active()) {
       const src = s[key];
-      if (src?.reauthSince)
+      if (src?.reauthSince && AUTH[key] === 'garmin') out.push(`${SOURCES[key]} : clé refusée ou expirée (Réglages › Garmin : nouvelle clé)`);
+      else if (src?.reauthSince)
         out.push(
           `${SOURCES[key]} : ré-autorisation nécessaire (${key === 'strava' || LOCAL_MODE ? `Réglages › Connecter ${SOURCES[AUTH[key] as SourceKey]}` : `npm run auth -- ${AUTH[key]}`})`,
         );

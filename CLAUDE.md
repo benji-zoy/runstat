@@ -18,10 +18,11 @@ de travailler sur les données. Les objectifs, bilans, classements et réglages 
 `athlete.json` → `build-fit --force` (empreinte `athleteFit` dans l'état ; poids, taille, `raceWeights` ne recalculent pas les FIT). État : `data-raw/sync-state.json` (dernier succès,
 dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/<type>/`. Logs : Container Manager.
 - Clients et synchro dans le moteur (`src/engine/sync/`, les mêmes que sur l'appareil, voir Appli publique) : `coros.ts` (MCP HTTP sans
-  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `google.ts` (API v4 ; filtres en
+  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `garmin.ts` (Personal API,
+  GET sur `READ_PATHS` + `READ_PARAMS`), `google.ts` (API v4 ; filtres en
   snake_case `daily_resting_heart_rate.date`, contrairement à la doc ; jeton par un point injecté), `run-sources.ts` (`sourceSync` : une
   synchro par source, `syncOne` pour « Affiner »), `http.ts` (`fetchRetry`, `ReauthRequired`, `RateLimited`, magasin de jetons `TokenStore`
-  avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
+  avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `garmin.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
   (jetons dans un dossier de secrets : `nodeTokens` de `secrets.mjs`, `savedAt` = date du fichier ; zone raw = `NodeStore`).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
 - Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Connexion depuis le site, pour chaque compte :
@@ -42,7 +43,7 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 
 ## Sources au choix (`data-raw/sources.json`, `scripts/sync/sources.mjs`, `core/sources.ts`)
 
-`{ "activities": "coros" | "strava", "health": "google" | "coros" | "none" }`, absent = COROS + Google Health ; modifiable dans
+`{ "activities": "coros" | "strava" | "garmin", "health": "google" | "coros" | "garmin" | "none" }`, absent = COROS + Google Health ; modifiable dans
 Réglages (`GET|PUT /api/sources`, reconstruction complète). Une seule source d'activités par instance, sans dédoublonnage.
 `run.mjs` ne synchronise que les sources choisies ; `build-data` les recopie dans `sources` et chaque sortie porte `source`.
 L'interface lit `ScienceService.caps()` (`CAPABILITIES`) pour masquer ce que la source ne fournit pas (charge, TE et focus,
@@ -76,6 +77,18 @@ VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé
 - **Santé COROS** (`src/engine/parsers/coros-health.ts`, source `corosHealth` de l'état, jetons COROS) : `queryDailyHealthData` (sommeil, score),
   `querySleepHrv` (VFC, 7 jours par appel), `queryRestingHeartRate` → `data-raw/health-coros.json` (un an au premier passage).
   Pas de poids, de préparation ni de température.
+- **Garmin** (Personal API, pour les Garmin sans abonnement Strava ; `src/engine/sync/garmin.ts`, `parsers/garmin.ts`, champs d'après le
+  Swagger officiel : developer.garmin.com/gc-developer-program/personal/swagger-docs) : chacun crée sa **clé personnelle** sur
+  connect.garmin.com/app/settings/personalApiToken (30 jours à un an, gratuite, sans validation, usage personnel seulement) et la colle
+  dans Réglages › Synchro Garmin (`PUT|DELETE /api/garmin/key`, essayée auprès de Garmin avant d'être gardée : `secrets/garmin-key.json`
+  = `{ apiKey, days, savedOn }`, expiration affichée). Clé → jeton Bearer de 24 h (JWT en texte brut), **sans refresh token** : gardé en
+  mémoire, pas d'appareil principal nécessaire pour lui ; une nouvelle clé lève la pause « ré-autorisation » (`TOKEN_FILE`). Identifiants
+  `garmin:<id>`, fichiers `garmin-<id>`, sorties dans `data-raw/garmin/activities.json` (même forme que Strava, mêmes replis dans
+  `build-data`), FIT tirés du zip d'origine (`/download-service/files/activity/<id>`) dans `fit/garmin-<id>.fit` (`fitPerRun`, arrêt
+  propre sur 429), tout l'historique au premier passage. Santé (`garminHealth` dans l'état) : sommeil (31 jours par appel), VFC, FC de
+  repos (résumés quotidiens), poids → `data-raw/health-garmin.json` (un an au premier passage). L'effet d'entraînement et la VO₂max de
+  la liste ne sont pas repris. **Garmin refuse le CORS** (toutes origines) : dans l'appli publique, tout passe par le relais du NAS
+  (voir Accès public), donc seulement avec un compte.
 
 ## Moteur portable (`src/engine/`)
 
@@ -126,12 +139,14 @@ les données après 7 jours sans visite, sauf appli installée). `fit-file-parse
   nu donne `KNOWN_NAS` vide (écran « Serveur inconnu »).
 
 ### Synchro des sources sur l'appareil (`core/device-sync.service.ts`, `pages/oauth-return.ts`)
-Le moteur de `src/engine/sync/` dans le navigateur (thread principal ; COROS, Strava, Google Health et l'hôte des FIT acceptent le CORS) :
+Le moteur de `src/engine/sync/` dans le navigateur (thread principal ; COROS, Strava, Google Health et l'hôte des FIT acceptent le CORS ;
+Garmin non : `garminRelayFetch` le fait passer par le relais du NAS) :
 `sourceSync(raw, clients, { stage: false })` (pas de réponses brutes : sauvegarde plus légère), puis `rebuild` dans le worker, `fit-queue.txt`
 (COROS), rechargement. À l'ouverture si la dernière tentative date de plus d'une heure, et au bouton de l'en-tête (`SyncService` en local
 lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner avec le tracé » : `syncOne`.
 - Jetons dans la zone raw, `secrets/<nom>.json` (`fileTokenStore`, avec `savedAt`) : chiffrés dans la sauvegarde, donc suivent le compte.
-  Appli Strava de la personne (Client ID + Secret, `validateStravaApp` comme sur le NAS) gardée sur l'appareil, jamais envoyée au NAS.
+  Appli Strava de la personne (Client ID + Secret, `validateStravaApp` comme sur le NAS) gardée sur l'appareil, jamais envoyée au NAS ;
+  clé Garmin (`saveGarminKey`, essayée par le relais) aussi, mais elle transite par le NAS à chaque demande de jeton.
 - **Appareil principal** (`sync-primary.json` : appareil, nom, époque, fusionné par la sauvegarde) : seul à renouveler les jetons (le
   refresh token COROS et Strava change à chaque renouvellement). Renouvellement sous `navigator.locks` (`runstat-jeton-<nom>`, relecture des
   jetons une fois le verrou pris) : avant, `account.sync()` (jetons et appareil principal les plus récents) puis vérification (sans
@@ -146,8 +161,10 @@ lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner
   `GET /relay/google/client`, échange et renouvellement par le relais (le propriétaire déclare `<appli>connexion/google` dans la console
   Google Cloud). Retour vers `/aujourdhui?<source>=ok|refus&raison=…`, puis synchro.
 - Tests : `src/engine/sync/sync.spec.ts` (fetch bouchonné : COROS complet, quota FIT, listes blanches, rotation du jeton avec deux appels
-  simultanés, renouvellement refusé, pause « ré-autorisation » puis reprise, Strava et limite de débit, Google par le relais, « Affiner »),
-  `core/device-sync.service.spec.ts` (appareil principal, sauvegarde verrouillée, appli Strava, retour de connexion), `sync.test.mjs`
+  simultanés, renouvellement refusé, pause « ré-autorisation » puis reprise, Strava et limite de débit, Google par le relais, Garmin : FIT
+  du zip, santé, clé refusée puis remplacée, jeton redemandé une fois, « Affiner »), `parsers/garmin.spec.ts`, snapshot Garmin = celui de
+  Strava aux identifiants près (`build.spec.ts`), `core/device-sync.service.spec.ts` (appareil principal, sauvegarde verrouillée, appli
+  Strava, clé Garmin, retour de connexion), `garmin.test.mjs` (clé sur le NAS), `sync.test.mjs`
   (`run.mjs` réel contre un MCP simulé : `COROS_MCP_URL`).
 
 ### Sauvegarde chiffrée et multi-appareils (`src/engine/backup/`, `core/account.service.ts`, `pages/join.ts`)
@@ -246,9 +263,15 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   les 6 h (`gcAllBackups` : aussi les dossiers des comptes retirés, dont la sauvegarde restante passe en suppression douce, purgée
   après 30 jours, dossier effacé une fois vide ; données d'un hébergé retiré gardées) ; `DELETE /backup` = suppression douce (30 jours).
 - Relais : `POST /relay/google/token` et `GET /relay/google/client` (identifiant public du client et adresses de retour) seulement (secret du client Google du propriétaire ajouté côté serveur ; `authorization_code`
-  avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte). Le reste se fait
+  avec PKCE et adresse de retour en liste blanche, ou `refresh_token` ; réponse filtrée ; 30 par heure et par compte), et
+  `POST /relay/garmin/token` + `GET /relay/garmin/api/<chemin>` (Garmin Personal API relayée telle quelle : clé ou jeton de la personne
+  en `X-Garmin-Authorization`, `Authorization` gardant la session ; chemin et paramètres contrôlés par `allowedRequest` du moteur avant
+  tout appel ; réponse JSON ou zip, 32 Mio au plus, rien gardé ; refus de Garmin marqués `garmin: true` pour ne pas les confondre avec
+  une session expirée ; 600 par heure et par compte ; journal `/relay/garmin/api/:route` sans le chemin ; nginx `location /relay/garmin/`
+  sans tampon, 90 s ; testé par le client du moteur contre le vrai serveur dans `public-api.test.mjs`). Le reste se fait
   depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS
-  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement.
+  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement, et
+  la clé, le jeton et les données Garmin à chaque synchro Garmin.
 - Limites : `/auth` 30/min par IP et 300/min au total, sauvegarde 1 200 requêtes / 10 min par compte. Journal : méthode, route type,
   statut, compte ; jamais de corps, jeton, code ni URL relayée.
 - Mise en service (avec l'accord du propriétaire) : variables ci-dessus et port `127.0.0.1:8091:82` dans le YAML de Container Manager,

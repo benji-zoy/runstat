@@ -44,7 +44,7 @@ import { HeatMapComponent } from '../ui/heat-map';
           </div>
         } @else {
           <div class="card">
-            <p class="muted">Pas de tracé GPS sur cette période : ils viennent des fichiers FIT (COROS) ou des tracés Strava.</p>
+            <p class="muted">Pas de tracé GPS sur cette période : ils viennent des fichiers FIT (COROS, Garmin) ou des tracés Strava.</p>
           </div>
         }
       </section>

@@ -1,6 +1,6 @@
 // Zone publique (public-api.mjs, webauthn.mjs, auth-store.mjs, backup-store.mjs) : CORS et origines, invitations, passkeys
 // (clés ES256 et RS256 générées par node:crypto, attestation « none »), sessions et ré-authentification, sauvegarde opaque
-// cloisonnée et versionnée, relais Google, limites de débit. Vrai serveur HTTP sur un port libre, dossiers temporaires.
+// cloisonnée et versionnée, relais Google et Garmin, limites de débit. Vrai serveur HTTP sur un port libre, dossiers temporaires.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -95,7 +95,26 @@ let base;
 let now = Date.UTC(2026, 9, 24, 12);
 let logs = [];
 let googleCalls = [];
+let garminCalls = [];
+const GARMIN_KEY = 'cle-personnelle-garmin-0123456789';
+const GARMIN_JWT = `${b64('{"alg":"none"}')}.${b64(JSON.stringify({ exp: 2_000_000_000 }))}.sig`;
+const GARMIN_FIT = new Uint8Array(3000).fill(7);
+GARMIN_FIT.set([...'.FIT'].map((c) => c.charCodeAt(0)), 8);
+/** Garmin simulé : jeton contre la clé, liste d'activités, fichier d'origine (octets quelconques), profil hors liste */
+const fakeGarmin = async (url, init) => {
+  const u = new URL(url);
+  const auth = new Headers(init?.headers).get('authorization');
+  garminCalls.push({ path: u.pathname + u.search, auth, method: init?.method ?? 'GET' });
+  if (u.pathname.endsWith('/personal-api-key/token')) return auth === `ApiKey ${GARMIN_KEY}` ? new Response(GARMIN_JWT) : new Response('', { status: 401 });
+  if (auth !== `Bearer ${GARMIN_JWT}`) return new Response('', { status: 401 });
+  if (u.pathname === '/activitylist-service/activities/search/activities')
+    return new Response(JSON.stringify([{ activityId: 42, activityName: 'Sortie', startTimeLocal: '2026-10-20 08:00:00', activityType: { typeKey: 'running' }, distance: 10000, movingDuration: 3000 }]), { headers: { 'content-type': 'application/json;charset=UTF-8' } });
+  if (u.pathname === '/download-service/files/activity/42') return new Response(GARMIN_FIT, { headers: { 'content-type': 'application/x-zip-compressed' } });
+  if (u.pathname === '/download-service/files/activity/43') return new Response('<html>', { headers: { 'content-type': 'text/html' } });
+  return new Response('', { status: 404 });
+};
 const fakeFetch = async (url, init) => {
+  if (String(url).startsWith('https://personal.connectapi.garmin.com')) return fakeGarmin(String(url), init);
   googleCalls.push({ url, body: Object.fromEntries(new URLSearchParams(String(init.body))) });
   return new Response(JSON.stringify({ access_token: 'G-ACCESS', expires_in: 3599, refresh_token: 'G-REFRESH', scope: 's', token_type: 'Bearer', id_token: 'à filtrer' }), { status: 200 });
 };
@@ -466,6 +485,53 @@ test('relais Google : secret ajouté côté serveur, échanges prévus seulement
   let last;
   for (let i = 0; i < 30; i++) last = await call('POST', '/relay/google/token', { token, body: { grant_type: 'refresh_token', refresh_token: 'r' } });
   assert.equal(last.status, 429);
+});
+
+test('relais Garmin : clé et jeton de la personne transmis, liste blanche, session RunStat jamais envoyée à Garmin', async () => {
+  const { token } = await join_('dave');
+  garminCalls = [];
+  const g = (method, path, garminAuth, opts = {}) => call(method, path, { token, headers: { 'X-Garmin-Authorization': garminAuth }, ...opts });
+  // Sans session : rien n'est relayé
+  assert.equal((await call('POST', '/relay/garmin/token', { headers: { 'X-Garmin-Authorization': `ApiKey ${GARMIN_KEY}` } })).status, 401);
+  // Clé refusée par Garmin : 401 marqué « garmin » (la source se met en pause), à distinguer d'une session expirée
+  const refused = await g('POST', '/relay/garmin/token', 'ApiKey cle-inconnue-de-garmin-000000');
+  assert.equal(refused.status, 401);
+  assert.equal(refused.body.garmin, true);
+  const tok = await g('POST', '/relay/garmin/token', `ApiKey ${GARMIN_KEY}`);
+  assert.equal(tok.status, 200);
+  assert.equal(tok.body, GARMIN_JWT);
+  // Hors liste blanche (chemin ou paramètre), ou mauvais en-tête : 400 sans appel à Garmin
+  const before = garminCalls.length;
+  for (const [path, a] of [
+    ['/relay/garmin/api/userprofile-service/userprofile/settings', `Bearer ${GARMIN_JWT}`],
+    ['/relay/garmin/api/activitylist-service/activities/search/activities?search=x', `Bearer ${GARMIN_JWT}`],
+    ['/relay/garmin/api/activitylist-service/activities/search/activities', `ApiKey ${GARMIN_KEY}`],
+  ])
+    assert.equal((await g('GET', path, a)).status, 400, path);
+  assert.equal((await g('POST', '/relay/garmin/api/activitylist-service/activities/search/activities', `Bearer ${GARMIN_JWT}`)).status, 404);
+  assert.equal(garminCalls.length, before);
+  // Type de réponse inattendu : 502, rien de relayé
+  assert.equal((await g('GET', '/relay/garmin/api/download-service/files/activity/43', `Bearer ${GARMIN_JWT}`)).status, 502);
+  // Le vrai client du moteur, par le relais
+  const { garminClient, garminRelayFetch } = await import('#engine/sync/garmin.ts');
+  const { fileTokenStore } = await import('#engine/sync/http.ts');
+  const { MemoryStore } = await import('#engine/storage/memory.ts');
+  const tokens = fileTokenStore(new MemoryStore());
+  await tokens.write('garmin-key.json', { apiKey: GARMIN_KEY, days: 365, savedOn: '2026-10-24' });
+  const viaRelay = (session) => (input, init = {}) => garminRelayFetch(base, () => session, (u, i) => fetch(u, { ...i, headers: { ...i.headers, Origin: APP } }))(input, init);
+  const client = garminClient({ tokens, fetch: viaRelay(token) });
+  garminCalls = [];
+  assert.deepEqual((await client.activities('2026-10-01', '2026-10-24')).map((a) => a.activityId), [42]);
+  assert.deepEqual(await client.fit('42'), GARMIN_FIT);
+  assert.ok(garminCalls.every((c) => c.auth === `ApiKey ${GARMIN_KEY}` || c.auth === `Bearer ${GARMIN_JWT}`));
+  assert.ok(garminCalls.some((c) => c.path.startsWith('/activitylist-service/activities/search/activities?startDate=2026-10-01')));
+  // Session expirée : erreur ordinaire, pas une clé à remplacer
+  const expired = garminClient({ tokens, fetch: viaRelay('session-inconnue-0000000000000') });
+  await assert.rejects(expired.activities('2026-10-01', '2026-10-24'), (e) => /session RunStat expirée/.test(e.message) && e.constructor.name === 'Error');
+  // Journal : ni clé, ni jeton, ni chemin relayé
+  const journal = logs.join('\n');
+  assert.ok(!journal.includes(GARMIN_KEY) && !journal.includes(GARMIN_JWT) && !journal.includes('activitylist') && !journal.includes('/42'));
+  assert.match(journal, /public GET \/relay\/garmin\/api\/:route 200 dave/);
 });
 
 test('limites : /auth par adresse (la plus à droite de X-Forwarded-For, posée par nginx)', async () => {

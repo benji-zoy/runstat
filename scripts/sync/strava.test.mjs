@@ -269,17 +269,20 @@ test('sources : valeurs par défaut, validation', () => {
     rmSync(raw, { recursive: true, force: true });
   }
   assert.deepEqual(validateSources({ activities: 'strava', health: 'none' }), { activities: 'strava', health: 'none' });
-  assert.throws(() => validateSources({ activities: 'garmin', health: 'none' }), /activities/);
+  assert.deepEqual(validateSources({ activities: 'garmin', health: 'garmin' }), { activities: 'garmin', health: 'garmin' });
+  assert.throws(() => validateSources({ activities: 'polar', health: 'none' }), /activities/);
   assert.throws(() => validateSources({ activities: 'coros' }), /health : obligatoire/);
   assert.throws(() => validateSources({ activities: 'coros', health: 'coros', token: 'x' }), /champ inconnu/);
 });
 
-test('identifiants Strava : acceptés partout, fichiers sans « : »', () => {
-  for (const id of ['100000000000000002', 'strava:12345']) assert.ok(ACTIVITY_ID.test(id), id);
-  for (const id of ['strava:', 'strava:12a', 'garmin:1', '../1', 'strava-12']) assert.ok(!ACTIVITY_ID.test(id), id);
+test('identifiants Strava et Garmin : acceptés partout, fichiers sans « : »', () => {
+  for (const id of ['100000000000000002', 'strava:12345', 'garmin:1']) assert.ok(ACTIVITY_ID.test(id), id);
+  for (const id of ['strava:', 'strava:12a', 'polar:1', '../1', 'strava-12', 'garmin-1']) assert.ok(!ACTIVITY_ID.test(id), id);
   assert.equal(fileKey('strava:12345'), 'strava-12345');
+  assert.equal(fileKey('garmin:987'), 'garmin-987');
   assert.equal(fileKey('100000000000000002'), '100000000000000002');
   assert.equal(idFromFileKey('strava-12345'), 'strava:12345');
+  assert.equal(idFromFileKey('garmin-987'), 'garmin:987');
   assert.equal(idFromFileKey('100000000000000002'), '100000000000000002');
   assert.equal(validateResult('strava:12', { event: 'Semi', source: 'https://example.org/r' }, '2026-01-01').activityId, 'strava:12');
   const a = validateAthlete({ hrMax: 190, hrRest: 50, sex: 'M', weightKg: 70, heightCm: 180, birthday: '1990-01-01', raceWeights: { 'strava:12': 0.5 } });

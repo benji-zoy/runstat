@@ -74,6 +74,24 @@ describe('snapshot Strava + santé COROS', () => {
   });
 });
 
+describe('snapshot Garmin + santé Garmin', () => {
+  it('celui de Strava pour les mêmes sorties, identifiants et sources près', async () => {
+    const rename = (v: string) => v.replaceAll('strava:', 'garmin:').replaceAll('strava-', 'garmin-');
+    const files = Object.fromEntries(
+      Object.entries(stravaRaw()).map(([path, data]) => [
+        rename(path).replace(/^strava\//, 'garmin/').replace('health-coros', 'health-garmin'),
+        path.endsWith('.json') ? rename(String(data)).replace('"health":"coros"', '"health":"garmin"').replace('"activities":"strava"', '"activities":"garmin"') : data,
+      ]),
+    );
+    const { coros, routes, result } = await rebuild(await load(memoryStorage(), files));
+    const want = JSON.parse(rename(JSON.stringify(expected.strava)).replaceAll('"source":"strava"', '"source":"garmin"'));
+    want.sources = { activities: 'garmin', health: 'garmin' };
+    expect(withoutDate(coros)).toEqual(want);
+    expect(routes).toEqual(JSON.parse(rename(JSON.stringify(expected.stravaRoutes))));
+    expect(result.missing).toBeNull();
+  });
+});
+
 describe('stockage IndexedDB', () => {
   it('même snapshot qu’en mémoire, fichiers relus à l’identique', async () => {
     const storage = await load(await indexedDbStorage('runstat-test', new IDBFactory()), corosRaw());

@@ -7,12 +7,19 @@ import { DeviceSyncService, NotPrimary, PRIMARY_FILE } from './device-sync.servi
 import { EntryError } from './entry-error';
 import { LocalService } from './local.service';
 
-// Appareil principal (seul à renouveler les jetons), connexions OAuth depuis le navigateur, appli Strava de la personne
+// Appareil principal (seul à renouveler les jetons), connexions OAuth depuis le navigateur, appli Strava de la personne,
+// clé Garmin essayée par le relais
 describe('synchro sur l’appareil', () => {
   let raw: MemoryStore;
   let device: DeviceSyncService;
   let calls: string[];
   const state = signal<any>(null);
+  const GARMIN_KEY = 'cle-personnelle-garmin-0123456789';
+  /** Garmin derrière le relais (simulé) : un jeton contre la bonne clé seulement */
+  const garminFetch = async (_url: string | URL, init?: RequestInit) =>
+    new Headers(init?.headers).get('authorization') === `ApiKey ${GARMIN_KEY}`
+      ? new Response(`${btoa('{}').replace(/=+$/, '')}.${btoa(JSON.stringify({ exp: 2_000_000_000 })).replace(/=+$/, '')}.sig`)
+      : new Response(JSON.stringify({ garmin: true }), { status: 401 });
 
   function setup(account: { device: string } | null) {
     raw = new MemoryStore();
@@ -30,6 +37,7 @@ describe('synchro sur l’appareil', () => {
             connected: computed(() => state() != null),
             unlocked: computed(() => Boolean(state()?.keys)),
             sync: async () => (calls.push('sync'), { changed: false }),
+            garminFetch: () => garminFetch,
           },
         },
       ],
@@ -83,6 +91,20 @@ describe('synchro sur l’appareil', () => {
     await device.saveStravaApp('456', 't'.repeat(40));
     expect(await raw.read('secrets/strava-tokens.json')).toBeNull();
     expect(device.tokens()).toMatchObject({ stravaClient: true, strava: false });
+  });
+
+  it('clé Garmin : validée, essayée auprès de Garmin avant d’être gardée, l’appareil devient principal', async () => {
+    setup({ device: 'A' });
+    await expect(device.saveGarminKey('court', 365)).rejects.toBeInstanceOf(EntryError);
+    await expect(device.saveGarminKey('cle-inconnue-de-garmin-000000000', 365)).rejects.toThrow(/refusée par Garmin/);
+    expect(await raw.read('secrets/garmin-key.json')).toBeNull();
+    await device.saveGarminKey(GARMIN_KEY, 90);
+    expect(JSON.parse((await raw.readText('secrets/garmin-key.json'))!)).toMatchObject({ apiKey: GARMIN_KEY, days: 90 });
+    expect(device.tokens()).toMatchObject({ garmin: true, garminExpiresOn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(device.anyConnected()).toBe(true);
+    expect(JSON.parse((await raw.readText(PRIMARY_FILE))!)).toMatchObject({ device: 'A' });
+    await device.removeGarminKey();
+    expect(device.tokens().garmin).toBe(false);
   });
 
   it('retour de connexion : state vérifié (usage unique), refus Strava sans accès aux activités, échange puis appareil principal', async () => {

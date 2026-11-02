@@ -2,12 +2,14 @@
 // appli publique dans le navigateur (IndexedDB, jetons chiffrés dans la sauvegarde). Mêmes fichiers des deux côtés :
 //   activités COROS : records.txt (fusion par fenêtre), details/part-*.jsonl, fitness.txt, load.txt, fit/<id>.fit ;
 //   activités Strava : strava/activities.json, tracks/strava-<id>.json.gz (streams) ;
-//   santé : health-api.json (Google Health), health-coros.json (COROS) ;
+//   activités Garmin : garmin/activities.json, fit/garmin-<id>.fit ;
+//   santé : health-api.json (Google Health), health-coros.json (COROS), health-garmin.json (Garmin) ;
 //   état : sync-state.json (dernier succès, dernière erreur, ré-autorisation), réponses brutes raw/<source>/<type>/ (option).
 // La reconstruction (build-fit, snapshot, météo) reste à l'appelant.
 import * as pc from '../parsers/coros.ts';
 import { DAILY_TYPES, healthFromGoogle, mergeHealth, type HealthData } from '../parsers/google.ts';
 import { healthFromCoros } from '../parsers/coros-health.ts';
+import { activityFromGarmin, healthFromGarmin, type GarminActivity } from '../parsers/garmin.ts';
 import { activityFromApi, mergeStravaActivities, type StravaActivity } from '../parsers/strava.ts';
 import { STRAVA_FILE } from '../archive/strava-archive.ts';
 import { gzip } from '../archive/zip.ts';
@@ -17,9 +19,11 @@ import { fetchRetry, RateLimited, ReauthRequired, type TokenStore } from './http
 import type { CorosClient } from './coros.ts';
 import type { StravaClient } from './strava.ts';
 import type { GoogleClient } from './google.ts';
+import { GARMIN_KEY_FILE, type GarminClient } from './garmin.ts';
 
 export const SYNC_STATE = 'sync-state.json';
-export type SourceKey = 'coros' | 'strava' | 'google' | 'corosHealth';
+export type SourceKey = 'coros' | 'strava' | 'google' | 'corosHealth' | 'garmin' | 'garminHealth';
+export const GARMIN_FILE = 'garmin/activities.json';
 
 export interface SourceState {
   lastAttempt?: string;
@@ -40,6 +44,7 @@ export interface SourceClients {
   coros?: CorosClient;
   strava?: StravaClient;
   google?: GoogleClient;
+  garmin?: GarminClient;
   tokens: TokenStore;
 }
 
@@ -63,6 +68,9 @@ const TOKEN_FILE: Record<SourceKey, string> = {
   strava: 'strava-tokens.json',
   google: 'google-tokens.json',
   corosHealth: 'coros-tokens.json',
+  // Sans refresh token : seule une nouvelle clé lève la pause
+  garmin: GARMIN_KEY_FILE,
+  garminHealth: GARMIN_KEY_FILE,
 };
 
 const localToday = () => new Date().toLocaleDateString('sv-SE');
@@ -397,6 +405,102 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     return `${list.length} jours du ${from}, ${count('sleepMin')} nuits, ${count('hrv')} VFC, ${count('rhr')} FC de repos`;
   }
 
+  // ---------- Garmin (Personal API) ----------
+
+  /** FIT d'une sortie Garmin → fit/garmin-<id>.fit : 'ok' | 'empty' (saisie manuelle, sans fichier) */
+  async function downloadGarminFit(a: GarminActivity): Promise<'ok' | 'empty'> {
+    const bytes = await need(clients.garmin, 'garmin').fit(a.id.slice('garmin:'.length));
+    if (!bytes) return 'empty';
+    await raw.write(`fit/${fileKey(a.id)}.fit`, bytes);
+    a.file = 'fit';
+    return 'ok';
+  }
+
+  async function syncGarmin(s: SourceState): Promise<string> {
+    const garmin = need(clients.garmin, 'garmin');
+    const existing = (await readJson<GarminActivity[]>(raw, GARMIN_FILE)) ?? [];
+    const to = today();
+    const latest = existing.reduce((m, a) => (a.date > m ? a.date : m), '');
+    // Premier passage : tout l'historique ; ensuite la dernière date connue moins le recouvrement
+    const from = latest ? addDays([s.lastSuccessDate, latest].filter((x): x is string => Boolean(x)).sort()[0], -overlapDays) : '2000-01-01';
+    const list = await garmin.activities(from, to);
+    await stage('garmin', 'activities', to, { args: { from, to }, activities: list });
+    const fetched = list.map(activityFromGarmin).filter((a): a is GarminActivity => a != null);
+    const merged = mergeStravaActivities(existing, fetched, { window: { from, to } });
+    await writeJson(GARMIN_FILE, merged.list);
+
+    // FIT : nouvelles sorties, courses et 14 derniers jours d'abord, puis le reste de l'historique
+    const have = await tracked();
+    const failed = (s.fitFailures ??= {});
+    const recent = addDays(to, -14);
+    const added = new Set(merged.added);
+    const rank = (a: GarminActivity) => (added.has(a.id) ? 3 : 0) + (a.race ? 2 : 0) + (a.date >= recent ? 1 : 0);
+    const todo = merged.list
+      .filter((a) => !have.has(fileKey(a.id)) && (failed[a.id] ?? 0) < 3)
+      .sort((a, b) => rank(b) - rank(a) || b.date.localeCompare(a.date));
+    let ok = 0;
+    let none = 0;
+    let limited = '';
+    for (const a of todo.slice(0, fitPerRun)) {
+      try {
+        if ((await downloadGarminFit(a)) === 'ok') (ok++, delete failed[a.id]);
+        else (none++, (failed[a.id] = 3)); // saisie manuelle, sans fichier : inutile de redemander
+      } catch (e) {
+        if (e instanceof RateLimited) {
+          limited = ' (limite de débit atteinte)';
+          break;
+        }
+        if (e instanceof ReauthRequired) throw e;
+        failed[a.id] = (failed[a.id] ?? 0) + 1;
+        log(`  FIT indisponible pour ${a.id} (${a.date}) : ${(e as Error).message}`);
+      }
+      await sleep(500);
+    }
+    await writeJson(GARMIN_FILE, merged.list);
+    const rest = todo.length - ok - none;
+    return [
+      `${fetched.length} sorties du ${from} au ${to}`,
+      merged.added.length && `${merged.added.length} nouvelles`,
+      merged.removed.length && `${merged.removed.length} retirées (supprimées dans Garmin Connect)`,
+      `${ok} FIT${rest > 0 ? ` (reste ${rest})` : ''}${limited}`,
+    ]
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  /** « Affiner avec le tracé » pour une sortie Garmin : son FIT */
+  async function syncOneGarmin(id: string): Promise<string> {
+    const list = (await readJson<GarminActivity[]>(raw, GARMIN_FILE)) ?? [];
+    const a = list.find((x) => x.id === id);
+    if (!a) throw new Error(`activité ${id} inconnue de data-raw/garmin`);
+    if ((await tracked()).has(fileKey(id))) return `FIT de ${id} déjà présent`;
+    try {
+      if ((await downloadGarminFit(a)) !== 'ok') throw new Error(`aucun fichier pour ${id} (saisie manuelle ?)`);
+    } catch (e) {
+      if (e instanceof RateLimited) throw new Error('limite de débit Garmin atteinte, réessaie plus tard');
+      if (e instanceof ReauthRequired) (state.garmin ??= {}).reauthSince = new Date().toISOString();
+      throw e;
+    }
+    await writeJson(GARMIN_FILE, list);
+    return `FIT de ${id} (${a.date}) téléchargé`;
+  }
+
+  async function syncGarminHealth(s: SourceState): Promise<string> {
+    const garmin = need(clients.garmin, 'garmin');
+    const existing = await readJson<HealthData>(raw, 'health-garmin.json');
+    const latest = Object.keys(existing?.days ?? {}).sort().at(-1);
+    const to = today();
+    // Premier passage : un an d'historique ; ensuite la dernière date connue moins le recouvrement
+    const from = latest ? addDays([s.lastSuccessDate, latest].filter((x): x is string => Boolean(x)).sort()[0], -overlapDays) : addDays(to, -365);
+    const points = await garmin.health(from, to);
+    await stage('garmin', 'health', to, { args: { from, to }, ...points });
+    const health = healthFromGarmin(points);
+    await writeJson('health-garmin.json', mergeHealth(existing, health, new Date().toISOString()));
+    const list = Object.values(health.days);
+    const count = (k: string) => list.filter((d) => d[k] != null).length;
+    return `${list.length} jours du ${from}, ${count('sleepMin')} nuits, ${count('hrv')} VFC, ${count('rhr')} FC de repos, ${health.weight.length} pesées`;
+  }
+
   // ---------- Google Health ----------
 
   async function syncGoogle(s: SourceState): Promise<string> {
@@ -445,13 +549,15 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     log(`Synchronisation (activités ${sources.activities}, santé ${sources.health})…`);
     if (sources.activities === 'coros' && want('coros')) await runSource('coros', syncCoros);
     if (sources.activities === 'strava' && want('strava')) await runSource('strava', syncStrava);
+    if (sources.activities === 'garmin' && want('garmin')) await runSource('garmin', syncGarmin);
     if (sources.health === 'google' && want('google')) await runSource('google', syncGoogle);
     if (sources.health === 'coros' && want('corosHealth')) await runSource('corosHealth', syncCorosHealth);
+    if (sources.health === 'garmin' && want('garminHealth')) await runSource('garminHealth', syncGarminHealth);
     return { sources, state };
   }
 
   /**
-   * Bouton « Affiner avec le tracé » : le FIT (COROS) ou les streams (Strava) d'une seule sortie. Ne touche pas à la date de
+   * Bouton « Affiner avec le tracé » : le FIT (COROS, Garmin) ou les streams (Strava) d'une seule sortie. Ne touche pas à la date de
    * dernière synchro. Erreur dans state.lastFitError.
    */
   async function syncOne(id: string): Promise<{ ok: boolean; message: string }> {
@@ -459,6 +565,7 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     try {
       let message: string;
       if (id.startsWith('strava:')) message = await syncOneStreams(id);
+      else if (id.startsWith('garmin:')) message = await syncOneGarmin(id);
       else {
         const s = (state.coros ??= {});
         const r = pc.recordBlocks(await readRecordsText()).find((x) => x.id === id);
@@ -477,7 +584,7 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
       return { ok: true, message };
     } catch (e) {
       state['lastFitError'] = `${id} : ${(e as Error).message}`;
-      if (e instanceof ReauthRequired && !id.startsWith('strava:')) (state.coros ??= {}).reauthSince = new Date().toISOString();
+      if (e instanceof ReauthRequired && /^\d/.test(id)) (state.coros ??= {}).reauthSince = new Date().toISOString();
       log(`FIT : ÉCHEC — ${(e as Error).message}`);
       return { ok: false, message: (e as Error).message };
     } finally {
