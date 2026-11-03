@@ -110,6 +110,10 @@ describe('simulation', () => {
     expect(w.dusk).toBeLessThan(17 * 60 + 50);
     expect(w.dawn).toBeGreaterThan(7 * 60);
     expect(w.dawn).toBeLessThan(7 * 60 + 50);
+    // Heure d'été : tout est décalé d'une heure
+    const june = nightWindow('2026-06-21', 45.75, 4.85);
+    expect(june.dusk).toBeGreaterThan(22 * 60);
+    expect(june.dawn).toBeLessThan(5 * 60 + 30);
   });
 });
 

@@ -261,17 +261,23 @@ export function elevationBetween(segs: Segment[], from: number, to: number): { g
 // Nuit
 // ---------------------------------------------------------------------------
 
-/** Fin et début du crépuscule civil (soleil à −6°), en minutes locales : la frontale s'allume entre les deux */
+/** Décalage (min) de l'heure de Paris sur UTC ce jour-là : l'heure de départ d'une course est l'heure locale française */
+function parisOffset(y: number, m: number, d: number): number {
+  const noon = Date.UTC(y, m - 1, d, 12);
+  const [hh, mm] = new Date(noon).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour12: false }).split(':').map(Number);
+  return hh * 60 + mm - 720;
+}
+
+/** Fin et début du crépuscule civil (soleil à −6°), en minutes à l'heure de Paris : la frontale s'allume entre les deux */
 export function nightWindow(date: string, lat = 45, lon = 3): { dusk: number; dawn: number } {
   const [y, m, d] = date.split('-').map(Number);
-  const day = new Date(y, m - 1, d, 12);
-  const n = Math.round((day.getTime() - new Date(y, 0, 1, 12).getTime()) / 86_400_000) + 1;
+  const n = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 1)) / 86_400_000) + 1;
   const decl = rad(-23.44 * Math.cos(((2 * Math.PI) / 365) * (n + 10)));
   const cosH = (Math.sin(rad(-6)) - Math.sin(rad(lat)) * Math.sin(decl)) / (Math.cos(rad(lat)) * Math.cos(decl));
   const h = (Math.acos(Math.max(-1, Math.min(1, cosH))) * 180) / Math.PI;
   const b = (2 * Math.PI * (n - 81)) / 364;
   const eot = 9.87 * Math.sin(2 * b) - 7.53 * Math.cos(b) - 1.5 * Math.sin(b);
-  const noon = 720 - 4 * lon - eot - day.getTimezoneOffset();
+  const noon = 720 - 4 * lon - eot + parisOffset(y, m, d);
   return { dusk: noon + 4 * h, dawn: noon - 4 * h };
 }
 
