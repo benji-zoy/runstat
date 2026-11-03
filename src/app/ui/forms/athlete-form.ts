@@ -12,6 +12,7 @@ import { ActivitySource, Athlete, HealthSource } from '../../core/models';
 import { CITY_NAMES, DEFAULT_CITY } from '../../core/equivalences';
 import { GARMIN_KEY_DAYS, GARMIN_KEY_PAGE } from '../../../engine/sync/garmin';
 import { FormDialogComponent, errorList, opt } from './form-dialog';
+import { SourceGuideComponent } from './source-guide';
 
 const ACTIVITY_SOURCES: { id: ActivitySource; label: string }[] = [
   { id: 'coros', label: 'COROS' },
@@ -31,7 +32,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
  * Strava et son archive, clé Garmin) */
 @Component({
   selector: 'app-athlete-form',
-  imports: [ReactiveFormsModule, RouterLink, FormDialogComponent],
+  imports: [ReactiveFormsModule, RouterLink, FormDialogComponent, SourceGuideComponent],
   template: `
     <app-form-dialog heading="Réglages" [errors]="errors()" [busy]="entries.saving()" (save)="save()">
       <div class="fields" [formGroup]="form">
@@ -41,7 +42,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               Ces réglages et tes sources ne concernent que ton compte.</p>
           }
         }
-        <label class="field">FC max (bpm) <input type="number" formControlName="hrMax" autofocus min="120" max="230" inputmode="numeric" required /></label>
+        <label class="field">FC max (bpm) <input type="number" formControlName="hrMax" min="120" max="230" inputmode="numeric" required /></label>
         <label class="field">FC de repos (bpm) <input type="number" formControlName="hrRest" min="25" max="110" inputmode="numeric" required /></label>
         <label class="field">Seuil 1 (bpm)
           <input type="number" formControlName="lt1Hr" min="80" max="230" inputmode="numeric" [placeholder]="auto(0.8)" />
@@ -72,6 +73,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           (quelques minutes) ; le reste s'applique tout de suite.</p>
 
         <h3 class="field wide group">Sources des données</h3>
+        <app-source-guide class="wide" (apply)="applySources($event)" />
         <div class="field">Activités
           <div class="seg">
             @for (s of activitySources; track s.id) {
@@ -281,6 +283,10 @@ export class AthleteFormComponent {
   /** Toujours par cette adresse (Tailscale), même depuis le réseau local : adresse de retour déclarée chez chaque service */
   protected connectUrl(source: 'strava' | 'coros' | 'google' = 'strava'): string {
     return `${this.stravaOrigin()}/api/${source}/connect`;
+  }
+  /** Choix de l'assistant : remplit les sélecteurs, enregistré avec le reste du formulaire */
+  protected applySources(s: { activities: ActivitySource; health: HealthSource }): void {
+    this.form.patchValue({ activities: s.activities, health: s.health });
   }
   /** Valeurs du formulaire (pas des signaux) : relues à chaque rendu */
   protected usesCoros(): boolean {
