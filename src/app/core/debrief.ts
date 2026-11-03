@@ -6,7 +6,7 @@
  * chaque kilomètre GPS à la distance officielle (écart supposé réparti uniformément), et les temps de passage sont
  * recalés sur le temps officiel (puce) quand il est connu.
  */
-import { GoalEvaluation, chance } from './goals';
+import { GoalEvaluation, chance, chanceVerdict } from './goals';
 import { PlanBlock, passage, pacingProfile, segmentPaces } from './race-plan';
 import { Activity, Athlete, Goal } from './models';
 import { goalKmEffort, heatPenalty, kmEffort, timeForVdot, vdot } from './science';
@@ -358,7 +358,7 @@ function lessons(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete, next: Goal
       out.push(`Objectif ${clock(goal.targetSec)} atteint avec ${clock(-d.targetGap)} d'avance${d.probability !== null ? `, alors qu'il n'avait que ${frNum(d.probability * 100)} % de chances la veille` : ''}.`);
     } else {
       const perKm = d.targetGap / goal.distanceKm;
-      out.push(`Objectif ${clock(goal.targetSec)} manqué de ${clock(d.targetGap)}, soit ${frNum(perKm, 1)} s/km${d.probability !== null ? ` ; la veille, il n'avait que ${frNum(d.probability * 100)} % de chances : ambitieux plutôt qu'irréaliste` : ''}.`);
+      out.push(`Objectif ${clock(goal.targetSec)} manqué de ${clock(d.targetGap)}, soit ${frNum(perKm, 1)} s/km${d.probability !== null ? ` ; la veille, il avait ${frNum(d.probability * 100)} % de chances (${chanceVerdict(d.probability).label.toLowerCase()})` : ''}.`);
     }
   }
 

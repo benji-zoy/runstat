@@ -1,6 +1,11 @@
 import { Activity, Athlete, Goal } from './models';
-import { chance, consensus, csTime, freshnessPct, goalContext, normalCdf, trailModels, TRAIL_EXPONENT, evaluateGoal, ultraModel } from './goals';
+import {
+  chance, chanceVerdict, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT,
+  evaluateGoal, ultraModel,
+} from './goals';
 import { classifyAll, kmEffortOf } from './science';
+import { courseSegments } from './course';
+import { priorCost, segmentsEffortKm } from './terrain';
 
 const ath: Athlete = { hrMax: 195, hrRest: 50, sex: 'M', weightKg: 70, heightCm: 175, birthday: '1990-01-01' };
 
@@ -54,17 +59,28 @@ describe('modèles', () => {
     expect(kmEffortOf(10)).toBe(10);
   });
 
-  it('extrapole un trail au km-effort', () => {
+  it('extrapole un trail à la distance équivalent plat', () => {
     const acts = [run('2026-09-01', 30, 4 * 3600, { kind: 'trail', elevGain: 1000, elevLoss: 900, name: 'Trail des Pics' })];
-    const goal: Goal = { id: 'g', name: 'Ultra', date: '2026-11-29', distanceKm: 80, elevGain: 2200, elevLoss: 2600, kind: 'trail' };
+    const goal: Goal = { id: 'g', name: 'Trail', date: '2026-11-29', distanceKm: 50, elevGain: 1500, elevLoss: 1500, kind: 'trail' };
     const today = new Date(2026, 9, 7);
     const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null);
     const [m] = trailModels(goal, ctx);
-    expect(m.seconds).toBeCloseTo(4 * 3600 * Math.pow((80 + 22 + 2600 / 300) / (30 + 10 + 900 / 300), TRAIL_EXPONENT), 3);
+    // Sans FIT, la courbe de pente est la courbe commune et les profils sont synthétiques
+    const eq = (km: number, up: number, down: number) => segmentsEffortKm(courseSegments({ distanceKm: km, elevGain: up, elevLoss: down, kind: 'trail' }), priorCost);
+    expect(m.seconds).toBeCloseTo(4 * 3600 * Math.pow(eq(50, 1500, 1500) / eq(30, 1000, 900), TRAIL_EXPONENT), 3);
   });
 
-  it('ajoute un modèle d\'allure à FC d\'ultra à partir des sorties longues', () => {
-    // 5 sorties de 2 h à 5 km/h ajustés ≈ 12 s/km … : tours de 1 km à 6:00/km (gap 360) et FC 157 (LT1 = 80 % de 197)
+  it('compte moins un parcours roulant que le km-effort, plus un parcours raide', () => {
+    const eq = (km: number, up: number) => segmentsEffortKm(courseSegments({ distanceKm: km, elevGain: up, elevLoss: up, kind: 'trail' }), priorCost);
+    // SaintéLyon (27 m/km) : ≈ 90 km équivalent plat pour 109 km-effort
+    expect(eq(80, 2200)).toBeLessThan(0.9 * kmEffortOf(80, 2200, 2200));
+    expect(eq(80, 2200)).toBeGreaterThan(80);
+    // Plus raide à D+ égal : plus coûteux
+    expect(eq(40, 2200)).toBeGreaterThan(eq(80, 2200) - 40);
+  });
+
+  it('simule un ultra à FC d\'ultra à partir des sorties longues', () => {
+    // 5 sorties de 2 h, tours de 1 km à 6:00/km (gap 360) et FC 157 (LT1 = 80 % de 195)
     const km = Array.from({ length: 20 }, () => [1000, 360, 157, 20, 20, 360, 0, 170]);
     const acts: Activity[] = [];
     for (let i = 0; i < 5; i++) {
@@ -76,10 +92,30 @@ describe('modèles', () => {
     const today = new Date(2026, 9, 7);
     const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null);
     const ultra = ultraModel(goal, ctx)!;
-    // 102 km-effort à 10 km/h, durée allongée par l'usure et 5 % d'arrêts : bien plus que 10,2 h
-    expect(ultra.seconds).toBeGreaterThan(10.2 * 3600 * 1.05);
+    // ≈ 90 km équivalent plat à 10 km/h, moins vite sur les sentiers, usure et 5 % d'arrêts : bien plus que 9 h
+    const eq = segmentsEffortKm(courseSegments(goal), priorCost);
+    expect(eq).toBeGreaterThan(85);
+    expect(ultra.seconds).toBeGreaterThan((eq / 10) * 3600 * 1.05);
     expect(ultra.seconds).toBeLessThan(16 * 3600);
     expect(ultraModel({ ...goal, distanceKm: 20, elevGain: 0 }, ctx)).toBeNull();
+  });
+
+  it('classe les courses et élargit l\'incertitude avec la distance', () => {
+    expect(raceCategory({ id: 'a', name: '', date: '2026-01-01', distanceKm: 42.195, kind: 'road' })).toBe('road');
+    expect(raceCategory({ id: 'b', name: '', date: '2026-01-01', distanceKm: 30, elevGain: 1500, kind: 'trail' })).toBe('trail');
+    expect(raceCategory({ id: 'c', name: '', date: '2026-01-01', distanceKm: 80, elevGain: 2200, kind: 'trail' })).toBe('ultra');
+    expect(raceCategory({ id: 'd', name: '', date: '2026-01-01', distanceKm: 100, kind: 'road' })).toBe('ultra');
+    expect(daySd('road', 5)).toBeCloseTo(0.02, 6);
+    expect(daySd('road', 42.195)).toBeCloseTo(0.04, 6);
+    expect(daySd('ultra', 80)).toBeGreaterThan(daySd('trail', 30));
+  });
+
+  it('dit « hors de portée » sous 10 % de chances, « ambitieux » de 10 à 25 %', () => {
+    expect(chanceVerdict(0.04).label).toBe('Hors de portée');
+    expect(chanceVerdict(0.15).label).toBe('Ambitieux');
+    expect(chanceVerdict(0.3).label).toBe('Jouable');
+    expect(chanceVerdict(0.6).label).toBe('Probable');
+    expect(chanceVerdict(0.8).label).toBe('Très probable');
   });
 });
 

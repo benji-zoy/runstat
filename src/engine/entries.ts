@@ -88,10 +88,42 @@ function validateDebrief(obj: unknown, prefix: string, errors: string[]) {
   return Object.keys(res).length ? res : undefined;
 }
 
+/** Points d'altitude d'un profil au plus (core/course.ts en garde 1 000) */
+const MAX_COURSE_POINTS = 1500;
+
+/** Profil compact d'un tracé GPX : altitude tous les `stepKm`, points de passage nommés ; aucune coordonnée */
+function validateCourse(obj: unknown, prefix: string, errors: string[]) {
+  const r = reader(obj, prefix, errors);
+  r.unknown(['stepKm', 'ele', 'waypoints', 'file']);
+  const stepKm = r.num('stepKm', { required: true, min: 0.01, max: 1 });
+  const ele = r.raw('ele');
+  if (!Array.isArray(ele) || ele.length < 2 || ele.length > MAX_COURSE_POINTS || ele.some((z) => typeof z !== 'number' || !(z >= -500 && z <= 9000)))
+    errors.push(`${prefix}ele : 2 à ${MAX_COURSE_POINTS} altitudes (−500 à 9 000 m) attendues`);
+  const length = Array.isArray(ele) && stepKm ? stepKm * (ele.length - 1) : 0;
+  let waypoints: { name: string; km: number }[] | undefined;
+  const wps = r.raw('waypoints');
+  if (wps != null) {
+    if (!Array.isArray(wps) || wps.length > 80) errors.push(`${prefix}waypoints : 80 points au plus`);
+    else {
+      waypoints = wps.map((w, i) => {
+        const wr = reader(w, `${prefix}waypoints ${i + 1} · `, errors);
+        wr.unknown(['name', 'km']);
+        return clean({ name: wr.str('name', { required: true, max: 60 }), km: wr.num('km', { required: true, min: 0, max: Math.max(0, length + 0.5) }) });
+      });
+    }
+  }
+  return clean({
+    stepKm,
+    ele: Array.isArray(ele) ? ele.map((z) => Math.round(z)) : undefined,
+    waypoints: waypoints?.length ? waypoints : undefined,
+    file: r.str('file', { max: 120 }),
+  });
+}
+
 /** Un objectif (data-raw/goals.json) */
 export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
   const r = reader(obj, prefix, errors);
-  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief']);
+  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief', 'course']);
   const date = r.str('date', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
   if (date && !isRealDate(date)) errors.push(`${prefix}date : date inexistante`);
   const goal = clean({
@@ -108,6 +140,7 @@ export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
     lat: r.num('lat', { min: -90, max: 90 }),
     lon: r.num('lon', { min: -180, max: 180 }),
     debrief: r.has('debrief') ? validateDebrief(r.raw('debrief'), `${prefix}debrief.`, errors) : undefined,
+    course: r.has('course') ? validateCourse(r.raw('course'), `${prefix}course.`, errors) : undefined,
   });
   if (goal.stretchSec != null && goal.targetSec == null) errors.push(`${prefix}stretchSec : chrono visé manquant`);
   if (goal.stretchSec != null && goal.targetSec != null && goal.stretchSec >= goal.targetSec)

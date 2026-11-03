@@ -49,7 +49,7 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
             {{ dateLabel(g.date) }}{{ g.startTime ? ' · départ ' + startLabel(g.startTime) : '' }} ·
             {{ num(g.distanceKm, g.distanceKm % 1 ? 1 : 0) }} km{{ g.elevGain ? ' · ' + num(g.elevGain) + ' m D+' + (g.elevLoss ? ' / ' + num(g.elevLoss) + ' m D−' : '') : '' }}
             @if (g.kind === 'trail') {
-              · {{ num(e.ke) }} km-effort
+              · {{ num(e.ke) }} km-effort, ≈ {{ num(e.effortKm) }} km équivalent plat pour toi
             }
             @if (g.targetSec) {
               · objectif {{ clock(g.targetSec) }}

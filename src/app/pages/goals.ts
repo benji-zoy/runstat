@@ -108,22 +108,29 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
     <details class="card method">
       <summary>Comment l'indice est calculé</summary>
       <ul>
-        <li><b>Objectif chrono</b> : plusieurs modèles prédisent le temps (Coros, VDOT de Daniels, Riegel avec ton exposant pondéré,
-          VDOT actualisé par ta progression d'efficacité, vitesse critique). Leur moyenne géométrique est corrigée par la fraîcheur
-          projetée, la récupération (VFC, FC de repos), la météo (règle de Hadley) et la préparation spécifique. L'incertitude combine
-          le désaccord entre modèles et la variabilité d'un jour de course (2,5 % sur route, 7 % en trail) : l'indice est la
-          probabilité de passer sous le chrono visé.</li>
+        <li><b>Objectif chrono, une méthode par type de course</b>. Route : plusieurs modèles prédisent le temps (Coros, VDOT de Daniels,
+          Riegel avec ton exposant pondéré, VDOT actualisé par ta progression d'efficacité, vitesse critique, Tanda et Vickers au marathon),
+          corrigés du profil du parcours. Trail : tes trails récents ramenés en distance équivalent plat avec ta courbe vitesse / pente
+          (mesurée sur tes FIT à FC égale), extrapolés (Riegel, exposant 1,10) et pondérés par la ressemblance du terrain, plus ton niveau
+          route actuel multiplié par ton coefficient trail. Ultra (dès 60 km-effort) : en plus, une simulation tronçon par tronçon à ta FC
+          d'endurance, avec ton usure par heure et les ravitaillements.</li>
+        <li><b>Jour J et probabilité</b> : la moyenne géométrique des modèles est corrigée par la fraîcheur projetée, la récupération
+          (VFC, FC de repos), la météo (règle de Hadley), la nuit (simulée sur le profil) et la préparation spécifique. L'incertitude
+          combine le désaccord entre modèles, la variabilité d'un jour de course (2 % sur 5 km à 4 % au marathon, 6 % en trail, 8 % en
+          ultra) et, en ultra, l'extrapolation au-delà de ta plus longue sortie : l'indice est la probabilité de passer sous le chrono
+          visé. Moins de 10 % : hors de portée ; 10 à 25 % : ambitieux ; 25 à 50 % : jouable ; 50 à 75 % : probable ; au-delà : très probable.</li>
+        <li><b>Tracé GPX</b> (Modifier l'objectif) : le profil et les points de passage servent à la prédiction et aux temps de passage ;
+          seul le profil est gardé, pas les coordonnées.</li>
         <li><b>Objectif « finir »</b> : indice de préparation pondéré (volume, sortie la plus longue, D+, expérience en km-effort,
-          sorties de nuit, régularité, récupération). Le chrono trail est extrapolé de tes trails récents au km-effort ITRA
-          (Riegel, exposant 1,10).</li>
+          sorties de nuit, durabilité, régularité, récupération).</li>
         <li><b>Course de référence</b> : ta dernière course sur la même distance (moins de 2 ans) est un modèle à part entière, de poids 1,5
           (le plus spécifique). Son chrono, ramené à des conditions neutres (Hadley), donne ton niveau de ce jour-là ; il est projeté à
           aujourd'hui en comparant les 8 semaines qui l'ont précédé aux 8 dernières : effet du volume (Tanda) × progrès de forme
           (moyenne de l'allure moyenne d'entraînement et de la moitié du gain d'efficacité aérobie), plafonné à ±10 %.</li>
         <li><b>Chronos estimés</b> : consensus des mêmes modèles (sans la prédiction de la montre, qui n'est qu'un instantané du jour)
           rejoué à chaque date ; l'évolution de l'indice d'une course est rejouée de la même façon, semaine après semaine.</li>
-        <li><b>Stratégie</b> : allure par tronçon calée pour que la somme fasse le chrono visé (départ 2-3 s/km plus lent, final plus
-          rapide), zones de FC selon la distance, glucides 30-60 g/h jusqu'à 2 h 30 puis 60-90 g/h (ACSM, Burke), recharge 7-12 g/kg.</li>
+        <li><b>Stratégie</b> : allure par tronçon calée pour que la somme fasse le chrono visé (route : départ 2-3 s/km plus lent, final plus
+          rapide ; trail : profil, usure, nuit et arrêts, tronçons entre les ravitaillements du GPX), zones de FC selon la distance, glucides 30-60 g/h jusqu'à 2 h 30 puis 60-90 g/h (ACSM, Burke), recharge 7-12 g/kg.</li>
         <li>Les seuils de préparation sont des repères d'entraînement usuels, pas des lois : l'indice indique où porter l'effort.</li>
       </ul>
     </details>

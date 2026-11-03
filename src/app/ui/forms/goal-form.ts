@@ -3,8 +3,9 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DataService } from '../../core/data.service';
 import { EntriesService } from '../../core/entries.service';
-import { Goal } from '../../core/models';
-import { clock, parseDuration } from '../../core/format';
+import { Goal, GoalCourse } from '../../core/models';
+import { clock, num, parseDuration } from '../../core/format';
+import { parseGpx } from '../../core/course';
 import { FormDialogComponent, durationHint, errorList, opt } from './form-dialog';
 
 type Mode = 'finish' | 'time' | 'range';
@@ -69,6 +70,19 @@ export function goalId(name: string, date: string, taken: string[]): string {
           <input type="number" formControlName="elevLoss" min="0" step="10" inputmode="numeric" placeholder="= D+ si vide" />
         </label>
 
+        <div class="field wide">Tracé GPX
+          <div class="gpx">
+            <label class="btn">{{ course() ? 'Remplacer le tracé' : 'Importer un GPX' }}
+              <input type="file" accept=".gpx,application/gpx+xml" (change)="importGpx($event)" hidden />
+            </label>
+            @if (course(); as c) {
+              <span class="hint">{{ c.file ?? 'Tracé' }} · {{ c.waypoints?.length ?? 0 }} point{{ (c.waypoints?.length ?? 0) > 1 ? 's' : '' }} de passage</span>
+              <button type="button" class="btn" (click)="course.set(null); gpxNote.set('')">Retirer</button>
+            }
+          </div>
+          <span class="hint">{{ gpxNote() || 'Le profil et les points de passage (ravitaillements) servent à la prédiction et aux temps de passage. Seul le profil est gardé, pas les coordonnées.' }}</span>
+        </div>
+
         <div class="field wide">Objectif
           <div class="seg">
             <button type="button" [class.active]="mode() === 'finish'" (click)="mode.set('finish')">Finir</button>
@@ -103,6 +117,10 @@ export function goalId(name: string, date: string, taken: string[]): string {
       }
     </app-form-dialog>
   `,
+  styles: `
+    .gpx { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .gpx label.btn { cursor: pointer; }
+  `,
 })
 export class GoalFormComponent {
   protected readonly entries = inject(EntriesService);
@@ -114,6 +132,9 @@ export class GoalFormComponent {
   protected readonly editing = signal<Goal | null>(null);
   protected readonly mode = signal<Mode>('time');
   protected readonly errors = signal<string[]>([]);
+  /** Profil du tracé importé (gardé tel quel à l'enregistrement) */
+  protected readonly course = signal<GoalCourse | null>(null);
+  protected readonly gpxNote = signal('');
 
   private readonly fb = inject(FormBuilder).nonNullable;
   protected readonly form = this.fb.group({
@@ -134,6 +155,8 @@ export class GoalFormComponent {
   open(goal?: Goal): void {
     this.editing.set(goal ?? null);
     this.errors.set([]);
+    this.course.set(goal?.course ?? null);
+    this.gpxNote.set('');
     this.mode.set(!goal ? 'time' : goal.stretchSec ? 'range' : goal.targetSec ? 'time' : 'finish');
     this.form.reset({
       name: goal?.name ?? '',
@@ -149,6 +172,32 @@ export class GoalFormComponent {
       lon: goal?.lon ?? null,
     });
     this.dialog().open();
+  }
+
+  /** Lecture du GPX sur l'appareil : profil compact, distance, D+ et D− (modifiables), départ pour la météo */
+  protected async importGpx(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > 30 * 1024 * 1024) return this.errors.set(['GPX trop volumineux (30 Mo au plus)']);
+    try {
+      const p = parseGpx(await file.text(), file.name);
+      const c = this.form.controls;
+      this.course.set(p.course);
+      c.distanceKm.setValue(p.distanceKm);
+      c.elevGain.setValue(p.gain);
+      c.elevLoss.setValue(p.loss);
+      if (p.gain / p.distanceKm > 15) c.kind.setValue('trail');
+      if (p.start && c.lat.value === null && c.lon.value === null) {
+        c.lat.setValue(p.start.lat);
+        c.lon.setValue(p.start.lon);
+      }
+      this.errors.set([]);
+      this.gpxNote.set(`Tracé lu : ${num(p.distanceKm, 1)} km, ${num(p.gain)} m D+, ${num(p.loss)} m D−. Remets la distance et le dénivelé officiels s'ils diffèrent : le profil s'y recale.`);
+    } catch (e) {
+      this.errors.set([e instanceof Error ? e.message : 'GPX illisible']);
+    }
   }
 
   protected preview(text: string): string {
@@ -185,6 +234,7 @@ export class GoalFormComponent {
       lat: opt(v.lat),
       lon: opt(v.lon),
       debrief: old?.debrief,
+      course: this.course() ?? undefined,
     };
     await this.write(old ? goals.map((g) => (g.id === old.id ? goal : g)) : [...goals, goal], old ? null : goal.id);
   }
