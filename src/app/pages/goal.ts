@@ -1,4 +1,5 @@
-import { Component, ElementRef, computed, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { Location } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ScienceService } from '../core/science.service';
@@ -140,9 +141,12 @@ export class GoalPage {
   protected readonly sci = inject(ScienceService);
   protected readonly entries = inject(EntriesService);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly route = inject(ActivatedRoute);
   private readonly params = toSignal(this.route.paramMap);
   private readonly query = toSignal(this.route.queryParamMap);
+  /** Partie touchée (prioritaire sur `?partie=`, lu à l'arrivée sur la page) */
+  private readonly picked = signal<Part | null>(null);
   private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
 
   protected readonly clock = clock;
@@ -218,7 +222,7 @@ export class GoalPage {
   });
 
   protected readonly part = computed<Part>(() => {
-    const asked = this.query()?.get('partie');
+    const asked = this.picked() ?? this.query()?.get('partie');
     const tiles = this.tiles();
     return tiles.find((t) => t.id === asked)?.id ?? tiles[0]?.id ?? 'confiance';
   });
@@ -226,7 +230,10 @@ export class GoalPage {
   protected readonly currentTitle = computed(() => this.tiles().find((t) => t.id === this.part())?.title ?? '');
 
   protected open(id: Part): void {
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { partie: id }, queryParamsHandling: 'merge', replaceUrl: true });
+    // L'adresse suit la partie ouverte, sans navigation du routeur (qui remonterait en haut de page)
+    this.picked.set(id);
+    const url = this.router.createUrlTree([], { relativeTo: this.route, queryParams: { partie: id }, queryParamsHandling: 'merge' });
+    this.location.replaceState(this.router.serializeUrl(url));
     // Sur téléphone, la partie ouverte est sous les cartes : la faire apparaître
     setTimeout(() => {
       const el = this.panel()?.nativeElement;
