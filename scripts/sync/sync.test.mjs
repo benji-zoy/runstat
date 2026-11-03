@@ -390,6 +390,25 @@ test('objectifs : erreurs (fourchette, date, doublon, champ inconnu, lieu incomp
   assert.throws(() => en.validateGoals({}), en.InvalidEntry);
 });
 
+test('objectifs : profil du tracé GPX (altitudes arrondies, points de passage, rien d\'autre)', () => {
+  const course = { stepKm: 0.1, ele: [200.4, 210, 205.6], waypoints: [{ name: 'Ravito', km: 0.1 }], file: 'course.gpx' };
+  const [g] = en.validateGoals([goal({ kind: 'trail', course })]);
+  assert.deepEqual(g.course, { stepKm: 0.1, ele: [200, 210, 206], waypoints: [{ name: 'Ravito', km: 0.1 }], file: 'course.gpx' });
+  const errs = (c) => {
+    try {
+      en.validateGoals([goal({ course: c })]);
+      return '';
+    } catch (e) {
+      return e.errors.join('\n');
+    }
+  };
+  assert.match(errs({ ...course, lat: [45] }), /course\.lat : champ inconnu/);
+  assert.match(errs({ ...course, ele: [1] }), /course\.ele/);
+  assert.match(errs({ ...course, ele: Array(2000).fill(0) }), /course\.ele/);
+  assert.match(errs({ ...course, waypoints: [{ name: 'Loin', km: 5 }] }), /waypoints 1 · km/);
+  assert.match(errs({ ...course, waypoints: [{ name: 'X', km: 0, lat: 45 }] }), /lat : champ inconnu/);
+});
+
 test('réglages : bornes et poids des courses', () => {
   const a = { hrMax: 190, hrRest: 50, sex: 'M', weightKg: 70, heightCm: 175, birthday: '1990-01-01' };
   assert.deepEqual(en.validateAthlete({ ...a, raceWeights: { '123': 0.5 } }), { ...a, raceWeights: { '123': 0.5 } });

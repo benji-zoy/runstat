@@ -34,6 +34,8 @@ import { LOCAL_MODE } from '../core/runtime';
           qu'elle donne et les <b>données renvoyées par Garmin</b> (sorties, fichiers FIT, santé) y <b>transitent en clair</b>, sans y
           être conservés ni journalisés.</li>
         <li>Sans compte, rien n'est envoyé à un NAS.</li>
+        <li>Le GPX d'une course est lu sur l'appareil : seuls son profil d'altitude, ses points de passage nommés et son point de
+          départ (arrondi à 0,01°, pour la météo) sont gardés avec l'objectif, pas le tracé.</li>
       </ul>
       <h3>Tableau de bord hébergé sur le NAS (par Tailscale{{ local ? '' : ', celui que tu utilises' }})</h3>
       <ul>

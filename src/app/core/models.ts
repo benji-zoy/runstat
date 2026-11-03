@@ -207,6 +207,17 @@ export interface Goal {
   forecast?: { temp: number; dew: number; rh: number; wind: number; fetchedAt: string } | null;
   /** Après la course : temps officiel (puce), gels pris (km), ressenti */
   debrief?: GoalDebriefNotes;
+  /** Profil du tracé GPX importé (core/course.ts) */
+  course?: GoalCourse;
+}
+
+/** Profil compact d'un tracé : altitude (m) tous les `stepKm` depuis le départ, points de passage nommés */
+export interface GoalCourse {
+  stepKm: number;
+  ele: number[];
+  waypoints?: { name: string; km: number }[];
+  /** Nom du fichier importé */
+  file?: string;
 }
 
 export interface GoalDebriefNotes {

@@ -1,6 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { ChartConfiguration } from 'chart.js';
-import { GoalEvaluation } from '../core/goals';
+import { GoalEvaluation, chanceVerdict } from '../core/goals';
+import { courseProfile } from '../core/course';
 import { clock, fixed, num, pace } from '../core/format';
 import { parseDay } from '../core/stats';
 import { ChartComponent } from '../ui/chart';
@@ -28,7 +29,7 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
               {{ longDate(g.date) }}{{ g.startTime ? ' · départ ' + startLabel(g.startTime) : '' }} ·
               {{ num(g.distanceKm, 1) }} km{{ g.elevGain ? ' · ' + num(g.elevGain) + ' m D+' + (g.elevLoss ? ' / ' + num(g.elevLoss) + ' m D−' : '') : '' }}
               @if (g.kind === 'trail') {
-                · {{ num(e.ke) }} km-effort
+                · {{ num(e.ke) }} km-effort, ≈ {{ num(e.effortKm) }} km équivalent plat pour toi
               }
             </p>
           </div>
@@ -50,7 +51,7 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
             @if (e.probability !== null) {
               de chances de passer sous <b>{{ clock(g.targetSec!) }}</b> ({{ pace(g.targetSec! / g.distanceKm) }} /km)
               @if (e.stretchProbability !== null) {
-                <br />{{ round(e.stretchProbability * 100) }} % sous <b>{{ clock(g.stretchSec!) }}</b>
+                <br />{{ round(e.stretchProbability * 100) }} % sous <b>{{ clock(g.stretchSec!) }}</b> · {{ lower(chanceVerdict(e.stretchProbability).label) }}
               }
               @if (g.kind === 'trail') {
                 <br />préparation {{ round(e.readinessScore * 100) }}/100
@@ -83,7 +84,7 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
               <tr>
                 <th>Course</th>
                 <th class="num">Temps</th>
-                <th class="num">{{ g.kind === 'trail' ? 'Par km-effort' : 'Allure' }}</th>
+                <th class="num">{{ g.kind === 'trail' ? 'Par km éq. plat' : 'Allure' }}</th>
                 <th class="num">FC</th>
                 <th class="num">Météo</th>
                 @if (g.kind === 'road') {
@@ -160,7 +161,10 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
       }
 
       <h4>Stratégie de course</h4>
-      <div class="pacing">
+      @if (profileChart(); as pc) {
+        <app-chart [config]="pc" style="--chart-h: 150px" />
+      }
+      <div class="pacing" [class.stack]="g.kind === 'trail' && e.plan.fromGpx">
         <div class="table-wrap">
           <table>
             <thead>
@@ -176,13 +180,13 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
               @for (s of e.plan.segments; track s.label) {
                 <tr>
                   <td class="wrap">
-                    <b>{{ s.label }}</b><small class="muted seg-km">km {{ num(s.from, 1) }} → {{ num(s.to, 1) }}</small>
+                    <b>{{ s.label }}</b><small class="muted seg-km">km {{ num(s.from, 1) }} → {{ num(s.to, 1) }}@if (s.gain !== undefined) { · +{{ num(s.gain) }} / −{{ num(s.loss ?? 0) }} m}</small>
                     <small class="muted tip">{{ s.tip }}</small>
                   </td>
                   @if (s.target !== null) {
-                    <td class="num">{{ pace(s.target) }} /km</td>
+                    <td class="num">@if (s.targetSec != null) {{{ hm(s.targetSec) }}<br /><small class="muted">{{ pace(s.target) }} /km</small>} @else {{{ pace(s.target) }} /km}</td>
                   }
-                  <td class="num">{{ pace(s.realistic) }} /km</td>
+                  <td class="num">@if (s.realisticSec != null) {{{ hm(s.realisticSec) }}<br /><small class="muted">{{ pace(s.realistic) }} /km</small>} @else {{{ pace(s.realistic) }} /km}</td>
                 </tr>
               }
             </tbody>
@@ -202,11 +206,11 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
             <tbody>
               @for (c of e.plan.checkpoints; track c.km) {
                 <tr>
-                  <td>{{ $last ? 'Arrivée' : 'km ' + num(c.km) }}</td>
+                  <td class="wrap">{{ $last ? 'Arrivée' : c.name ?? 'km ' + num(c.km) }}@if (c.name && !$last) {<small class="muted"> · km {{ num(c.km, 1) }}</small>}</td>
                   @if (c.target !== null) {
-                    <td class="num">{{ clock(c.target) }}</td>
+                    <td class="num">{{ clock(c.target) }}@if (e.plan.startMin !== null) {<br /><small class="muted">{{ hourOf(e.plan.startMin, c.target) }}</small>}</td>
                   }
-                  <td class="num">{{ clock(c.realistic) }}</td>
+                  <td class="num">{{ clock(c.realistic) }}@if (e.plan.startMin !== null) {<br /><small class="muted">{{ hourOf(e.plan.startMin, c.realistic) }}</small>}</td>
                 </tr>
               }
             </tbody>
@@ -219,8 +223,18 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
           doit donc être <b>{{ pace(w.shown) }} /km</b> pour {{ pace(w.actual) }} /km réels.
           Fie-toi plutôt aux panneaux kilométriques.
         </p>
+      } @else if (e.plan.fromGpx) {
+        <p class="muted small">
+          Temps de passage calés sur le profil du tracé : chaque tronçon au coût de sa pente pour toi,
+          @if (g.kind === 'trail') {
+            avec ton usure, la nuit et les arrêts aux points de passage.
+          } @else {
+            avec le plan d’allure.
+          }
+          Compare-les aux barrières horaires.
+        </p>
       } @else if (g.kind === 'trail') {
-        <p class="muted small">Temps de passage indicatifs, en supposant le dénivelé réparti uniformément : recale-les sur le profil et les barrières horaires de la course.</p>
+        <p class="muted small">Temps de passage indicatifs, dénivelé réparti uniformément : importe le GPX de la course (Modifier l'objectif) pour les caler sur le vrai profil et ses ravitaillements.</p>
       }
 
       <div class="blocks">
@@ -257,6 +271,27 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
               </tbody>
             </table>
           </div>
+          <p class="muted small">
+            Incertitude ±{{ fixed(e.sigma * 100, 1) }} % (un écart-type) : modèles {{ fixed(e.uncertainty.models * 100, 1) }} %,
+            jour de course {{ fixed(e.uncertainty.day * 100, 1) }} %@if (e.uncertainty.extrapolation > 0.001) {, au-delà de ta plus longue sortie {{ fixed(e.uncertainty.extrapolation * 100, 1) }} %}.
+          </p>
+          <details class="method">
+            <summary>Méthode</summary>
+            <p>{{ e.method }}</p>
+            @if (g.kind === 'trail' && e.course.terrain.points.length) {
+              <p>
+                Ta courbe de pente ({{ e.course.terrain.trail ? 'trails' : 'toutes sorties' }}, {{ num(e.course.terrain.hours) }} h de FIT sur un an, à FC égale) :
+                @for (pt of e.course.terrain.points; track pt.grade) {
+                  {{ signedGrade(pt.grade) }} ×{{ fixed(pt.cost, 2) }}{{ $last ? '.' : ',' }}
+                }
+                Repère commun : Minetti en montée, GAP révisé de Strava en descente (le gain plafonne vers −9 %).
+                @if (e.course.terrain.surface; as sf) {
+                  Sur les sentiers, tu es {{ fixed((sf - 1) * 100, 0) }} % plus lent que sur route à FC égale.
+                }
+              </p>
+            }
+            <p>Probabilité : loi log-normale centrée sur le chrono le plus probable. Moins de 10 % : hors de portée ; 10 à 25 % : ambitieux ; 25 à 50 % : jouable ; 50 à 75 % : probable ; au-delà : très probable.</p>
+          </details>
         </div>
 
         <div>
@@ -365,8 +400,13 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
     .progression .better { color: var(--good); }
     .pacing { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.5rem; align-items: start; }
     @media (max-width: 900px) { .pacing { grid-template-columns: minmax(0, 1fr); } }
+    .pacing.stack { grid-template-columns: minmax(0, 1fr); }
     .pacing td.wrap { white-space: normal; }
     .seg-km { margin-left: 0.45rem; white-space: nowrap; }
+    @media (max-width: 600px) {
+      .pacing td.wrap { min-width: 0; }
+      .seg-km { display: block; margin-left: 0; white-space: normal; }
+    }
     .tip { display: block; margin-top: 0.15rem; font-size: 0.8rem; line-height: 1.35; }
     .watch { margin: 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: var(--surface-2); font-size: 0.9rem; color: var(--text-secondary); }
     .watch b { color: var(--text-primary); }
@@ -391,10 +431,76 @@ export class GoalCardComponent {
   protected longDate = (iso: string) => dateFmt.format(parseDay(iso));
   protected startLabel = (t: string) => (t === '00:00' ? 'à minuit' : `${Number(t.slice(0, 2))} h ${t.slice(3)}`);
   protected tone = (e: GoalEvaluation) => TONE[e.verdict.tone];
+  protected readonly chanceVerdict = chanceVerdict;
+  protected lower = (s: string) => s.toLowerCase();
+  protected signedGrade = (g: number) => `${g >= 0 ? '+' : '−'}${Math.abs(Math.round(g * 100))} %`;
+  protected hm = (sec: number) => {
+    const m = Math.round(sec / 60);
+    return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+  };
+  /** Heure de passage : départ + temps écoulé */
+  protected hourOf = (startMin: number, sec: number) => {
+    const m = ((Math.round(startMin + sec / 60) % 1440) + 1440) % 1440;
+    return `vers ${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+  };
   /** Arc de la jauge : circonférence 2π·52 ≈ 326,7 */
   protected dash = (pct: number) => `${(Math.max(0, Math.min(100, pct)) / 100) * 326.7} 326.7`;
 
   protected readonly chart = computed(() => this.buildChart(this.ev()));
+  protected readonly profileChart = computed(() => this.buildProfile(this.ev()));
+
+  /** Profil du tracé GPX, points de passage marqués */
+  private buildProfile(e: GoalEvaluation): ChartConfiguration | null {
+    const pts = courseProfile(e.goal);
+    if (pts.length < 2) return null;
+    const eleAt = (km: number) => pts[Math.min(pts.length - 1, Math.round((km / e.goal.distanceKm) * (pts.length - 1)))].ele;
+    return {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Altitude',
+            data: pts.map((p) => ({ x: p.km, y: p.ele })),
+            borderColor: C.accent,
+            backgroundColor: alpha(C.accent, 0.18),
+            fill: 'start',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.2,
+          },
+          {
+            type: 'scatter' as const,
+            label: 'Passages',
+            data: e.course.waypoints.map((w) => ({ x: w.km, y: eleAt(w.km), name: w.name })),
+            backgroundColor: C.s1,
+            borderColor: C.surface,
+            borderWidth: 2,
+            pointRadius: 5,
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        interaction: { mode: 'nearest', intersect: false },
+        scales: {
+          x: { type: 'linear', min: 0, max: e.goal.distanceKm, ticks: { callback: (v) => `${v} km`, maxTicksLimit: 9 }, grid: { display: false } },
+          y: { ticks: { callback: (v) => `${v} m`, maxTicksLimit: 4 } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: () => '',
+              label: (c) => {
+                const raw = c.raw as { x: number; y: number; name?: string };
+                return ` ${raw.name ? raw.name + ' · ' : ''}km ${num(raw.x, 1)} · ${Math.round(raw.y)} m`;
+              },
+            },
+          },
+        },
+      },
+    };
+  }
 
   /** Densité log-normale du temps final, zone sous l'objectif colorée, modèles en points */
   private buildChart(e: GoalEvaluation): ChartConfiguration {

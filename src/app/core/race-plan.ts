@@ -6,8 +6,9 @@
  * sur la distance, prévision météo. Nutrition : recommandations ACSM / Burke (glucides 30-60 g/h jusqu'à 2 h 30,
  * 60-90 g/h au-delà ; recharge 7-12 g/kg selon la durée). Chaleur : règle de Hadley.
  */
-import type { RaceReference } from './goals';
+import type { CourseModel, RaceReference } from './goals';
 import { Activity, Athlete, Goal } from './models';
+import { Timeline, elevationBetween, fitTimeline, timeAt } from './course';
 import { heatPenalty, kmEffort, wallAnalysis } from './science';
 import { clock, pace } from './format';
 import { addDays, parseDay } from './stats';
@@ -21,6 +22,8 @@ export interface PlanInput {
   raceRefs: RaceReference[];
   athlete: Athlete;
   acts: Activity[];
+  /** Parcours (profil, coût des pentes, usure, nuit) : temps de passage tronçon par tronçon */
+  course?: CourseModel;
 }
 
 export interface PaceSegment {
@@ -30,11 +33,19 @@ export interface PaceSegment {
   /** Allure (s/km) pour le chrono visé, et pour le chrono le plus probable */
   target: number | null;
   realistic: number;
+  /** Durée du tronçon (s) : trail */
+  targetSec?: number | null;
+  realisticSec?: number;
+  /** Dénivelé du tronçon (m) */
+  gain?: number;
+  loss?: number;
   tip: string;
 }
 
 export interface Checkpoint {
   km: number;
+  /** Point de passage du GPX (ravitaillement, sommet) */
+  name?: string | null;
   target: number | null;
   realistic: number;
 }
@@ -51,6 +62,10 @@ export interface RacePlan {
   /** Allure à lire sur la montre : la distance GPS dépasse la distance officielle (mesuré sur tes courses) */
   watch: { drift: number; from: string; /** Allure réelle de croisière (objectif, sinon probable) */ actual: number; /** Allure affichée par la montre */ shown: number } | null;
   blocks: PlanBlock[];
+  /** Heure de départ (minutes) pour afficher l'heure de passage ; null sans heure ou sur route */
+  startMin: number | null;
+  /** Temps de passage calés sur le profil du tracé GPX */
+  fromGpx: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +161,45 @@ const hourLabel = (min: number) => {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
 };
 
+/** Conseil d'un tronçon de trail selon sa place dans la course et son profil */
+function trailTip(from: number, to: number, D: number, gain: number, loss: number): string {
+  const parts = pacingProfile(D, 'trail');
+  const mid = (from + to) / 2;
+  const tips = [parts.find((p) => mid < p.to)?.tip ?? parts.at(-1)!.tip];
+  const len = Math.max(0.1, to - from);
+  if (gain / len >= 40) tips.push(`Ça grimpe (+${frNum(Math.round(gain / 10) * 10)} m) : marche active dès que la pente durcit, bâtons si autorisés.`);
+  if (loss / len >= 40) tips.push(`Grosse descente (−${frNum(Math.round(loss / 10) * 10)} m) : petits pas, garde des quadriceps pour la fin.`);
+  return tips.join(' ');
+}
+
+/**
+ * Plan sur le profil : chaque tronçon au coût de sa pente (ta courbe), avec l'usure et la nuit en trail, le plan
+ * d'allure (départ prudent, final) sur route ; durée totale calée sur `total`.
+ */
+function courseTimeline(c: CourseModel, total: number, goal: Goal): Timeline {
+  const D = goal.distanceKm;
+  const stops = c.stopShare > 0
+    ? (c.waypoints.length ? c.waypoints : Array.from({ length: Math.floor(D / 10) }, (_, i) => ({ km: (i + 1) * 10 })))
+      .filter((w) => w.km < D - 0.5)
+    : [];
+  const stopSec = stops.length ? (c.stopShare * total) / stops.length : 0;
+  let phase: ((km: number) => number) | undefined;
+  if (goal.kind === 'road') {
+    const parts = pacingProfile(D, 'road');
+    const base = total / D;
+    phase = (km) => 1 + (parts.find((p) => km < p.to)?.shift ?? 0) / base;
+  }
+  return fitTimeline(c.segments, total, {
+    cost: c.cost,
+    fadePerHour: c.fadePerHour,
+    fadeFromH: c.fadeFromH,
+    startMin: goal.kind === 'trail' ? c.startMin : null,
+    night: goal.kind === 'trail' ? c.night : null,
+    phase,
+    stops: stops.map((w) => ({ km: w.km, sec: stopSec })),
+  });
+}
+
 export function racePlan(p: PlanInput): RacePlan {
   const { goal, athlete } = p;
   const D = goal.distanceKm;
@@ -158,24 +212,63 @@ export function racePlan(p: PlanInput): RacePlan {
   const roadRefs = trail ? [] : p.raceRefs;
   const ref = roadRefs[0] ?? null;
 
-  // Allure par tronçon et temps de passage
+  // Allure par tronçon et temps de passage : sur le profil (GPX, ou trail au dénivelé réparti), sinon plan d'allure route
   const parts = pacingProfile(D, goal.kind);
-  const real = segmentPaces(p.predicted, D, goal.kind);
-  const tgt = goal.targetSec ? segmentPaces(goal.targetSec, D, goal.kind) : null;
-  const segments: PaceSegment[] = parts.map((s, i) => ({
-    label: s.label, from: s.from, to: s.to, target: tgt?.[i] ?? null, realistic: real[i], tip: s.tip,
-  }));
-  const checkpoints = checkpointsKm(D, goal.kind).map((km) => ({
-    km,
-    target: tgt ? passage(km, parts, tgt) : null,
-    realistic: passage(km, parts, real),
-  }));
+  let segments: PaceSegment[];
+  let checkpoints: Checkpoint[];
+  const c = p.course;
+  if (c && (trail || c.gpx)) {
+    const real = courseTimeline(c, p.predicted, goal);
+    const tgt = goal.targetSec ? courseTimeline(c, goal.targetSec, goal) : null;
+    const span = (tl: Timeline, a: number, b: number) => timeAt(tl, b) - timeAt(tl, a);
+    const marks = trail && c.waypoints.length
+      ? [...c.waypoints.filter((w) => w.km < D - 0.3).map((w) => ({ km: w.km, name: w.name as string | null })), { km: D, name: null }]
+      : checkpointsKm(D, goal.kind).map((km) => ({ km, name: null }));
+    if (trail) {
+      const bounds = c.waypoints.length
+        ? [{ km: 0, name: 'Départ' }, ...marks.map((m) => ({ km: m.km, name: m.name ?? 'Arrivée' }))]
+        : [0, 0.25, 0.5, 0.75, 1].map((f, i) => ({ km: f * D, name: i ? parts[i - 1].label : 'Départ' }));
+      segments = bounds.slice(1).map((b, i) => {
+        const a = bounds[i];
+        const { gain, loss } = elevationBetween(c.segments, a.km, b.km);
+        const len = Math.max(0.01, b.km - a.km);
+        const r = span(real, a.km, b.km), t = tgt ? span(tgt, a.km, b.km) : null;
+        return {
+          label: c.waypoints.length ? `${a.name} → ${b.name}` : b.name,
+          from: a.km, to: b.km,
+          target: t !== null ? t / len : null, realistic: r / len,
+          targetSec: t, realisticSec: r,
+          gain: Math.round(gain), loss: Math.round(loss),
+          tip: trailTip(a.km, b.km, D, gain, loss),
+        };
+      });
+    } else {
+      segments = parts.map((s) => ({
+        label: s.label, from: s.from, to: s.to,
+        target: tgt ? span(tgt, s.from, s.to) / (s.to - s.from) : null,
+        realistic: span(real, s.from, s.to) / (s.to - s.from),
+        tip: s.tip,
+      }));
+    }
+    checkpoints = marks.map((m) => ({ km: m.km, name: m.name, target: tgt ? timeAt(tgt, m.km) : null, realistic: timeAt(real, m.km) }));
+  } else {
+    const real = segmentPaces(p.predicted, D, goal.kind);
+    const tgt = goal.targetSec ? segmentPaces(goal.targetSec, D, goal.kind) : null;
+    segments = parts.map((s, i) => ({
+      label: s.label, from: s.from, to: s.to, target: tgt?.[i] ?? null, realistic: real[i], tip: s.tip,
+    }));
+    checkpoints = checkpointsKm(D, goal.kind).map((km) => ({
+      km,
+      target: tgt ? passage(km, parts, tgt) : null,
+      realistic: passage(km, parts, real),
+    }));
+  }
 
   // Écart GPS mesuré sur les courses de référence (la montre « mesure » plus long que le tracé officiel)
   const drifts = roadRefs.filter((r) => r.gpsDrift > 0 && r.gpsDrift < 0.04);
   const drift = drifts.length ? drifts.reduce((s, r) => s + r.gpsDrift, 0) / drifts.length : 0;
   const cruise = parts.findIndex((s) => s.shift === 0);
-  const actual = cruise >= 0 ? (tgt ?? real)[cruise] : 0;
+  const actual = cruise >= 0 && !trail ? (segments[cruise].target ?? segments[cruise].realistic) : 0;
   const watch = drift > 0.002 && cruise >= 0
     ? { drift, from: drifts.map((r) => r.activity.name).join(', '), actual, shown: actual / (1 + drift) }
     : null;
@@ -214,7 +307,13 @@ export function racePlan(p: PlanInput): RacePlan {
   } else if (hours < 2.5) {
     const gels = hours < 1.75 ? [0.45] : [0.35, 0.7];
     food.push(`≈ ${hm(p.predicted)} de course : 30 à 60 g de glucides par heure, soit ${gels.length + 1} gels au total.`);
-    food.push(`Un gel 10 à 15 min avant le départ, puis ${gels.map((f) => `au km ${Math.round(f * D)} (≈ ${Math.round(passage(f * D, parts, real) / 60)}e minute)`).join(' et ')}, avec de l'eau.`);
+    const minuteAt = (km: number) => {
+      const cp = [{ km: 0, realistic: 0 }, ...checkpoints];
+      const i = Math.max(1, cp.findIndex((x) => x.km >= km));
+      const a = cp[i - 1], b = cp[Math.min(i, cp.length - 1)];
+      return Math.round((a.realistic + (b.km > a.km ? ((b.realistic - a.realistic) * (km - a.km)) / (b.km - a.km) : 0)) / 60);
+    };
+    food.push(`Un gel 10 à 15 min avant le départ, puis ${gels.map((f) => `au km ${Math.round(f * D)} (≈ ${minuteAt(f * D)}e minute)`).join(' et ')}, avec de l'eau.`);
     food.push(`Quelques gorgées à chaque ravitaillement (${water} par heure selon la chaleur) ; prends ton gel juste avant un ravito.`);
   } else {
     food.push(`≈ ${hm(p.predicted)} d'effort : 60 à 90 g de glucides par heure, soit ${frNum(60 * hours)} à ${frNum(90 * hours)} g (≈ ${Math.round((60 * hours) / 25)} à ${Math.round((90 * hours) / 25)} gels ou équivalent).`);
@@ -307,7 +406,8 @@ export function racePlan(p: PlanInput): RacePlan {
   for (const r of p.raceRefs.slice(0, 3)) {
     const a = r.activity;
     if (trail) {
-      lessons.push(`${a.name} : ${frNum(a.distanceKm, 1)} km, ${frNum(a.elevGain ?? 0)} m D+ en ${hm(a.durationSec)}, soit ${pace(r.pace)} par km-effort ; l'objectif fait ${frNum(p.ke / kmEffort(a), 1)} fois plus.`);
+      const ratio = r.effortKm && p.course ? p.course.effortKm / r.effortKm : p.ke / kmEffort(a);
+      lessons.push(`${a.name} : ${frNum(a.distanceKm, 1)} km, ${frNum(a.elevGain ?? 0)} m D+ en ${hm(a.durationSec)}, soit ${pace(r.pace)} par km ${r.effortKm ? 'équivalent plat' : 'effort'} ; l'objectif fait ${frNum(ratio, 1)} fois plus.`);
       continue;
     }
     if (r.splitDiff !== null) {
@@ -334,5 +434,5 @@ export function racePlan(p: PlanInput): RacePlan {
   }
   if (lessons.length) blocks.unshift({ icon: '📜', title: 'Leçons de tes courses', items: lessons });
 
-  return { segments, checkpoints, watch, blocks };
+  return { segments, checkpoints, watch, blocks, startMin: trail && goal.startTime ? startMin : null, fromGpx: !!c?.gpx };
 }

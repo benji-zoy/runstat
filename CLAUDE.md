@@ -356,15 +356,34 @@ utile pour l'historique et le score de préparation. Affiché dans Comprendre �
 ## Objectifs (onglet Courses, `src/app/core/goals.ts`)
 
 Saisis dans Courses (bouton « Objectif », « Modifier l'objectif ») ou dans `data-raw/goals.json` (non versionné) : `[{ "id", "name", "date": "AAAA-MM-JJ", "startTime": "HH:MM", "distanceKm",
-"elevGain"?, "elevLoss"? (D−, absent = D+), "targetSec"? (absent = objectif « finir »), "stretchSec"? (bas d'une fourchette, ex. 10 h 30 pour « 10 h 30 / 11 h »), "kind": "road" | "trail", "lat"?, "lon"? }]`.
+"elevGain"?, "elevLoss"? (D−, absent = D+), "targetSec"? (absent = objectif « finir »), "stretchSec"? (bas d'une fourchette, ex. 10 h 30 pour « 10 h 30 / 11 h »), "kind": "road" | "trail", "lat"?, "lon"?,
+"course"? }]`. `course` = profil d'un GPX importé dans le formulaire (`core/course.ts`, lu sur l'appareil) : `{ stepKm, ele: [m…] (≤ 1 000 points,
+≈ 4 Ko pour 80 km : la saisie est limitée à 64 Ko), waypoints?: [{ name, km }] (les `<wpt>` à moins de 250 m du tracé), file? }`, jamais les
+coordonnées (seul le départ, arrondi, remplit lat/lon). À l'évaluation, le profil est recalé sur la distance, le D+ et le D− saisis ; sans GPX,
+profil synthétique (D+ et D− répartis par km, montées à la pente typique : 27 m/km → 9 %).
 `npm run weather` télécharge la prévision des objectifs à moins de 15 jours (lieu indiqué, sinon lieu de sortie habituel)
 dans `data-raw/weather/forecast-<id>.json`, puis `npm run data`.
-Chrono : consensus géométrique des modèles (Coros, course de référence = dernière course sur la même distance à poids 1,5,
-projetée à aujourd'hui par `progressionSince` : volume Tanda × moyenne(allure d'entraînement, ½ gain d'EF), 8 sem. avant / 8 dernières,
-VDOT, Riegel pondéré, VDOT actualisé par l'EF, vitesse critique à poids 0,5) × ajustements (fraîcheur projetée, VFC/FC repos, Hadley, nuit, préparation) ; incertitude log-normale →
-probabilité. Finir : indice de préparation pondéré ; chrono trail extrapolé au km-effort (Riegel k = 1,10) ; ultra (≥ 60 km-effort) : modèle « allure à FC d'ultra » (`ultraModel` : allure ajustée à la FC LT1 sur les sorties longues, perte de durabilité par heure, 5 % d'arrêts).
+Une méthode par catégorie (`raceCategory` : ultra dès 60 km-effort ou 45 km, sinon `kind`) :
+- Route : consensus géométrique (Coros, course de référence = dernière course sur la même distance à poids 1,5, projetée à aujourd'hui par
+  `progressionSince` : volume Tanda × moyenne(allure d'entraînement, ½ gain d'EF), 8 sem. avant / 8 dernières, VDOT, Riegel pondéré,
+  VDOT actualisé par l'EF, vitesse critique à poids 0,5, Tanda et Vickers au marathon), ajustement « Profil du parcours » (GPX ou D+).
+- Trail : distance **équivalent plat** avec ta courbe vitesse / pente (`core/terrain.ts` : base Minetti en montée, GAP révisé de Strava en
+  descente, corrigée par tranche de pente de `fit.terrain` sur 12 mois, vitesse ramenée à la FC du plat, rapprochée de la base sous 30 min
+  de données ; remplace le km-effort, qui surestime les parcours roulants). Modèles : chaque trail récent extrapolé (Riegel k = 1,10, ½ gain
+  d'EF depuis, poids = fraîcheur × proximité × ressemblance du dénivelé par km × course), et « Niveau route × coefficient trail » (VDOT
+  actuel sur le plat × rapport mesuré sur ces trails).
+- Ultra : les mêmes, plus `ultraModel` = simulation tronçon par tronçon (`simulate`) à la vitesse sur le plat tenue à la FC LT1 (tours plats des
+  sorties longues, ralentie de l'écart route / trail à FC égale au prorata du dénivelé), usure par heure (`fadeEstimate`), 5 % d'arrêts,
+  recalée (±10 %) sur tes trails de plus de 2 h.
+Ajustements : fraîcheur projetée, VFC/FC repos, Hadley, nuit **simulée sur le profil** (crépuscule civil `nightWindow`, `nightCost` : +3 % roulant,
++8 % descente raide, +2 % de 2 h à 6 h), préparation. Incertitude log-normale : dispersion des modèles ⊕ jour de course (`daySd` : 2 % sur 5 km
+→ 4 % au marathon, 6 % trail, 8 % ultra) ⊕ extrapolation en ultra (4 % × ln(durée / plus longue sortie de l'année)) → probabilité.
+Libellés (`chanceVerdict`) : ≥ 75 % Très probable, ≥ 50 % Probable, ≥ 25 % Jouable, ≥ 10 % Ambitieux, sinon Hors de portée (aussi pour le
+chrono ambitieux d'une fourchette). Finir : indice de préparation pondéré.
 Stratégie de course (`src/app/core/race-plan.ts`) : allures par tronçon et temps de passage, allure montre corrigée de
-l'écart GPS mesuré sur les courses de référence, cardio, ravitaillement, derniers jours, échauffement, tenue, leçons.
+l'écart GPS mesuré sur les courses de référence, cardio, ravitaillement, derniers jours, échauffement, tenue, leçons. En trail (et sur route
+avec un GPX), temps de passage par `fitTimeline` : la simulation (pente, usure, nuit, arrêts aux points de passage, plan d'allure sur route)
+recalée sur le chrono visé et sur le probable ; tronçons entre les points de passage du GPX (sinon quarts), heure de passage en trail.
 Une course n'est « référence » que si elle est classée `race` (`RACE_NAME` dans `science.ts` : nom d'épreuve ou millésime ;
 la sortie d'un objectif passé l'est toujours, quel que soit son nom).
 
