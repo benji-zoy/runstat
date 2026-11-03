@@ -46,6 +46,7 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
 `{ "activities": "coros" | "strava" | "garmin", "health": "google" | "coros" | "garmin" | "none" }`, absent = COROS + Google Health ; modifiable dans
 Réglages (`GET|PUT /api/sources`, reconstruction complète). Une seule source d'activités par instance, sans dédoublonnage.
 `run.mjs` ne synchronise que les sources choisies ; `build-data` les recopie dans `sources` et chaque sortie porte `source`.
+Assistant « Que choisir ? » dans Réglages › Sources (`ui/forms/source-guide.ts`, logique pure `core/sources-advice.ts` : montre × abonnement Strava × Google Health → source, marche à suivre, limites ; « Appliquer » ne remplit que les sélecteurs) : à tenir à jour si une source change.
 L'interface lit `ScienceService.caps()` (`CAPABILITIES`) pour masquer ce que la source ne fournit pas (charge, TE et focus,
 VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé, la carte Récupération de Comprendre disparaît.
 - **Strava** : identifiants `strava:<id>`, fichiers `strava-<id>` (`fileKey`, pas de « : » sur le partage SMB), `sportType` au code
