@@ -6,12 +6,14 @@ import { parseDay } from '../core/stats';
 import { ChartComponent } from '../ui/chart';
 import { C, alpha } from '../ui/palette';
 
-const dateFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--series-1)', warning: 'var(--warning)', serious: 'var(--serious)' };
 
+/** Partie de la fiche d'un objectif (Courses › objectif) */
+export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajustements' | 'preparation' | 'conseils';
+
 /**
- * Carte d'un objectif : indice de confiance, chrono probable, stratégie, préparation et conseils.
- * `archived` : objectif terminé (Objectifs › Archives) — l'indice est celui de la veille, sans en-tête ni conseils.
+ * Une partie de la fiche d'un objectif : indice et chrono probable, courses de référence, stratégie, modèles,
+ * ajustements, préparation ou conseils. `archived` : objectif terminé, l'indice est celui de la veille.
  */
 @Component({
   selector: 'app-goal-card',
@@ -19,23 +21,8 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
   template: `
     @let e = ev();
     @let g = e.goal;
-    <section class="card goal">
-      @if (!archived()) {
-        <header>
-          <div>
-            <h3>{{ g.name }}</h3>
-            <p class="muted">
-              {{ longDate(g.date) }}{{ g.startTime ? ' · départ ' + startLabel(g.startTime) : '' }} ·
-              {{ num(g.distanceKm, 1) }} km{{ g.elevGain ? ' · ' + num(g.elevGain) + ' m D+' + (g.elevLoss ? ' / ' + num(g.elevLoss) + ' m D−' : '') : '' }}
-              @if (g.kind === 'trail') {
-                · {{ num(e.ke) }} km-effort
-              }
-            </p>
-          </div>
-          <span class="countdown display">{{ e.daysLeft > 0 ? 'J-' + e.daysLeft : e.daysLeft === 0 ? 'Jour J' : 'Terminé' }}</span>
-        </header>
-      }
-
+    <section class="goal" [class.card]="framed()">
+      @if (part() === 'chrono') {
       <div class="top">
         <div class="gauge" [style.--tone]="tone(e)">
           <svg viewBox="0 0 120 120" aria-hidden="true">
@@ -74,7 +61,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
           <app-chart [config]="chart()" style="--chart-h: 170px" />
         </div>
       </div>
+      }
 
+      @if (part() === 'references') {
       @if (e.raceRefs.length) {
         <h4>{{ g.kind === 'trail' ? 'Tes trails les plus proches' : 'Tes courses sur la distance' }} <small class="muted">· prises en compte dans l'indice</small></h4>
         <div class="table-wrap">
@@ -159,7 +148,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
         </div>
       }
 
-      <h4>Stratégie de course</h4>
+      }
+
+      @if (part() === 'strategie') {
       <div class="pacing">
         <div class="table-wrap">
           <table>
@@ -236,9 +227,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
         }
       </div>
 
-      <div class="cols">
-        <div>
-          <h4>Modèles</h4>
+      }
+
+      @if (part() === 'modeles') {
           <div class="table-wrap">
             <table>
               <tbody>
@@ -257,10 +248,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
               </tbody>
             </table>
           </div>
-        </div>
+      }
 
-        <div>
-          <h4>Ajustements du jour J</h4>
+      @if (part() === 'ajustements') {
           @for (a of e.adjustments; track a.label) {
             <div class="adj">
               <span>{{ a.label }}</span>
@@ -273,10 +263,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
           } @empty {
             <p class="muted">Aucun : la fraîcheur, la récupération et la météo sont prises en compte dans les 3 semaines précédant la course (météo : 15 jours avant).</p>
           }
-        </div>
-      </div>
+      }
 
-      <h4>Préparation <small class="muted">{{ round(e.readinessScore * 100) }}/100</small></h4>
+      @if (part() === 'preparation') {
       <div class="ready">
         @for (r of e.readiness; track r.label) {
           <div class="ready-row">
@@ -293,8 +282,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
         }
       </div>
 
-      @if (e.advice.length && !archived()) {
-        <h4>Conseils</h4>
+      }
+
+      @if (part() === 'conseils') {
         <ul class="advice">
           @for (a of e.advice; track a) {
             <li>{{ a }}</li>
@@ -306,10 +296,6 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
   styles: `
     :host { display: block; }
     .goal { display: grid; gap: 1.1rem; }
-    header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
-    header h3 { color: var(--text-primary); font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
-    header p { margin: 0.2rem 0 0; }
-    .countdown { font-size: 2.2rem; color: var(--accent); white-space: nowrap; }
     h4 { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
     .top { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.5rem; align-items: center; }
     @media (max-width: 700px) { .top { grid-template-columns: minmax(0, 1fr); } }
@@ -326,9 +312,6 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
     .prediction { display: grid; gap: 0.25rem; min-width: 0; }
     .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
     .pred { font-size: 2.6rem; }
-    .cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.5rem; }
-    @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
-    .cols > div { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
     td { padding: 0.4rem 0.5rem; }
     tr.total td { font-weight: 700; border-bottom: none; }
     .note-inline { display: none; }
@@ -378,7 +361,9 @@ const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--seri
 })
 export class GoalCardComponent {
   readonly ev = input.required<GoalEvaluation>();
-  readonly archived = input(false);
+  readonly part = input.required<GoalPart>();
+  /** Dans une carte à part (sinon : à l'intérieur d'une carte de la page) */
+  readonly framed = input(false);
 
   protected readonly clock = clock;
   protected readonly pace = pace;
@@ -388,8 +373,6 @@ export class GoalCardComponent {
   protected readonly Math = Math;
   protected signedPct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x * 100), 1)} %`;
   protected shortDate = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-  protected longDate = (iso: string) => dateFmt.format(parseDay(iso));
-  protected startLabel = (t: string) => (t === '00:00' ? 'à minuit' : `${Number(t.slice(0, 2))} h ${t.slice(3)}`);
   protected tone = (e: GoalEvaluation) => TONE[e.verdict.tone];
   /** Arc de la jauge : circonférence 2π·52 ≈ 326,7 */
   protected dash = (pct: number) => `${(Math.max(0, Math.min(100, pct)) / 100) * 326.7} 326.7`;

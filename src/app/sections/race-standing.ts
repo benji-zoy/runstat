@@ -121,8 +121,12 @@ export function topPct(rank: number | null, count: number | null): number | null
                   <td>
                     @if (r.result; as res) {
                       @if (res.pending) {
-                        <a [href]="res.source" target="_blank" rel="noopener" class="small pending" [attr.title]="res.note ?? ''">à recopier ↗</a>
-                      } @else {
+                        @if (res.source) {
+                          <a [href]="res.source" target="_blank" rel="noopener" class="small pending" [attr.title]="res.note ?? ''">à recopier ↗</a>
+                        } @else {
+                          <span class="small pending" [attr.title]="res.note ?? ''">à recopier</span>
+                        }
+                      } @else if (res.source) {
                         <a [href]="res.source" target="_blank" rel="noopener" class="small" [attr.title]="res.note ?? res.timing ?? ''">résultats ↗</a>
                       }
                     } @else if (!entries.available()) {
@@ -176,7 +180,7 @@ export function topPct(rank: number | null, count: number | null): number | null
     .txt { color: var(--text-primary); }
     .intro { max-width: 75ch; }
     .intro a, td a { color: var(--accent); }
-    td a.pending { color: var(--warning); }
+    td .pending { color: var(--warning); }
     td .edit { margin-left: 0.5rem; vertical-align: middle; }
     .cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
     .stat { display: grid; gap: 0.35rem; align-content: start; }

@@ -30,8 +30,8 @@ export class ScienceService {
       const r = goalResult(g, acts);
       if (r) types.set(r.id, 'race');
     }
-    // Une sortie retrouvée dans des résultats officiels, ou marquée « course » dans Strava, est une course
-    for (const a of acts) if ((a.result && !a.result.pending) || a.race) types.set(a.id, 'race');
+    // Une sortie déclarée course officielle (classement saisi, même à compléter), ou marquée « course » dans Strava, est une course
+    for (const a of acts) if (a.result || a.race) types.set(a.id, 'race');
     return types;
   });
   readonly references = computed(() => references(this.store.activities(), this.types(), this.today));
