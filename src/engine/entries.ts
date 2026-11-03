@@ -238,7 +238,8 @@ export function validateResult(activityId: string, obj: unknown, today = new Dat
     catRank: count('catRank'),
     catCount: count('catCount'),
     label: r.str('label', { max: 60 }) ?? null,
-    source: r.str('source', { required: true, max: 500, pattern: /^https?:\/\/\S+$/, msg: 'adresse http(s) attendue' }),
+    // Facultative : une course déclarée sans page de résultats en ligne
+    source: r.str('source', { max: 500, pattern: /^https?:\/\/\S+$/, msg: 'adresse http(s) attendue' }) ?? null,
     timing: r.str('timing', { max: 120 }) ?? null,
     fetchedAt: r.str('fetchedAt', { pattern: DATE, msg: 'date AAAA-MM-JJ attendue' }) ?? today,
     note: r.str('note', { max: 1000 }) ?? null,

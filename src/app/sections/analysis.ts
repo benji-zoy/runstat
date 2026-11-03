@@ -6,7 +6,7 @@ import { PeriodService } from '../core/period.service';
 import { ScienceService } from '../core/science.service';
 import {
   SESSION_TYPES, SessionType, acwr, bestEfforts, dailyLoads, efSeries, foster, heatAdjustedPace, heatPenalty, marathonShape,
-  officialDistance, polarizationIndex, riegel, tanda, wallAnalysis, theilSen, timeForVdot, trimp, vdot, vickers, vo2maxCurve,
+  raceDistance, polarizationIndex, riegel, tanda, wallAnalysis, theilSen, timeForVdot, trimp, vdot, vickers, vo2maxCurve,
 } from '../core/science';
 import { addDays, isoDay, monthly, parseDay, startOfWeek, weekly } from '../core/stats';
 import { freshnessState, pmc } from '../core/insights';
@@ -258,7 +258,7 @@ export class AnalysisSection {
               const time = w?.wall && w.potential ? w.potential : a.durationSec;
               return {
                 x: parseDay(a.date).getTime(),
-                y: Math.round(vdot(officialDistance(a.distanceKm), time) * 10) / 10,
+                y: Math.round(vdot(raceDistance(a), time) * 10) / 10,
                 name: w?.wall ? `${a.name} (temps potentiel sans le mur)` : a.name,
               };
             }),

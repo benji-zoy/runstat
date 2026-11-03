@@ -17,7 +17,7 @@
 import { Activity, Athlete, Goal, Health } from './models';
 import {
   CriticalSpeed, ExponentEstimate, Reference, SessionType, bestEfforts, criticalSpeed, heatPenalty, kmEffort, goalKmEffort,
-  officialDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
+  officialDistance, raceDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
   wallAnalysis,
 } from './science';
 import { clock } from './format';
@@ -184,9 +184,9 @@ export function raceReferences(goal: Goal, ctx: GoalContext): RaceReference[] {
   const closeness = (a: Activity) => Math.abs(Math.log(eqGoal / eq(a))) - Math.log(terrainSimilarity(a, goal));
   const picked = trail
     ? races.sort((a, b) => closeness(a) - closeness(b)).slice(0, 3)
-    : races.filter((a) => officialDistance(a.distanceKm) === d).sort((a, b) => b.date.localeCompare(a.date));
+    : races.filter((a) => raceDistance(a) === d).sort((a, b) => b.date.localeCompare(a.date));
   return picked.map((a) => {
-    const dist = trail ? a.distanceKm * 1000 : officialDistance(a.distanceKm);
+    const dist = trail ? a.distanceKm * 1000 : raceDistance(a);
     const effortKm = trail ? eq(a) : null;
     const s = a.splits ?? [];
     const half = s.length >> 1;

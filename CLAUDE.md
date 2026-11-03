@@ -204,7 +204,12 @@ identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appa
 dans `data-raw/`, puis `run.mjs --rebuild` (reconstruction sans les sources ; une saisie pendant un run en relance une à la fin).
 Le site applique le changement tout de suite (objectifs et bilans sont évalués côté client) puis recharge après la reconstruction.
 Formulaires dans un `<dialog>` commun (`ui/forms/form-dialog.ts`, Reactive Forms, styles `.fields`, `.field`, `.btn` de `styles.scss`) :
-objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (Archives), classement + poids de la course (Comprendre › classements : « Saisir »),
+objectif (Courses : « Objectif », « Modifier l'objectif »), bilan (fiche d'une course passée), course officielle + classement + poids
+(`ui/forms/result-form.ts` : « Déclarer la course » / « Saisir le résultat » sur la fiche d'une sortie, « Course passée » dans Courses avec choix
+de la sortie, « Saisir » dans Comprendre › classements ; distance officielle dans une liste 5 km → marathon ou « Autre », pré-choisie à ± 4 %
+de la montre, et temps officiel à côté des valeurs de la montre ; tout facultatif sauf l'épreuve, `source` comprise ; une sortie qui a un
+classement, même `pending`, est une course pour `ScienceService.types` ; la distance saisie prime partout sur la montre : `raceDistance`
+de `science.ts` (références, exposant, VDOT) et barème FFA),
 réglages et sources (Moi). Masqués sans service de synchro (`ng serve` ; avec le service local
 `node scripts/sync/server.mjs --no-schedule`, config `runstat-sync`, la config `runstat-api` de `.claude/launch.json` relaie `/api` par `proxy.conf.json`). Durées lues par `parseDuration` (`core/format.ts`).
 Chaque saisie ne touche que le compte de la requête (voir Comptes). Sans `users.json` (mono-utilisateur, `ng serve`, poste),
@@ -398,13 +403,14 @@ Vent : traînée de Pugh par secteur de cap (`fit.headings`, 16 × [s, m]) avec 
 Sortie sans FIT : bouton « Affiner avec le tracé » (`SyncService.refineFit`, quota de 50 FIT/jour). « Copier le rapport » : texte
 à coller dans Strava / COROS (aucune écriture externe).
 
-## Archives (Courses › Archives, `src/app/core/debrief.ts`)
+## Courses passées (`src/app/core/debrief.ts`)
 
-Un objectif passe dans Courses › Archives (`sections/goal-archive.ts`, une course par sous-onglet `?course=`) dès que sa sortie est synchronisée (même jour ou lendemain, distance à ±15 %).
+Un objectif passe dans Courses › Passées dès que sa sortie est synchronisée (même jour ou lendemain, distance à ±15 %) ; sa fiche
+(`/courses/:id`) s'ouvre alors sur la partie Bilan.
 Bilan : temps officiel vs objectif et prédiction de la veille, km par km ramenés à la distance officielle face au plan,
 allure, cardio (décrochages du capteur exclus), foulée, gels, conditions, modèles, leçons ; puis l'indice de la veille
 (`sections/goal-card.ts`, partagé avec les objectifs à venir). Après la course, l'utilisateur saisit temps puce, gels, ressenti
-dans Archives (« Temps puce, gels, ressenti ») ; à la main : `"debrief": { "chipSec": 5816, "gelsKm": [7, 14], "notes": ["…"] }` dans l'objectif.
+sur la fiche de la course (« Temps puce, gels, ressenti ») ; à la main : `"debrief": { "chipSec": 5816, "gelsKm": [7, 14], "notes": ["…"] }` dans l'objectif.
 
 ## Algorithmes
 
@@ -439,7 +445,7 @@ sur 12 mois. Classements : `data-raw/results/<activityId>.json` (ou `date-AAAA-M
 distance), relevés sur la page de résultats officielle de l'organisateur / du chronométreur, **jamais bases.athle.fr**
 (`robots.txt` : `Disallow: /`) ni MyDataRun (compte) ; vérifier le `robots.txt` du site, ne garder que les effectifs
 (aucun nom d'autre coureur) : `{ event, course, distanceKm, elevGain?, officialSec, gunSec?, rank, finishers, sex, sexRank,
-sexCount, category, catRank, catCount, label?, source, timing?, fetchedAt, note? }`. Saisie par « Saisir » sur la course
+sexCount, category, catRank, catCount, label?, source?, timing?, fetchedAt, note? }`. Saisie par « Saisir » sur la course
 (remplace un éventuel `date-….json`, signalé par `result.file`). Après une nouvelle course, à la demande : retrouver la ligne
 de l'athlète (son nom, jamais écrit dans le dépôt), écrire le fichier, puis `npm run data`.
 
@@ -450,7 +456,13 @@ barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `
 - **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (santé + fraîcheur), année en cours, dernières sorties, 3 moments forts.
 - **Journal** (`pages/journal.ts`) : Sorties (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo,
   calendrier, régularité). Fiche d'une sortie à sa propre adresse : `/sortie/:id` (`pages/run.ts`).
-- **Courses** (`pages/goals.ts`) : un sous-onglet par objectif, Archives (`?section=classements` → Comprendre).
+- **Courses** (`pages/goals.ts`) : petites cartes À venir et Passées, courbe des chronos estimés (`sections/prediction-history.ts` : 5 km →
+  marathon, période 3 mois → tout) ; anciennes adresses `?section=<objectif>` → `/courses/<id>`, `?section=classements` → Comprendre.
+  Fiche d'un objectif `/courses/:id` (`pages/goal.ts`) : l'essentiel en tête (indice et chrono probable), puis une petite carte par partie
+  (évolution de l'indice `sections/confidence-history.ts`, stratégie, préparation, références, modèles, ajustements, conseils ; bilan pour une
+  course passée), la partie ouverte en dessous (`?partie=`, rendue par `sections/goal-card.ts` `[part]`).
+  Historiques (`core/history.ts`, `core/history.service.ts`) : chaque point rejoue `roadModels` / `evaluateGoal` avec les sorties connues ce
+  jour-là, sans la prédiction Coros (instantané du jour) ; calculés par tranches de 25 ms et gardés en cache tant que les données ne changent pas.
 - **Comprendre** (`pages/understand.ts`) : une carte par question du coureur (`core/topics.ts`, trois thèmes : Courses et chronos, Forme,
   Entraînement), avec le constat en une phrase et une vignette ; la carte ouvre `/comprendre/<id>` (`pages/topic.ts`) avec le détail.
   Chaque section a un mode carte (`[compact]="true"` : `analysis`, `recovery`, `race-standing`, `places`, `habits`, `records`).

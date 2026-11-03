@@ -30,7 +30,7 @@ const DAY_MS = 86_400_000;
 
     <div class="row">
       @if (nextGoal(); as e) {
-        <a class="card race" routerLink="/courses">
+        <a class="card race" [routerLink]="['/courses', e.goal.id]">
           <span class="label head">Prochaine course <span class="go">Plan de course <app-icon name="arrow" /></span></span>
           <div class="race-id">
             <span class="display days">{{ e.daysLeft ? 'J-' + e.daysLeft : 'Jour J' }}</span>

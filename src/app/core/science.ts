@@ -146,7 +146,7 @@ export function references(acts: Activity[], types: Map<string, SessionType>, re
   const out: Reference[] = [];
   for (const a of acts) {
     if (types.get(a.id) !== 'race' || a.kind !== 'road' || daysBetween(parseDay(a.date), ref) > 540) continue;
-    const dist = a.distanceKm * 1000;
+    const dist = raceDistance(a);
     out.push({ dist, time: a.durationSec, date: a.date, label: a.name, vdot: vdot(dist, a.durationSec), source: 'course' });
   }
   for (const [dist, e] of bestEfforts(acts, ref, 112)) {
@@ -160,12 +160,18 @@ export function references(acts: Activity[], types: Map<string, SessionType>, re
 // Mur du marathon et exposant de fatigue pondéré
 // ---------------------------------------------------------------------------
 
-const STANDARD_KM = [5, 10, 21.0975, 42.195];
-
-/** Distance officielle (m) si la distance GPS est à moins de 4 % d'une distance standard */
+/** Distances officielles sur route (km) : distances de référence et barème FFA */
+export const ROAD_KM = [5, 10, 15, 20, 21.0975, 42.195];
+/** Distance officielle (m) d'une distance déclarée (objectif, classement) : à moins de 4 % d'une distance standard */
 export function officialDistance(km: number): number {
-  const std = STANDARD_KM.find((d) => Math.abs(km - d) / d < 0.04);
+  const std = ROAD_KM.find((d) => Math.abs(km - d) / d < 0.04);
   return (std ?? km) * 1000;
+}
+
+/** Distance officielle (m) d'une course : celle saisie avec le résultat officiel, sinon celle de la montre (± 4 %) */
+export function raceDistance(a: Activity): number {
+  if (a.result?.distanceKm) return officialDistance(a.result.distanceKm);
+  return a.kind === 'trail' ? a.distanceKm * 1000 : officialDistance(a.distanceKm);
 }
 
 export interface WallAnalysis {
@@ -243,7 +249,7 @@ export function personalExponentFromRaces(
   const races = acts
     .filter((a) => types.get(a.id) === 'race' && a.kind === 'road' && daysBetween(parseDay(a.date), ref) <= 730)
     .filter((a) => (ath.raceWeights?.[a.id] ?? 1) > 0)
-    .map((a) => ({ a, dist: officialDistance(a.distanceKm) }));
+    .map((a) => ({ a, dist: raceDistance(a) }));
   const shorts = races.filter((r) => r.dist <= 10500);
   if (!shorts.length) return null;
   const best = shorts.reduce((m, r) => (vdot(r.dist, r.a.durationSec) > vdot(m.dist, m.a.durationSec) ? r : m));
