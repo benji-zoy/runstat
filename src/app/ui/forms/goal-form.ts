@@ -193,14 +193,15 @@ export class GoalFormComponent {
     const old = this.editing();
     if (!old || !confirm(`Supprimer l’objectif « ${old.name} » ?`)) return;
     await this.write((this.store.data()?.goals ?? []).filter((g) => g.id !== old.id), null);
+    if (this.router.url.startsWith(`/courses/${old.id}`)) void this.router.navigate(['/courses'], { replaceUrl: true });
   }
 
   private async write(goals: Goal[], show: string | null): Promise<void> {
     try {
       await this.entries.saveGoals(goals);
       this.dialog().close();
-      // Nouvel objectif : ouvrir son sous-onglet
-      if (show) void this.router.navigate(['/courses'], { queryParams: { section: show } });
+      // Nouvel objectif : ouvrir sa fiche
+      if (show) void this.router.navigate(['/courses', show]);
     } catch (e) {
       this.errors.set(errorList(e));
     }

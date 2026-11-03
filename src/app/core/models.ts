@@ -69,7 +69,8 @@ export interface RaceResult {
   catRank: number | null;
   catCount: number | null;
   label?: string | null;
-  source: string;
+  /** Page des résultats officiels ; absente pour une course déclarée sans résultats en ligne */
+  source?: string | null;
   timing?: string | null;
   fetchedAt: string;
   note?: string | null;

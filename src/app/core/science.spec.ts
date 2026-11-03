@@ -1,6 +1,6 @@
 import { Activity, Athlete } from './models';
 import {
-  PRIOR_EXPONENT, acwr, classify, officialDistance, personalExponentFromRaces, wallAnalysis, criticalSpeed, foster, heatPenalty, kmEffort, personalExponent, polarizationIndex, riegel,
+  PRIOR_EXPONENT, acwr, classify, officialDistance, raceDistance, personalExponentFromRaces, wallAnalysis, criticalSpeed, foster, heatPenalty, kmEffort, personalExponent, polarizationIndex, riegel,
   tanda, theilSen, timeForVdot, trimp, vdot, vickers,
 } from './science';
 
@@ -143,5 +143,14 @@ describe('mur du marathon', () => {
     expect(officialDistance(42.64)).toBe(42195);
     expect(officialDistance(10.08)).toBe(10000);
     expect(officialDistance(15.8)).toBe(15800);
+  });
+
+  it('prend la distance officielle saisie avec le résultat avant celle de la montre', () => {
+    const base = { id: 'x', sportType: 100, kind: 'road' as const, date: '2026-03-08', name: '', start: null, durationSec: 2600, avgHr: null, calories: null, lat: null, lon: null };
+    expect(raceDistance({ ...base, distanceKm: 10.06 })).toBe(10000);
+    // Montre à +5 % : hors tolérance, sauf si la distance officielle a été saisie
+    expect(raceDistance({ ...base, distanceKm: 10.5 })).toBe(10500);
+    const result = { event: '10 km', course: null, distanceKm: 10, officialSec: 2590, rank: null, finishers: null, sex: null, sexRank: null, sexCount: null, category: null, catRank: null, catCount: null, fetchedAt: '' };
+    expect(raceDistance({ ...base, distanceKm: 10.5, result })).toBe(10000);
   });
 });

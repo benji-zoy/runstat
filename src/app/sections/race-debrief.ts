@@ -17,9 +17,9 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
   template: `
     @let d = debrief();
     @let g = ev().goal;
-    <section class="card debrief">
-      <header>
-        <div>
+    <section class="debrief" [class.card]="framed()">
+      <header [hidden]="!framed() && !record()">
+        <div [hidden]="!framed()">
           <h3>{{ g.name }}</h3>
           <p class="muted">
             {{ longDate(g.date) }}{{ g.startTime ? ' · départ ' + startLabel(g.startTime) : '' }} · {{ num(g.distanceKm, 1) }} km
@@ -256,6 +256,8 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
 export class RaceDebriefComponent {
   readonly ev = input.required<GoalEvaluation>();
   readonly debrief = input.required<RaceDebrief>();
+  /** Dans sa propre carte, avec le nom de la course (sinon : à l'intérieur de la fiche de la course) */
+  readonly framed = input(true);
 
   protected readonly clock = clock;
   protected readonly pace = pace;

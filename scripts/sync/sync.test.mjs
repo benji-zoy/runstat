@@ -409,6 +409,9 @@ test('classement : effectifs seulement, rangs cohérents, source http', () => {
   assert.equal(r.catRank, null);
   assert.throws(() => en.validateResult('100000000000000001', { ...body, rank: 1000 }), /rank : plus grand/);
   assert.throws(() => en.validateResult('100000000000000001', { ...body, source: 'javascript:alert(1)' }), /source/);
+  // Course déclarée sans page de résultats
+  const { source: _, ...declared } = body;
+  assert.equal(en.validateResult('100000000000000001', declared).source, null);
   assert.throws(() => en.validateResult('100000000000000001', { ...body, name: 'DUPONT' }), /name : champ inconnu/);
   assert.throws(() => en.validateResult('../etc', body), /identifiant/);
 });

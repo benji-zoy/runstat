@@ -18,7 +18,7 @@ export const TABS: Tab[] = [
 ];
 
 /** Paramètres d'URL propres à un onglet, retirés quand on change d'onglet principal */
-export const TAB_PARAMS = { section: null, onglet: null, course: null };
+export const TAB_PARAMS = { section: null, onglet: null, course: null, partie: null };
 
 /**
  * Anciennes adresses (10 puis 6 espaces) → nouvelle place : les liens et favoris continuent de fonctionner.
@@ -85,6 +85,7 @@ export const routes: Routes = [
   { path: 'aujourdhui', title: "Aujourd'hui · RunStat", loadComponent: () => import('./pages/today').then((m) => m.TodayPage) },
   { path: 'journal', title: 'Journal · RunStat', loadComponent: () => import('./pages/journal').then((m) => m.JournalPage) },
   { path: 'courses', title: 'Courses · RunStat', loadComponent: () => import('./pages/goals').then((m) => m.GoalsPage) },
+  { path: 'courses/:id', title: 'Course · RunStat', loadComponent: () => import('./pages/goal').then((m) => m.GoalPage) },
   { path: 'comprendre', title: 'Comprendre · RunStat', loadComponent: () => import('./pages/understand').then((m) => m.UnderstandPage) },
   {
     path: 'comprendre/:sujet',

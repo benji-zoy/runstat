@@ -56,7 +56,7 @@ export const FFA_DISTANCE_LABELS: Record<number, string> = {
   5000: '5 km', 10000: '10 km', 15000: '15 km', 20000: '20 km', 21097: 'Semi-marathon', 42195: 'Marathon',
 };
 
-/** Distance du barème correspondant à une distance mesurée (± 4 %, comme `officialDistance`) */
+/** Distance du barème correspondant à une distance officielle (± 4 %, comme `officialDistance`) */
 export function ffaDistance(km: number): number | null {
   return FFA_DISTANCES.find((d) => Math.abs(km * 1000 - d) / d < 0.04) ?? null;
 }
@@ -113,6 +113,7 @@ export function racePerformances(races: Activity[], sex: 'M' | 'F', chip: Map<st
   const out: RacePerformance[] = [];
   for (const a of races) {
     if (a.kind === 'trail') continue;
+    // Distance officielle saisie avec le résultat, sinon celle de la montre (± 4 %)
     const distM = ffaDistance(a.result?.distanceKm ?? a.distanceKm);
     if (!distM) continue;
     const official = a.result?.officialSec ?? null;

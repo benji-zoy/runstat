@@ -10,7 +10,7 @@
 import { Activity, Athlete, Goal, Health } from './models';
 import {
   CriticalSpeed, ExponentEstimate, Reference, SessionType, bestEfforts, criticalSpeed, heatPenalty, kmEffort, goalKmEffort,
-  officialDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
+  officialDistance, raceDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
   wallAnalysis,
 } from './science';
 import { clock } from './format';
@@ -142,9 +142,9 @@ export function raceReferences(goal: Goal, ctx: GoalContext): RaceReference[] {
   const races = ctx.acts.filter((a) => ctx.types.get(a.id) === 'race' && age(a) <= 730 && (goal.kind === 'trail' ? isTrail(a) : !isTrail(a)));
   const picked = goal.kind === 'trail'
     ? races.sort((a, b) => Math.abs(Math.log(ke / kmEffort(a))) - Math.abs(Math.log(ke / kmEffort(b)))).slice(0, 3)
-    : races.filter((a) => officialDistance(a.distanceKm) === d).sort((a, b) => b.date.localeCompare(a.date));
+    : races.filter((a) => raceDistance(a) === d).sort((a, b) => b.date.localeCompare(a.date));
   return picked.map((a) => {
-    const dist = goal.kind === 'trail' ? a.distanceKm * 1000 : officialDistance(a.distanceKm);
+    const dist = goal.kind === 'trail' ? a.distanceKm * 1000 : raceDistance(a);
     const s = a.splits ?? [];
     const half = s.length >> 1;
     const avg = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
