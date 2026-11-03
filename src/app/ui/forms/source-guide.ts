@@ -20,7 +20,7 @@ const PLANS: { id: StravaPlan; label: string }[] = [
 @Component({
   selector: 'app-source-guide',
   template: `
-    <details class="field wide guide">
+    <details class="guide">
       <summary>Que choisir ? Je te guide</summary>
       <div class="q">Ta montre
         <div class="seg">
@@ -58,6 +58,7 @@ const PLANS: { id: StravaPlan; label: string }[] = [
     </details>
   `,
   styles: `
+    :host { display: block; }
     .guide { border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; display: grid; gap: 0.7rem; }
     summary { cursor: pointer; font-weight: 600; color: var(--text-primary); }
     .q { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
