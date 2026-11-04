@@ -175,10 +175,12 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     const to = today();
     const existing = await readRecordsText();
     const latest = pc.recordBlocks(existing).reduce((m, r) => (r.date && r.date > m ? r.date : m), '');
-    const from = addDays([s.lastSuccessDate, latest].filter(Boolean).sort()[0] ?? addDays(to, -30), -overlapDays);
+    // Premier passage (aucune sortie connue) : tout l'historique, quelle que soit la dernière réussite ;
+    // ensuite la dernière date connue moins le recouvrement
+    const from = latest ? addDays([s.lastSuccessDate, latest].filter((x): x is string => Boolean(x)).sort()[0], -overlapDays) : '2010-01-01';
 
     // 1. Activités de la fenêtre, fusionnées dans records.txt
-    const LIMIT = 200;
+    const LIMIT = latest ? 200 : 1000;
     const recArgs = {
       startDate: compact(from),
       endDate: compact(to),
