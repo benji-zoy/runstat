@@ -44,10 +44,12 @@ export function slugId(name: string): string {
                 <span class="hint">Minuscules, chiffres, tirets ; nom de son dossier, définitif</span>
               </label>
             }
-            <label class="field wide">Login Tailscale
-              <input formControlName="logins" placeholder="prenom@exemple.fr" [readonly]="g.controls.mode.value === 'local'" />
-              <span class="hint">Adresse de son compte Tailscale ; plusieurs, séparées par des virgules</span>
-            </label>
+            @if (g.controls.mode.value !== 'local') {
+              <label class="field wide">Login Tailscale
+                <input formControlName="logins" placeholder="prenom@exemple.fr" />
+                <span class="hint">Adresse de son compte Tailscale ; plusieurs, séparées par des virgules</span>
+              </label>
+            }
             @if (g.controls.mode.value === 'local' && !isNew(i)) {
               <div class="actions">
                 <button type="button" class="btn small" (click)="newLink(g.controls.id.value)">Nouveau lien</button>
