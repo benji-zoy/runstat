@@ -135,6 +135,9 @@ export class SyncService {
   /** Sortie dont le FIT est en cours de téléchargement (« Affiner avec le tracé ») */
   readonly refining = signal<string | null>(null);
   /** Résultat du dernier « Affiner », par sortie */
+  /** Relance des FIT récents en cours (bouton de Réglages › Sources) et son résultat */
+  readonly refitting = signal(false);
+  readonly refitNotice = signal<string | null>(null);
   readonly refineNotice = signal<{ id: string; text: string } | null>(null);
   private polling = false;
 
@@ -278,6 +281,34 @@ export class SyncService {
       this.refineNotice.set({ id, text: 'Service de synchro injoignable' });
     } finally {
       this.refining.set(null);
+    }
+  }
+
+  /** Retélécharge les FIT (ou tracés) des derniers jours, pour toutes les sources d'activités, puis recalcule */
+  async refitRecent(days = 14): Promise<void> {
+    if (this.running() || this.refitting()) return;
+    this.refitNotice.set(null);
+    this.refitting.set(true);
+    try {
+      if (LOCAL_MODE) {
+        const r = await this.device.refit(days);
+        this.refitNotice.set(r.ok ? `Terminé : ${r.message}` : `Impossible (${r.message})`);
+        return;
+      }
+      const res = await fetch(`api/fit?days=${days}`, { method: 'POST', headers: { 'X-RunStat': 'sync' } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        this.refitNotice.set(res.status === 409 ? 'Déjà en cours, réessaie dans un instant' : `Impossible (${body.error ?? `HTTP ${res.status}`})`);
+        return;
+      }
+      await this.refresh();
+      await this.poll(true);
+      const err = this.status()?.state.lastFitError;
+      this.refitNotice.set(err ? `Terminé avec une erreur (${err})` : this.status()?.state.lastBuildError ? 'FIT retéléchargés, reconstruction en échec' : 'FIT retéléchargés, analyse recalculée');
+    } catch {
+      this.refitNotice.set('Service de synchro injoignable');
+    } finally {
+      this.refitting.set(false);
     }
   }
 

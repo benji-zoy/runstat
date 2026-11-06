@@ -212,6 +212,26 @@ export class DeviceSyncService {
     return r ?? { ok: false, message: 'synchro en cours dans un autre onglet' };
   }
 
+  /** « Relancer les FIT » : retélécharge les fichiers des derniers jours (source d'activités choisie), puis reconstruction */
+  async refit(days: number): Promise<{ ok: boolean; message: string }> {
+    const r = await withLock('runstat-sources', async () => {
+      this.running.set(true);
+      try {
+        const c = await this.clients();
+        const out = await sourceSync(c.raw, c, { stage: false, log: (...m) => this.say(m) }).refetchRecent(days);
+        if (out.ok) {
+          await this.local.rebuild();
+          await this.data.reload();
+        }
+        return out;
+      } finally {
+        this.running.set(false);
+        await this.reload();
+      }
+    }, true);
+    return r ?? { ok: false, message: 'synchro en cours dans un autre onglet' };
+  }
+
   /** File des FIT par utilité (fit-queue.txt), comme scripts/fit-queue.mjs sur le NAS */
   private async writeFitQueue(): Promise<void> {
     const snap = await this.local.snapshot();

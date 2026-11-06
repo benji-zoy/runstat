@@ -594,5 +594,127 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     }
   }
 
-  return { syncAll, syncOne, loadState, saveState };
+  /**
+   * Bouton « Relancer les FIT » : pour les sorties des `days` derniers jours de la source d'activités choisie, retélécharge le
+   * fichier (FIT COROS ou Garmin, streams Strava) en écrasant l'ancien, rafraîchit les données de la sortie (détails COROS dont
+   * le dénivelé, liste Strava ou Garmin) et supprime l'analyse en cache pour que la reconstruction la refasse.
+   * Erreur dans state.lastFitError ; ne touche pas à la date de dernière synchro.
+   */
+  async function refetchRecent(days = 14): Promise<{ ok: boolean; message: string }> {
+    await loadState();
+    try {
+      const sources = normalizeSources((await readJson(raw, 'sources.json')) ?? {});
+      const to = today();
+      const from = addDays(to, -days);
+      const dropDerived = (key: string) => raw.remove(`fit-derived/${key}.json`);
+      let message: string;
+      if (sources.activities === 'strava') message = await refetchStrava(from, to, dropDerived);
+      else if (sources.activities === 'garmin') message = await refetchGarmin(from, to, dropDerived);
+      else message = await refetchCoros(from, to, dropDerived);
+      delete state['lastFitError'];
+      log(message);
+      return { ok: true, message };
+    } catch (e) {
+      state['lastFitError'] = `refit : ${(e as Error).message}`;
+      if (e instanceof ReauthRequired) {
+        const src = (await readJson<Sources>(raw, 'sources.json'))?.activities ?? 'coros';
+        (state[src as SourceKey] ??= {}).reauthSince = new Date().toISOString();
+      }
+      log(`FIT : ÉCHEC — ${(e as Error).message}`);
+      return { ok: false, message: (e as Error).message };
+    } finally {
+      await saveState();
+    }
+  }
+
+  async function refetchCoros(from: string, to: string, dropDerived: (key: string) => Promise<void>): Promise<string> {
+    await need(clients.coros, 'coros').initialize();
+    const s = (state.coros ??= {});
+    const recent = pc.recordBlocks(await readRecordsText()).filter((r) => (r.date ?? '') >= from);
+    if (!recent.length) return `aucune sortie depuis le ${from}`;
+    let fits = 0;
+    let details = 0;
+    let limited = '';
+    for (const r of recent.slice(0, fitPerRun)) {
+      // Détails (dénivelé, cadence, charge…) : une nouvelle ligne, la dernière gagne à la lecture
+      const d = await toolText('getActivityDetail', { labelId: r.id, sportType: r.sportType });
+      const detail = pc.parseDetail(r.id, d.text);
+      if (!d.isError && pc.isUsableDetail(detail)) {
+        const part = `details/part-${compact(to)}.jsonl`;
+        await raw.write(part, ((await raw.readText(part)) ?? '') + JSON.stringify(detail) + '\n');
+        details++;
+      }
+      const got = await downloadFit(s, r);
+      if (got === 'quota') {
+        limited = ' (quota de 50 FIT par jour atteint)';
+        break;
+      }
+      if (got === 'ok') {
+        fits++;
+        await dropDerived(r.id);
+        await sleep(1000);
+      }
+    }
+    return `${fits} FIT et ${details} détails retéléchargés sur ${recent.length} sorties depuis le ${from}${limited}`;
+  }
+
+  async function refetchStrava(from: string, to: string, dropDerived: (key: string) => Promise<void>): Promise<string> {
+    const strava = need(clients.strava, 'strava');
+    const existing = (await readJson<StravaActivity[]>(raw, STRAVA_FILE)) ?? [];
+    const after = Math.floor(Date.parse(`${addDays(from, -1)}T00:00:00Z`) / 1000);
+    const fetched = (await strava.activitiesSince(after)).map(activityFromApi).filter((a): a is StravaActivity => a != null);
+    // Sans fenêtre : on rafraîchit seulement, on ne retire rien
+    const merged = mergeStravaActivities(existing, fetched).list;
+    const recent = merged.filter((a) => a.date >= from);
+    let ok = 0;
+    let limited = '';
+    for (const a of recent.slice(0, streamsPerRun)) {
+      try {
+        if ((await downloadStreams(a)) === 'ok') {
+          ok++;
+          await dropDerived(fileKey(a.id));
+        }
+      } catch (e) {
+        if (e instanceof RateLimited) {
+          limited = ' (limite de débit atteinte)';
+          break;
+        }
+        if (e instanceof ReauthRequired) throw e;
+        log(`  streams indisponibles pour ${a.id} (${a.date}) : ${(e as Error).message}`);
+      }
+      await sleep(500);
+    }
+    await writeJson(STRAVA_FILE, merged);
+    return `${ok} tracés retéléchargés sur ${recent.length} sorties depuis le ${from}${limited}`;
+  }
+
+  async function refetchGarmin(from: string, to: string, dropDerived: (key: string) => Promise<void>): Promise<string> {
+    const garmin = need(clients.garmin, 'garmin');
+    const existing = (await readJson<GarminActivity[]>(raw, GARMIN_FILE)) ?? [];
+    const fetched = (await garmin.activities(from, to)).map(activityFromGarmin).filter((a): a is GarminActivity => a != null);
+    const merged = mergeStravaActivities(existing, fetched).list;
+    const recent = merged.filter((a) => a.date >= from);
+    let ok = 0;
+    let limited = '';
+    for (const a of recent.slice(0, fitPerRun)) {
+      try {
+        if ((await downloadGarminFit(a)) === 'ok') {
+          ok++;
+          await dropDerived(fileKey(a.id));
+        }
+      } catch (e) {
+        if (e instanceof RateLimited) {
+          limited = ' (limite de débit atteinte)';
+          break;
+        }
+        if (e instanceof ReauthRequired) throw e;
+        log(`  FIT indisponible pour ${a.id} (${a.date}) : ${(e as Error).message}`);
+      }
+      await sleep(500);
+    }
+    await writeJson(GARMIN_FILE, merged);
+    return `${ok} FIT retéléchargés sur ${recent.length} sorties depuis le ${from}${limited}`;
+  }
+
+  return { syncAll, syncOne, refetchRecent, loadState, saveState };
 }

@@ -307,6 +307,26 @@ describe('synchro des sources', () => {
     expect((await sync.syncOne('999')).ok).toBe(false);
     expect((await sync.loadState())['lastFitError']).toMatch(/999 : activité 999 inconnue/);
   });
+  it('« Relancer les FIT » : écrase le FIT des sorties récentes, rafraîchit le détail, supprime l’analyse en cache', async () => {
+    const stale = new Uint8Array([1, 2, 3]);
+    const raw = new MemoryStore({
+      'records.txt': RECORDS,
+      'fit/200001.fit': stale,
+      'fit/200002.fit': stale,
+      'fit-derived/200001.json': '{"v":1}',
+      'fit-derived/200002.json': '{"v":1}',
+    });
+    const tokens = await tokenStore(raw);
+    const coros = corosClient({ tokens, fetch: fakeCoros().fetch });
+    const sync = sourceSync(raw, { coros, tokens }, quiet);
+    // 2026-03-10 − 2 jours : seule la sortie du 9 est concernée
+    expect((await sync.refetchRecent(2)).ok).toBe(true);
+    expect(await raw.read('fit/200001.fit')).toEqual(FIT);
+    expect(await raw.read('fit/200002.fit')).toEqual(stale);
+    expect(await raw.read('fit-derived/200001.json')).toBeNull();
+    expect(await raw.read('fit-derived/200002.json')).not.toBeNull();
+    expect(await raw.readText('details/part-20260310.jsonl')).toContain('"200001"');
+  });
   it('Garmin : sorties, FIT extraits des zips, santé ; un seul jeton pour toute la synchro', async () => {
     const { raw, tokens } = await garminStore();
     const server = fakeGarmin();
