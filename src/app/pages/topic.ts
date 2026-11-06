@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Location } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DataService } from '../core/data.service';
 import { ScienceService } from '../core/science.service';
 import { topicById } from '../core/topics';
@@ -15,10 +16,10 @@ import { IconComponent } from '../ui/icon';
 /** Une question de Comprendre en grand : tous ses graphiques (agrandissables) et sa méthode. */
 @Component({
   selector: 'app-topic',
-  imports: [RouterLink, IconComponent, AnalysisSection, RecoveryComponent, RaceStandingSection, PlacesSection, HabitsPage, RecordsPage],
+  imports: [IconComponent, AnalysisSection, RecoveryComponent, RaceStandingSection, PlacesSection, HabitsPage, RecordsPage],
   template: `
     @if (topic(); as t) {
-      <a class="back" routerLink="/comprendre"><app-icon name="back" />Comprendre</a>
+      <a class="back" [attr.href]="listHref" (click)="back($event)"><app-icon name="back" />Comprendre</a>
       <header class="page-head">
         <h1>{{ t.question }}</h1>
         <p class="lede">{{ t.lede }}</p>
@@ -67,8 +68,23 @@ export class TopicPage {
     ['potentiel', 'charge', 'progres', 'endurance', 'seances', 'profil'].includes(this.topic()?.id ?? ''),
   );
 
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  /** Arrivé depuis la liste de Comprendre : le retour revient dans l'historique, à la même hauteur de page */
+  private readonly fromList =
+    this.router.currentNavigation()?.previousNavigation?.finalUrl?.toString().split(/[?#]/)[0] === '/comprendre';
+
+  protected readonly listHref = this.location.prepareExternalUrl('/comprendre');
+
+  protected back(event: MouseEvent): void {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return; // nouvel onglet
+    event.preventDefault();
+    if (this.fromList) this.location.back();
+    else void this.router.navigateByUrl('/comprendre');
+  }
+
   constructor() {
-    const router = inject(Router);
+    const router = this.router;
     effect(() => {
       const id = this.params()?.get('sujet');
       const t = topicById(id);

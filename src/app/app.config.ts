@@ -15,7 +15,7 @@ registerLocaleData(localeFr);
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
+    provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'enabled' })),
     { provide: LOCALE_ID, useValue: 'fr-FR' },
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),
