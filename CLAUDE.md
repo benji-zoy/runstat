@@ -9,7 +9,7 @@ Interface en français. Node local : 24.14 → rester sur Angular 21 (le CLI 22 
 Le conteneur `runstat-sync` (NAS, `scripts/sync/server.mjs`) lance `scripts/sync/run.mjs` pour chaque compte hébergé (voir Comptes),
 un run à la fois (`queue.mjs`), au démarrage, toutes les 3 h
 et à la demande (bouton de l'en-tête, `core/sync.service.ts` → `/api/sync`, proxy nginx ; masqué sans ce service ; `POST /api/fit?id=` →
-`run.mjs --fit <id>` : le FIT d'une seule sortie puis build-fit + build-data, sans toucher à la fenêtre de synchro) : COROS (activités des derniers jours
+`run.mjs --fit <id>` : le FIT d'une seule sortie puis build-fit + build-data, sans toucher à la fenêtre de synchro ; `POST /api/fit?days=14` → `--refit` : retélécharge en écrasant les FIT, tracés Strava et détails COROS (dénivelé) des derniers jours, efface leur `fit-derived/`, puis reconstruit ; bouton « Relancer les FIT récents » de Réglages › Sources, `refetchRecent` du moteur, aussi sur l'appareil) : COROS (activités des derniers jours
 fusionnées dans `records.txt`, détails, forme, charge cumulée dans `load.txt`, FIT jusqu'au quota) et Google Health API
 (santé quotidienne + sommeil → `data-raw/health-api.json`, prioritaire sur `health.json` de Takeout), recouvrement de
 3 jours, puis build-fit, build-data, fit-queue, météo. **Le NAS fait foi pour `data-raw/`** : `npm run nas -- pull` avant

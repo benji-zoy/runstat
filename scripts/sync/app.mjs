@@ -7,6 +7,7 @@
 //                       garminConnected, garminExpiresOn (présence des applis, jetons et clés, jamais leur contenu),
 //                       stravaOrigin (adresse du site pour la connexion Strava) }
 //   POST /api/sync  → 202 lancée ou en file | 409 déjà en cours | 429 trop tôt après la précédente
+//   POST /api/fit?days=<n> (défaut 14) → retélécharge les FIT / tracés des n derniers jours : 202 | 409
 //   POST /api/fit?id=<labelId | strava:id | garmin:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
 //   GET|PUT /api/goals, GET|PUT /api/athlete, GET|PUT /api/sources, GET|PUT|DELETE /api/results/<id>[?replaces=date-….json]
 //     → saisie depuis le site (scripts/sync/entries.mjs), puis reconstruction seule (run.mjs --rebuild) : 200 | 400 | 404
@@ -472,6 +473,13 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     if (path !== '/api/sync' && path !== '/api/fit') return send(res, 404, { error: 'introuvable' });
     if (req.method === 'POST') {
       const q = queue.status(user.id);
+      if (path === '/api/fit' && !url.searchParams.has('id')) {
+        const d = url.searchParams.get('days') ?? '14';
+        if (!/^\d{1,2}$/.test(d) || Number(d) < 1 || Number(d) > 60) return send(res, 400, { error: 'durée invalide (1 à 60 jours)' });
+        if (q.running && q.kind === 'refit') return send(res, 409, { error: 'retéléchargement déjà en cours', startedAt: q.startedAt });
+        const r = enqueue(user, jobs.refit(Number(d)));
+        return send(res, 202, { running: true, queued: r !== 'started', startedAt: queue.status(user.id).startedAt });
+      }
       if (path === '/api/fit') {
         const id = url.searchParams.get('id') ?? '';
         if (!ACTIVITY_ID.test(id)) return send(res, 400, { error: 'identifiant de sortie invalide' });

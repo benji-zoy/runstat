@@ -219,6 +219,20 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           </div>
         }
         <p class="hint field wide">Changer de source reconstruit toutes les données {{ local ? 'sur cet appareil' : 'sur le NAS' }} (quelques minutes).</p>
+        @if (sync.available()) {
+          <div class="field wide">
+            <div class="upload">
+              <button type="button" class="btn" [disabled]="sync.running() || sync.refitting() || busy()" (click)="sync.refitRecent()">
+                {{ sync.refitting() ? 'FIT en cours…' : 'Relancer les FIT récents' }}
+              </button>
+            </div>
+            <span class="hint">Retélécharge les fichiers des 14 derniers jours (COROS, Strava ou Garmin, selon ta source), écrase les
+              anciens et recalcule l'analyse : utile si le dénivelé ou le tracé d'une sortie est faux. COROS limite à 50 FIT par jour.</span>
+            @if (sync.refitNotice(); as n) {
+              <span class="hint" role="status">{{ n }}</span>
+            }
+          </div>
+        }
         @if (!local && sync.available()) {
           <h3 class="field wide group">Mes données</h3>
           <div class="field wide">

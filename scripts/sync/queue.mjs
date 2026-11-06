@@ -1,6 +1,6 @@
 // File des runs (run.mjs) de tous les comptes : un seul à la fois sur le NAS (mémoire bornée : chaque build charge
 // toutes les données d'un compte), dans l'ordre d'arrivée, et au plus une tâche de chaque sorte en attente par compte.
-// Sortes : full (synchro complète, reconstruction comprise), rebuild (--rebuild), fit (--fit <id>), archive (--import-strava <zip>).
+// Sortes : full (synchro complète, reconstruction comprise), rebuild (--rebuild), fit (--fit <id>), refit (--refit), archive (--import-strava <zip>).
 const KEEP_LINES = 80;
 const MAX_ARCHIVES = 2;
 
@@ -8,6 +8,7 @@ export const jobs = {
   full: (trigger) => ({ kind: 'full', trigger, args: [] }),
   rebuild: (trigger = 'saisie') => ({ kind: 'rebuild', trigger, args: ['--rebuild'] }),
   fit: (id) => ({ kind: 'fit', trigger: `tracé ${id}`, args: ['--fit', id] }),
+  refit: (days = 14) => ({ kind: 'refit', trigger: 'FIT relancés', args: ['--refit', String(days)] }),
   archive: (file) => ({ kind: 'archive', trigger: 'archive Strava', args: ['--import-strava', file] }),
 };
 
@@ -43,6 +44,8 @@ export class RunQueue {
     } else if (job.kind === 'fit') {
       const fit = same('fit')[0];
       if (fit) return fit.args[1] === job.args[1] ? 'duplicate' : 'busy';
+    } else if (job.kind === 'refit') {
+      if (same('refit').length) return 'duplicate';
     } else if (job.kind === 'archive' && same('archive').length >= MAX_ARCHIVES) return 'busy';
     u.pending.push(job);
     this.order.push({ userId, job });

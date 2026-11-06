@@ -7,6 +7,7 @@
 // Lancé par le conteneur runstat-sync (server.mjs, un compte à la fois), ou à la main :
 //   node scripts/sync/run.mjs [--only coros|strava|garmin|google|corosHealth|garminHealth] [--no-build]
 //   node scripts/sync/run.mjs --fit <id>        (tracé d'une seule sortie, bouton « Affiner avec le tracé », puis build-fit + build-data)
+//   node scripts/sync/run.mjs --refit [jours]   (retélécharge les FIT / tracés des 14 derniers jours, écrase les anciens, puis build-fit + build-data)
 //   node scripts/sync/run.mjs --rebuild         (sans les sources : reconstruction après une saisie depuis le site)
 //   node scripts/sync/run.mjs --import-strava <zip>  (archive Strava envoyée depuis le site, supprimée après import)
 // Réponses brutes : data-raw/raw/<source>/<type>/… ; état : data-raw/sync-state.json.
@@ -31,6 +32,8 @@ const raw = rawDir();
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const fitOnly = args.includes('--fit') ? args[args.indexOf('--fit') + 1] : null;
+const refit = args.includes('--refit');
+const refitDays = refit && /^\d+$/.test(args[args.indexOf('--refit') + 1] ?? '') ? Math.min(Number(args[args.indexOf('--refit') + 1]), 60) : 14;
 const rebuildOnly = args.includes('--rebuild');
 const archive = args.includes('--import-strava') ? args[args.indexOf('--import-strava') + 1] : null;
 if (fitOnly !== null && !ACTIVITY_ID.test(fitOnly ?? '')) {
@@ -71,6 +74,10 @@ try {
   if (fitOnly) {
     log(`Tracé de la sortie ${fitOnly}…`);
     await sync.syncOne(fitOnly);
+  } else if (refit) {
+    log(`Retéléchargement des FIT des ${refitDays} derniers jours…`);
+    await sync.refetchRecent(refitDays);
+    await sync.saveState();
   } else if (archive) {
     log('Import de l’archive Strava…');
     try {
@@ -90,7 +97,7 @@ try {
   } else {
     await sync.syncAll();
   }
-  if (fitOnly && !state.lastFitError) {
+  if ((fitOnly || refit) && !state.lastFitError) {
     try {
       step('build-fit.mjs');
       step('build-data.mjs');
@@ -99,7 +106,7 @@ try {
       log(`Reconstruction : ÉCHEC — ${e.message}`);
     }
     await sync.saveState();
-  } else if (!fitOnly && !args.includes('--no-build')) {
+  } else if (!fitOnly && !refit && !args.includes('--no-build')) {
     try {
       // Réglages de l'athlète utilisés par build-fit modifiés (site ou npm run nas -- push athlete.json) : FC max/repos,
       // seuils → tout recalculer ; poids, taille ou poids des courses ne touchent pas aux FIT
