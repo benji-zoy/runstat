@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, Injectable, computed, inject, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { Activity } from '../core/models';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
@@ -7,7 +8,6 @@ import { clock, duration, km, num, pace } from '../core/format';
 import { PeriodNavComponent } from '../ui/period-nav';
 import { ScienceService } from '../core/science.service';
 import { SESSION_TYPES } from '../core/science';
-import { ActivityDetailComponent } from '../ui/activity-detail';
 
 type SortKey = 'date' | 'distanceKm' | 'durationSec' | 'pace' | 'elevGain' | 'avgHr' | 'trainingLoad';
 
@@ -16,9 +16,22 @@ const dateFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numer
 const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+/** Filtres, tri et vue du journal : gardés quand on ouvre une sortie puis qu'on revient. */
+@Injectable({ providedIn: 'root' })
+export class JournalState {
+  readonly view = signal<'list' | 'log'>('list');
+  readonly kind = signal('all');
+  readonly minKm = signal(0);
+  readonly query = signal('');
+  readonly sessionType = signal('all');
+  readonly sort = signal<SortKey>('date');
+  readonly asc = signal(false);
+  readonly limit = signal(50);
+}
+
 @Component({
   selector: 'app-activities',
-  imports: [PeriodNavComponent, ActivityDetailComponent],
+  imports: [PeriodNavComponent, RouterLink],
   template: `
     <app-period-nav />
 
@@ -55,11 +68,11 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
     </p>
 
     @if (view() === 'list') {
-      <!-- Téléphone : une carte par sortie, le détail s'ouvre en dessous -->
+      <!-- Téléphone : une carte par sortie, qui ouvre la fiche de la sortie -->
       <div class="mlist">
         @for (a of shown(); track a.id) {
-          <div class="card mrun" [class.open]="openId() === a.id">
-            <button type="button" class="mrun-head" (click)="toggle(a.id)" [attr.aria-expanded]="openId() === a.id">
+          <div class="card mrun">
+            <a class="mrun-head" [routerLink]="['/sortie', a.id]">
               <span class="m-top">
                 <span class="muted m-date">{{ fmtDate(a.date) }}</span>
                 <span class="muted m-kind"><span [title]="typeOf(a.id).label">{{ typeOf(a.id).icon }}</span> {{ kindLabel(a.kind) }}</span>
@@ -72,10 +85,7 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
                 @if (a.avgHr) { <span class="muted">{{ a.avgHr }} bpm</span> }
                 @if (a.elevGain) { <span class="muted">{{ a.elevGain }} m D+</span> }
               </span>
-            </button>
-            @if (openId() === a.id) {
-              <app-activity-detail [activity]="a" />
-            }
+            </a>
           </div>
         } @empty {
           <p class="muted empty">Aucune sortie ne correspond.</p>
@@ -102,9 +112,9 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
             </thead>
             <tbody>
               @for (a of shown(); track a.id) {
-                <tr class="row" [class.open]="openId() === a.id" (click)="toggle(a.id)">
+                <tr class="row" (click)="open(a.id)">
                   <td>{{ fmtDate(a.date) }}</td>
-                  <td class="name">{{ a.name }}</td>
+                  <td class="name"><a [routerLink]="['/sortie', a.id]" (click)="$event.stopPropagation()">{{ a.name || 'Sortie' }}</a></td>
                   <td class="muted"><span class="t-icon" [title]="typeOf(a.id).label">{{ typeOf(a.id).icon }}</span> {{ kindLabel(a.kind) }}</td>
                   <td class="num">{{ num(a.distanceKm, 2) }} km</td>
                   <td class="num">{{ clock(a.durationSec) }}</td>
@@ -113,11 +123,6 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
                   <td class="num">{{ a.avgHr ?? '–' }}</td>
                   <td class="num">{{ a.trainingLoad ?? '–' }}</td>
                 </tr>
-                @if (openId() === a.id) {
-                  <tr class="detail-row">
-                    <td colspan="9"><app-activity-detail [activity]="a" /></td>
-                  </tr>
-                }
               } @empty {
                 <tr><td colspan="9" class="muted empty">Aucune sortie ne correspond.</td></tr>
               }
@@ -151,7 +156,7 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
                     [class.trail]="a.kind === 'trail'"
                     [style.--s]="bubble(a.distanceKm)"
                     [title]="a.name + ' · ' + num(a.distanceKm, 1) + ' km'"
-                    (click)="selected.set(selected()?.id === a.id ? null : a)"
+                    (click)="open(a.id)"
                   >
                     {{ num(a.distanceKm, 0) }}
                   </button>
@@ -161,17 +166,8 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
             <span class="week-total"><b>{{ num(w.km, 1) }}</b> km</span>
           </div>
         }
-        <p class="muted legend">Taille des bulles proportionnelle à la distance · <span class="leg-trail">●</span> trail · clique sur une bulle pour le détail</p>
+        <p class="muted legend">Taille des bulles proportionnelle à la distance · <span class="leg-trail">●</span> trail · clique sur une bulle pour ouvrir la sortie</p>
       </div>
-      @if (selected(); as s) {
-        <div class="card selected">
-          <div class="sel-head">
-            <h3>{{ s.name }} <small class="muted">· {{ fmtDate(s.date) }}</small></h3>
-            <button type="button" class="close" (click)="selected.set(null)" aria-label="Fermer">✕</button>
-          </div>
-          <app-activity-detail [activity]="s" />
-        </div>
-      }
     }
   `,
   styleUrl: './activities.scss',
@@ -211,16 +207,16 @@ export class ActivitiesPage {
     { key: 'load', label: 'Charge', num: true, sort: 'trainingLoad' },
   ];
 
-  protected readonly view = signal<'list' | 'log'>('list');
-  protected readonly kind = signal('all');
-  protected readonly minKm = signal(0);
-  protected readonly query = signal('');
-  protected readonly sessionType = signal('all');
-  protected readonly sort = signal<SortKey>('date');
-  protected readonly asc = signal(false);
-  protected readonly limit = signal(50);
-  protected readonly openId = signal<string | null>(null);
-  protected readonly selected = signal<Activity | null>(null);
+  private readonly router = inject(Router);
+  private readonly state = inject(JournalState);
+  protected readonly view = this.state.view;
+  protected readonly kind = this.state.kind;
+  protected readonly minKm = this.state.minKm;
+  protected readonly query = this.state.query;
+  protected readonly sessionType = this.state.sessionType;
+  protected readonly sort = this.state.sort;
+  protected readonly asc = this.state.asc;
+  protected readonly limit = this.state.limit;
 
   private readonly inPeriod = computed(() => inRange(this.store.activities(), this.ps.period().start, this.ps.period().end));
 
@@ -274,8 +270,8 @@ export class ActivitiesPage {
     }
   }
 
-  protected toggle(id: string): void {
-    this.openId.set(this.openId() === id ? null : id);
+  protected open(id: string): void {
+    void this.router.navigate(['/sortie', id]);
   }
 
   /** Diamètre de bulle (rem) proportionnel à la racine de la distance */
