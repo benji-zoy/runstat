@@ -26,3 +26,12 @@ export const safeHandler = (handle, log = console) => async (req, res) => {
     else res.destroy();
   }
 };
+
+/**
+ * Hôte acceptable sur le port du réseau local (zone lan, compte du propriétaire) : adresse IP, nom court ou nom local.
+ * Un nom de domaine public est refusé : c'est la marque du DNS rebinding (même règle que le bloc `listen 80` de nginx).
+ */
+export const lanHostAllowed = (host) => {
+  const name = String(host ?? '').toLowerCase().replace(/:\d+$/, '');
+  return /^([0-9.]+|\[[0-9a-f:.]+\]|[a-z0-9-]+|[a-z0-9.-]+\.(local|lan|home\.arpa))$/.test(name);
+};

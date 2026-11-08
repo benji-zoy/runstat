@@ -153,13 +153,19 @@ async function syncOnce({ raw, api, keys, account, device, header, now = () => n
   const contents = new Map<string, Uint8Array>();
   const localHash = new Map<string, string>();
   const localChanged = new Map<string, { hash: string; clock: number; dev: string; del?: true }>();
+  // Première synchro de cet appareil (index vide) face à une sauvegarde existante : c'est une restauration, la sauvegarde l'emporte
+  // sur les fichiers qu'elle contient (sinon les données locales, sans horloge, passeraient devant tout) ; le reste est envoyé.
+  const restoring = index.version === null && !!remote;
   for (const [i, path] of paths.entries()) {
     onProgress('analyse', i, paths.length);
     const bytes = (await raw.read(path))!;
     const hash = await objectId(keys, bytes);
-    contents.set(path, bytes);
     localHash.set(path, hash);
-    if (index.files[path]?.hash !== hash || index.files[path]?.del) localChanged.set(path, { hash, clock: ++clock, dev: device.id });
+    if (restoring && remoteFiles[path] && !remoteFiles[path].del) continue;
+    if (index.files[path]?.hash !== hash || index.files[path]?.del) {
+      localChanged.set(path, { hash, clock: ++clock, dev: device.id });
+      contents.set(path, bytes); // seulement ce qui part : pas toute la zone raw en mémoire
+    }
   }
   const present = new Set(paths);
   for (const [path, f] of Object.entries(index.files)) if (!f.del && !present.has(path)) localChanged.set(path, { hash: '', clock: ++clock, dev: device.id, del: true });

@@ -104,7 +104,8 @@ export function raceDebrief(e: GoalEvaluation, a: Activity, athlete: Athlete, ac
   const notes = goal.debrief ?? {};
   const trail = goal.kind === 'trail';
   const D = goal.distanceKm;
-  const official = notes.chipSec ?? a.durationSec;
+  // Temps puce du bilan, sinon temps officiel du classement saisi, sinon montre
+  const official = notes.chipSec ?? a.result?.officialSec ?? a.durationSec;
   const gpsKm = a.distanceKm;
   /** Distance officielle par km GPS, et temps officiel par seconde de montre */
   const f = trail ? 1 : D / gpsKm;
@@ -196,7 +197,7 @@ export function raceDebrief(e: GoalEvaluation, a: Activity, athlete: Athlete, ac
   const debrief: RaceDebrief = {
     activity: a,
     official,
-    fromChip: notes.chipSec != null,
+    fromChip: notes.chipSec != null || a.result?.officialSec != null,
     pace: official / (trail ? kmEffort(a) : D),
     gpsDrift: gpsKm / D - 1,
     targetGap: goal.targetSec ? official - goal.targetSec : null,

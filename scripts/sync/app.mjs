@@ -38,7 +38,7 @@ import { AuthStore } from './auth-store.mjs';
 import { BackupStore } from './backup-store.mjs';
 import { jobs } from './queue.mjs';
 import { exported, README, zipStream } from '#engine/archive/zip-writer.ts';
-import { parseUrl, pipeFile } from './http-safe.mjs';
+import { lanHostAllowed, parseUrl, pipeFile } from './http-safe.mjs';
 
 const MAX_BODY = 64 * 1024;
 const MIN_GAP_MS = 20_000; // anti-rebond des clics
@@ -140,6 +140,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     return bytes;
   };
   const overQuota = (acc, user, paths) => acc.multi && used(user.id, paths.base) > quotaBytes;
+  /** Comptes dont une archive est en cours d'envoi : une à la fois (sinon N envois simultanés passent tous le quota) */
+  const uploading = new Set();
 
   const enqueue = (user, job) => queue.enqueue(user.id, job);
   const syncStatus = (user) => {
@@ -196,6 +198,17 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     const length = Number(req.headers['content-length'] ?? NaN);
     if (length > maxArchive) return send(res, 413, { error: 'archive trop volumineuse' });
     if (overQuota(accounts(), user, paths)) return send(res, 507, { error: 'espace du compte plein' });
+    if (uploading.has(user.id)) return send(res, 409, { error: 'une archive est déjà en cours d’envoi' });
+    uploading.add(user.id);
+    try {
+      return await receiveArchive(req, res, user, paths);
+    } finally {
+      uploading.delete(user.id);
+      sizes.delete(user.id);
+    }
+  }
+
+  async function receiveArchive(req, res, user, paths) {
     const dir = join(paths.raw, 'import');
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `strava-${now()}.zip`);
@@ -350,6 +363,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     if (!url) return send(res, 400, { error: 'adresse invalide' });
     const path = url.pathname;
     if (!path.startsWith('/api/')) return send(res, 404, { error: 'introuvable' });
+    if (zone === 'lan' && !lanHostAllowed(req.headers.host)) return send(res, 421, { error: 'hôte non reconnu sur le réseau local' });
     const acc = accounts();
     const who = resolveUser(acc, zone, req.headers);
     if (!who.user) return send(res, who.status, { error: who.error });

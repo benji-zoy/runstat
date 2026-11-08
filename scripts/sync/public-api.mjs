@@ -133,6 +133,8 @@ export function createPublicApi({
 
   const userById = (id) => accounts().users.find((u) => u.id === id && u.mode === 'local') ?? null;
   const backupOf = (user) => new BackupStore(userPaths(accounts(), user).base, now);
+  /** Octets réservés par les envois d'objets en cours, par compte : des envois simultanés ne passent pas tous le quota */
+  const reserved = new Map();
   const publicUser = (u) => ({ id: u.id, name: u.name });
 
   function newChallenge(data) {
@@ -350,7 +352,14 @@ export function createPublicApi({
       if (store.hasObject(obj[1])) return req.resume(), { status: 200, body: { stored: false } };
       const length = Number(req.headers['content-length'] ?? NaN);
       if (!(length > 0) || length > MAX_OBJECT) throw new HttpError(length > MAX_OBJECT ? 413 : 411, 'taille de l’objet attendue (32 Mio au plus)');
-      if (store.usage() + length > quotaBytes) throw new HttpError(507, 'sauvegarde pleine');
+      const id = user.id;
+      if (store.usage() + (reserved.get(id) ?? 0) + length > quotaBytes) throw new HttpError(507, 'sauvegarde pleine');
+      reserved.set(id, (reserved.get(id) ?? 0) + length);
+      const release = () => {
+        const left = (reserved.get(id) ?? 0) - length;
+        if (left > 0) reserved.set(id, left);
+        else reserved.delete(id);
+      };
       const tmp = store.tmpFile(obj[1]);
       const size = await new Promise((resolve, reject) => {
         let n = 0;
@@ -363,7 +372,9 @@ export function createPublicApi({
         out.on('finish', () => resolve(n));
         out.on('error', reject);
         req.pipe(out);
-      }).catch((e) => (rmSync(tmp, { force: true }), Promise.reject(e)));
+      })
+        .catch((e) => (rmSync(tmp, { force: true }), Promise.reject(e)))
+        .finally(release);
       if (size !== length) throw (rmSync(tmp, { force: true }), new HttpError(400, 'objet tronqué'));
       return { status: 201, body: { stored: store.commitObject(obj[1], tmp) } };
     }

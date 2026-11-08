@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { publicClient, nasOrigin, ApiError, type PublicClient } from '../../engine/backup/api';
 import { TamperedData, WrongPassphrase, newDataKey, normalizeRecovery, recoveryCode, unwrapKey, workKeys, wrapKey, type WorkKeys } from '../../engine/backup/crypto';
-import { Rollback, syncBackup, type BackupHeader, type SyncResult } from '../../engine/backup/sync';
+import { INDEX_FILE, Rollback, syncBackup, type BackupHeader, type SyncResult } from '../../engine/backup/sync';
 import { garminRelayFetch } from '../../engine/sync/garmin';
 import type { Fetch } from '../../engine/sync/http';
 import { DataService } from './data.service';
@@ -331,5 +331,8 @@ export class AccountService {
     } catch {}
     clearTimeout(this.timer);
     await this.save(null);
+    // L'index de la sauvegarde est propre à ce compte (empreintes sous sa clé, versions vues) : la prochaine connexion,
+    // peut-être à un autre compte, repart comme une restauration
+    await (await this.local.raw()).remove(INDEX_FILE).catch(() => undefined);
   }
 }

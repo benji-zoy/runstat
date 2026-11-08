@@ -269,6 +269,18 @@ test('API : une adresse invalide (URI brute transmise par nginx) donne 400 sans 
   assert.equal((await api('lan', '/api/me')).status, 200);
 });
 
+test('API : sur le réseau local, un nom de domaine public est refusé (DNS rebinding)', async () => {
+  const port = servers.lan.address().port;
+  const get = (host) =>
+    new Promise((resolve, reject) =>
+      request({ host: '127.0.0.1', port, path: '/api/data/coros.json', headers: { Host: host } }, (res) => (res.resume(), resolve(res.statusCode))).on('error', reject).end(),
+    );
+  assert.equal(await get('attaquant.example'), 421);
+  assert.equal(await get('192.168.1.24.nip.io:8080'), 421);
+  assert.equal(await get('192.168.1.24:8080'), 200);
+  assert.equal(await get('diskstation.local'), 200);
+});
+
 test('API : /api/me et administration réservée au propriétaire par le tailnet', async () => {
   assert.deepEqual((await json(await api('tailnet', '/api/me', { login: 'bob@exemple.fr' }))).body,
     { id: 'bob', name: 'Bob', role: 'member', mode: 'hosted', multi: true, admin: false });

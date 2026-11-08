@@ -183,6 +183,20 @@ describe('synchro entre appareils', () => {
     expect(text(await a.read('goals.json'))).toBe('[]');
   });
 
+  it('première synchro d’un appareil déjà rempli : la sauvegarde l’emporte sur ses fichiers, le reste est envoyé', async () => {
+    const nas = fakeNas();
+    const a = new MemoryStore({ 'goals.json': '[{"id":"semi"}]', 'athlete.json': '{"hrMax":192}' });
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a'), header });
+    // Appareil utilisé sans compte, puis connecté : objectifs périmés, et un fichier que la sauvegarde n'a pas
+    const b = new MemoryStore({ 'goals.json': '[]', 'results/x.json': '{}' });
+    const r = await syncBackup({ raw: b, api: nas, keys, account: 'carol', device: device('b') });
+    expect(r).toMatchObject({ uploaded: 1, downloaded: 2 });
+    expect(text(await b.read('goals.json'))).toBe('[{"id":"semi"}]');
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') });
+    expect(text(await a.read('goals.json'))).toBe('[{"id":"semi"}]');
+    expect(text(await a.read('results/x.json'))).toBe('{}');
+  });
+
   it('manifeste le plus récent illisible : jamais de repli sur une version plus ancienne que celle déjà vue', async () => {
     const nas = fakeNas();
     const a = new MemoryStore({ 'goals.json': '[1]' });

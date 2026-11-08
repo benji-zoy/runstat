@@ -97,8 +97,11 @@ const strava = stravaConnectRoutes();
 const oauth = oauthConnectRoutes();
 const common = { accounts, queue, strava, oauth, appUrl: APP_URL, publicUrl: PUBLIC_URL, nextAt: () => nextAt, quotaBytes: QUOTA_BYTES, maxArchive: MAX_ARCHIVE };
 
+// Délai de toute la requête : 5 min par défaut dans Node, trop court pour une archive Strava de quelques centaines de Mo par Tailscale
+// (nginx relaie sans tampon, 600 s entre deux écritures) ; les en-têtes restent limités à 60 s (headersTimeout).
+const ARCHIVE_TIMEOUT_MS = 2 * 3600_000;
 const listen = (zone, port) =>
-  createServer(safeHandler(createApp({ zone, ...common }))).listen(port, () => console.log(`API (${zone}) sur le port ${port}`));
+  createServer({ requestTimeout: ARCHIVE_TIMEOUT_MS }, safeHandler(createApp({ zone, ...common }))).listen(port, () => console.log(`API (${zone}) sur le port ${port}`));
 listen('lan', PORT);
 listen('tailnet', PORT + 1);
 createServer(safeHandler(createPublicApi({ accounts, usersDir: dir, appOrigins: APP_ORIGINS, googleRedirects: GOOGLE_REDIRECTS, quotaBytes: BACKUP_QUOTA })))

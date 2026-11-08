@@ -465,7 +465,7 @@ export function debriefExport(e: GoalEvaluation, d: RaceDebrief, input: AiInput,
   goalFacts(doc, g, e);
   doc.h(2, 'Résultat');
   doc.facts([
-    ['Temps', `${clock(d.official)}${d.fromChip ? ' (temps puce)' : ' (montre)'}, ${pace(d.pace)} /km`],
+    ['Temps', `${clock(d.official)}${d.fromChip ? ' (officiel)' : ' (montre)'}, ${pace(d.pace)} /km`],
     ['Face à l\'objectif', d.targetGap !== null ? `${d.targetGap > 0 ? '+' : '−'}${clock(Math.abs(d.targetGap))}` : null],
     ['Face à la prédiction de la veille', `${d.predictedGap > 0 ? '+' : '−'}${clock(Math.abs(d.predictedGap))} (prédiction ${clock(e.predicted)})`],
     ['Probabilité de l\'objectif la veille', d.probability !== null ? `${n(d.probability * 100)} %` : null],
