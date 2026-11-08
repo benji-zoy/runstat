@@ -325,19 +325,21 @@ function evaluationSection(doc: MdDoc, e: GoalEvaluation, opts: AiOptions, withM
     doc.table(['Modèle', 'Temps', 'Poids', 'Note'], e.models.map((m) => [m.label, clock(m.seconds), n(m.weight, 2), m.note]));
     doc.p(`Consensus brut : ${clock(e.base)}.`);
   }
-  if (e.adjustments.length) {
+  // Sans la santé, ni l'ajustement « Récupération » (son signe et sa taille disent l'état de la VFC et de la FC de repos),
+  // ni le critère, ni son conseil (sommeil)
+  const adjustments = e.adjustments.filter((a) => opts.health || a.label !== 'Récupération');
+  if (adjustments.length) {
     doc.h(3, 'Ajustements du jour J');
-    doc.table(['Ajustement', 'Effet sur le temps', 'Détail'], e.adjustments.map((a) => [
-      a.label, signedPct(a.pct), a.label === 'Récupération' && !opts.health ? 'détail des données de santé non partagé' : a.note,
-    ]));
-    doc.p('Effet positif = plus lent.');
+    doc.table(['Ajustement', 'Effet sur le temps', 'Détail'], adjustments.map((a) => [a.label, signedPct(a.pct), a.note]));
+    doc.p(adjustments.length < e.adjustments.length ? 'Effet positif = plus lent. Un ajustement tiré des données de santé n\'est pas partagé.' : 'Effet positif = plus lent.');
   }
   const items = e.readiness.filter((r) => opts.health || r.label !== 'Récupération');
+  const hidden = new Set(e.readiness.filter((r) => !items.includes(r)).map((r) => r.advice));
   if (items.length) {
     doc.h(3, 'Préparation, critère par critère');
     doc.table(['Critère', 'Aujourd\'hui', 'Repère', 'Score', 'Projeté', 'Poids'], items.map((r) => [r.label, r.value, r.target, n(r.score * 100), n(r.projected * 100), n(r.weight, 1)]));
   }
-  const advice = [...e.advice, ...items.map((r) => r.advice)].filter((x, i, xs): x is string => !!x && xs.indexOf(x) === i);
+  const advice = [...e.advice, ...items.map((r) => r.advice)].filter((x, i, xs): x is string => !!x && !hidden.has(x) && xs.indexOf(x) === i);
   if (advice.length) doc.h(3, 'Conseils de RunStat').list(advice);
 }
 
@@ -379,7 +381,7 @@ function strategySection(doc: MdDoc, e: GoalEvaluation, opts: AiOptions): void {
   }
   for (const b of plan.blocks) {
     if (opts.detail === 'summary' && !/allure|cardio|ravit|nutri/i.test(b.title)) continue;
-    doc.h(3, b.title).list(b.items);
+    doc.h(3, b.title).list(opts.health ? b.items : (b.withoutWeight ?? b.items));
   }
 }
 

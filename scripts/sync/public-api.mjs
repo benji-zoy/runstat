@@ -30,6 +30,7 @@ import { AuthStore } from './auth-store.mjs';
 import { BackupError, BackupStore, MAX_OBJECT, OBJECT_ID } from './backup-store.mjs';
 import { ALGORITHMS, WebAuthnError, challengeOf, verifyAssertion, verifyRegistration } from './webauthn.mjs';
 import { userPaths } from './accounts.mjs';
+import { parseUrl, pipeFile } from './http-safe.mjs';
 
 const MAX_JSON = 64 * 1024;
 const MAX_MANIFEST = 12 * 2 ** 20;
@@ -472,7 +473,8 @@ export function createPublicApi({
       : {};
 
   return async function handle(req, res) {
-    const url = new URL(req.url, 'http://runstat');
+    const url = parseUrl(req.url);
+    if (!url) return res.writeHead(400, { 'Cache-Control': 'no-store' }).end();
     const path = url.pathname;
     const origin = req.headers.origin;
     const area = /^\/(auth|backup|relay)(\/|$)/.exec(path)?.[1];
@@ -484,7 +486,7 @@ export function createPublicApi({
       const h = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...cors(origin && appOrigins.includes(origin) ? origin : null), ...headers };
       if (stream) {
         res.writeHead(status, h);
-        return stream.pipe(res);
+        return pipeFile(stream, res);
       }
       if (body === undefined) return res.writeHead(status, h).end();
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...h });

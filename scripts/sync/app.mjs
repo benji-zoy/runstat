@@ -38,6 +38,7 @@ import { AuthStore } from './auth-store.mjs';
 import { BackupStore } from './backup-store.mjs';
 import { jobs } from './queue.mjs';
 import { exported, README, zipStream } from '#engine/archive/zip-writer.ts';
+import { parseUrl, pipeFile } from './http-safe.mjs';
 
 const MAX_BODY = 64 * 1024;
 const MIN_GAP_MS = 20_000; // anti-rebond des clics
@@ -243,7 +244,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     if (req.headers['if-none-match'] === etag) return res.writeHead(304, headers).end();
     res.writeHead(200, { ...headers, 'Content-Length': st.size });
     if (req.method === 'HEAD') return res.end();
-    createReadStream(file).pipe(res);
+    pipeFile(createReadStream(file), res);
   }
 
   /** Export : data-raw (sans secrets ni fichiers techniques) et snapshot du compte, en flux */
@@ -345,7 +346,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
   }
 
   return async function handle(req, res) {
-    const url = new URL(req.url, 'http://runstat');
+    const url = parseUrl(req.url);
+    if (!url) return send(res, 400, { error: 'adresse invalide' });
     const path = url.pathname;
     if (!path.startsWith('/api/')) return send(res, 404, { error: 'introuvable' });
     const acc = accounts();

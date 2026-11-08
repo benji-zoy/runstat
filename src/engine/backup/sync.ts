@@ -120,19 +120,23 @@ async function syncOnce({ raw, api, keys, account, device, header, now = () => n
   const remote = await api.getManifest();
   let base: Manifest | null = null;
   let remoteHeader: BackupHeader | null = null;
+  let readVersion = 0; // version effectivement déchiffrée : seule celle-ci compte comme « vue » (pas un manifeste forgé illisible)
   if (remote) {
     if (remote.version < index.maxVersion) throw new Rollback(`le serveur sert la version ${remote.version}, cet appareil a déjà vu la ${index.maxVersion}`);
     remoteHeader = remote.header;
     try {
       base = await decryptManifest<Manifest>(keys, account, remote.version, remote.blob);
+      readVersion = remote.version;
     } catch (e) {
       if (!(e instanceof TamperedData)) throw e;
       // Dernier manifeste indéchiffrable (envoi corrompu, ou manifeste forgé avec une autre clé) : on repart du dernier lisible
       for (const m of (await api.listManifests()).sort((a, b) => b.version - a.version)) {
-        if (m.version >= remote.version || m.version < index.maxVersion - 1000) continue;
+        // Jamais plus ancien qu'une version déjà vue : sinon un manifeste illisible ouvrirait la porte au retour en arrière
+        if (m.version >= remote.version || m.version < index.maxVersion) continue;
         try {
           const older = await api.getManifestVersion(m.version);
           base = await decryptManifest<Manifest>(keys, account, older.version, older.blob);
+          readVersion = older.version;
           break;
         } catch {}
       }
@@ -218,25 +222,36 @@ async function syncOnce({ raw, api, keys, account, device, header, now = () => n
   const incoming = Object.entries(remoteFiles).filter(
     ([path, r]) => merged[path] === r && newer(r, index.files[path]) && (r.del ? present.has(path) : localHash.get(path) !== r.hash),
   );
+  // Chaque fichier reçu est noté dans l'index dès qu'il est écrit, avant l'envoi du manifeste : si celui-ci échoue (412, réseau,
+  // onglet fermé), la passe suivante ne prend pas ces fichiers pour des modifications locales (qui gagneraient sur tout).
+  const received: Index['files'] = {};
+  const noteReceived = () => raw.write(INDEX_FILE, JSON.stringify({ ...index, files: { ...index.files, ...received } } satisfies Index));
   for (const [i, [path, r]] of incoming.entries()) {
     onProgress('réception', i, incoming.length);
     if (r.del) {
       await raw.remove(path);
+      received[path] = { hash: '', clock: r.clock, dev: r.dev, del: true };
       deleted++;
       continue;
     }
     if (!cache.has(r.obj)) cache.set(r.obj, await decryptObject(keys, r.obj, await api.getObject(r.obj)));
     const bytes = cache.get(r.obj)!.slice(r.off, r.off + r.len);
-    if ((await objectId(keys, bytes)) !== r.hash) throw new TamperedData(`${path} : contenu inattendu`);
+    if ((await objectId(keys, bytes)) !== r.hash) {
+      if (downloaded + deleted) await noteReceived();
+      throw new TamperedData(`${path} : contenu inattendu`);
+    }
     await raw.write(path, bytes);
+    received[path] = { hash: r.hash, clock: r.clock, dev: r.dev };
     downloaded++;
   }
+  if (downloaded + deleted) await noteReceived();
 
   // ---- manifeste fusionné, envoyé seulement s'il y a du neuf (ou un nouvel en-tête)
   const version = (remote?.version ?? 0) + 1;
   const stamp = now().toISOString();
   const dirty = [...localChanged.keys()].some((p) => merged[p] !== remoteFiles[p]);
   let finalVersion = remote?.version ?? 0;
+  let seen = readVersion;
   if (!remote || dirty || header) {
     const manifest: Manifest = {
       v: 1,
@@ -250,11 +265,12 @@ async function syncOnce({ raw, api, keys, account, device, header, now = () => n
     const objects = [...new Set(Object.values(merged).filter((f) => !f.del).map((f) => f.obj))];
     await api.putManifest({ version, header: hdr, blob: await encryptManifest(keys, account, version, manifest), objects }, remote?.version ?? null);
     finalVersion = version;
+    seen = version;
   }
 
   // ---- index local : état de référence pour la prochaine fois
   const files: Index['files'] = {};
   for (const [path, f] of Object.entries(merged)) files[path] = f.del ? { hash: '', clock: f.clock, dev: f.dev, del: true } : { hash: f.hash, clock: f.clock, dev: f.dev };
-  await raw.write(INDEX_FILE, JSON.stringify({ version: finalVersion, maxVersion: Math.max(index.maxVersion, finalVersion), files } satisfies Index));
+  await raw.write(INDEX_FILE, JSON.stringify({ version: finalVersion, maxVersion: Math.max(index.maxVersion, seen), files } satisfies Index));
   return { version: finalVersion, uploaded: toUpload.length, downloaded, deleted, changed: downloaded + deleted > 0 };
 }

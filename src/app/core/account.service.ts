@@ -7,6 +7,7 @@ import type { Fetch } from '../../engine/sync/http';
 import { DataService } from './data.service';
 import { EntryError } from './entry-error';
 import { LocalService } from './local.service';
+import { withLock } from './locks';
 import { LOCAL_MODE } from './runtime';
 
 /** Compte local-first, gardé dans la base IndexedDB `runstat-account` (jamais la phrase de passe ni la clé de données) */
@@ -229,7 +230,12 @@ export class AccountService {
     this.syncing.set(true);
     this.lastError.set(null);
     try {
-      const result = await syncBackup({ raw: await this.local.raw(), api: this.client().backup, keys: s.keys, account: s.user.id, device: s.device, header });
+      // Une passe à la fois (minuteur, renouvellement d'un jeton, autre onglet) : deux passes sur le même index verraient
+      // chacune les fichiers reçus par l'autre comme des modifications locales
+      const raw = await this.local.raw();
+      const result = (await withLock('runstat-sauvegarde', () =>
+        syncBackup({ raw, api: this.client().backup, keys: s.keys!, account: s.user.id, device: s.device, header }),
+      ))!;
       this.lastResult.set(result);
       await this.save({ ...this.state()!, lastSync: new Date().toISOString() });
       if (result.changed) {

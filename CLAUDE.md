@@ -186,7 +186,9 @@ identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appa
   avec `If-Match` (412 → relecture et nouvelle fusion, 4 essais). Fusion par fichier : horloge de Lamport, appareil pour départager,
   suppression = pierre tombale (pas d'horloge murale ; même fichier modifié sur deux appareils : le dernier écrit gagne). Fichiers de
   moins de 256 Kio regroupés en paquets de 4 Mio au plus. Anti-retour : plus haute version vue gardée dans `backup-index.json`, un manifeste
-  plus ancien est refusé (`Rollback`) ; manifeste le plus récent illisible → dernier lisible. Non sauvegardé : `fit-derived/`,
+  plus ancien est refusé (`Rollback`) ; manifeste le plus récent illisible → dernier lisible, jamais plus ancien qu'une version déjà
+  déchiffrée. Fichiers reçus notés dans l'index avant l'envoi du manifeste (un envoi raté ne les renvoie pas comme locaux) ; une passe à la
+  fois (verrou `runstat-sauvegarde`). Non sauvegardé : `fit-derived/`,
   `local-state.json`, `backup-index.json`, `missing-details.txt` (reconstruits). Restaurer = synchroniser un stockage vide, puis `rebuild`.
 - `account.service.ts` (IndexedDB `runstat-account` : NAS, jeton de session, appareil, clés de travail ; jamais la phrase de passe ni la
   clé de données) : `join` (invitation + passkey), `login` (passkey), `redeemLink` (lien de connexion), `create`, `unlock` (phrase ou code

@@ -156,6 +156,47 @@ describe('synchro entre appareils', () => {
     expect(text(await b.read('athlete.json'))).toBe('{"a":1}');
   });
 
+  it('envoi du manifeste raté : les fichiers déjà reçus ne repartent pas comme des modifications locales', async () => {
+    const nas = fakeNas();
+    const a = new MemoryStore({ 'secrets/coros.json': '{"refresh":"v1"}' });
+    const b = new MemoryStore();
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a'), header });
+    await syncBackup({ raw: b, api: nas, keys, account: 'carol', device: device('b') });
+    // A renouvelle le jeton ; B a une modification à lui, reçoit le jeton v2, puis son envoi échoue (réseau)
+    await a.write('secrets/coros.json', '{"refresh":"v2"}');
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') });
+    await b.write('goals.json', '[]');
+    nas.hooks.beforePut = async () => {
+      nas.hooks.beforePut = undefined;
+      throw new Error('réseau coupé');
+    };
+    await expect(syncBackup({ raw: b, api: nas, keys, account: 'carol', device: device('b') })).rejects.toThrow('réseau coupé');
+    expect(text(await b.read('secrets/coros.json'))).toBe('{"refresh":"v2"}');
+    // A renouvelle encore ; B reprend : il reçoit v3 au lieu de renvoyer v2 par-dessus
+    await a.write('secrets/coros.json', '{"refresh":"v3"}');
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') });
+    const r = await syncBackup({ raw: b, api: nas, keys, account: 'carol', device: device('b') });
+    expect(r.uploaded).toBe(1); // goals.json seulement
+    expect(text(await b.read('secrets/coros.json'))).toBe('{"refresh":"v3"}');
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') });
+    expect(text(await a.read('secrets/coros.json'))).toBe('{"refresh":"v3"}');
+    expect(text(await a.read('goals.json'))).toBe('[]');
+  });
+
+  it('manifeste le plus récent illisible : jamais de repli sur une version plus ancienne que celle déjà vue', async () => {
+    const nas = fakeNas();
+    const a = new MemoryStore({ 'goals.json': '[1]' });
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a'), header });
+    await a.write('goals.json', '[2]');
+    await syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') });
+    // Le serveur retire la version 2 et sert un manifeste forgé en version 3 : le repli sur la version 1 serait un retour en arrière
+    const thief = await workKeys(newDataKey());
+    nas.manifests.splice(1, 1);
+    nas.manifests.push({ version: 3, header, blob: await encryptManifest(thief, 'carol', 3, { files: {} }), objects: [] });
+    await expect(syncBackup({ raw: a, api: nas, keys, account: 'carol', device: device('a') })).rejects.toBeInstanceOf(TamperedData);
+    expect(text(await a.read('goals.json'))).toBe('[2]');
+  });
+
   it('serveur malveillant : retour à une version déjà vue refusé ; manifeste indéchiffrable → dernier lisible', async () => {
     const nas = fakeNas();
     const a = new MemoryStore({ 'goals.json': '[]' });
