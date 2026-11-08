@@ -1,6 +1,9 @@
 // Identité « Piste » : fonds graphite, un seul accent vif (volt), les données d'abord.
 // Thème sombre par défaut ; thème clair via <html data-theme="light"> (Moi › Apparence, ThemeService).
 // Toutes les couleurs passent par ces variables, y compris celles des graphiques (ui/palette.ts).
+// Mouvement (motion.scss) : ce qui arrive décélère et se pose, ce qui part accélère et sort à vitesse de croisière.
+@use 'motion';
+
 :root {
   color-scheme: dark;
   --bg: #0b0c0e;
@@ -59,7 +62,25 @@
   --display-stretch: 75%;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --radius: 10px;
+  // Rayons : puces et champs, cartes, fenêtres
+  --radius-s: 8px;
+  --radius: 12px;
+  --radius-l: 16px;
+
+  // Profondeur : liseré clair en haut des surfaces (graphite), ombre douce (clair)
+  --edge: rgb(255 255 255 / 0.045);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  --shadow-lift: 0 10px 24px -12px rgb(0 0 0 / 0.6);
+  // Couloirs de piste (décor) : traits à peine visibles
+  --lane: rgb(255 255 255 / 0.075);
+
+  // Mouvement : arrivée qui décélère, départ qui accélère sans freiner, retour élastique très amorti
+  --ease-arrivee: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-depart: cubic-bezier(0.4, 0, 1, 1);
+  --ease-ressort: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-court: 120ms;
+  --dur-moyen: 220ms;
+  --dur-long: 360ms;
 }
 
 :root[data-theme='light'] {
@@ -109,6 +130,11 @@
 
   --map-land: #eceee9;
   --map-line: #8a8f96;
+
+  --edge: rgb(255 255 255 / 0.9);
+  --shadow: 0 1px 2px rgb(18 20 23 / 0.05), 0 4px 14px -8px rgb(18 20 23 / 0.1);
+  --shadow-lift: 0 12px 28px -14px rgb(18 20 23 / 0.28);
+  --lane: rgb(18 20 23 / 0.08);
 }
 
 * {
@@ -214,6 +240,7 @@ a {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--edge), var(--shadow);
   padding: 1.25rem;
   min-width: 0;
   /* Quand une carte est une grille, sa colonne reste dans la largeur de la carte */
@@ -223,7 +250,6 @@ a {
 @media (max-width: 600px) {
   .card {
     padding: 1rem;
-    border-radius: 12px;
   }
 }
 
@@ -361,7 +387,7 @@ td.wrap {
   gap: 2px;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-s);
 
   button {
     font: 600 0.86rem var(--font-body);
@@ -369,7 +395,7 @@ td.wrap {
     background: none;
     border: 0;
     padding: 0.45rem 0.85rem;
-    border-radius: 7px;
+    border-radius: 6px;
     min-height: 36px;
     cursor: pointer;
 
@@ -453,12 +479,8 @@ dialog.sheet {
   color: var(--text-primary);
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-l);
   overflow: hidden;
-
-  &::backdrop {
-    background: rgb(0 0 0 / 0.55);
-  }
 
   form {
     display: grid;
@@ -505,7 +527,7 @@ dialog.sheet {
     width: 100vw;
     max-width: 100vw;
     margin: auto 0 0;
-    border-radius: var(--radius) var(--radius) 0 0;
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
@@ -536,7 +558,7 @@ dialog.sheet {
     color: var(--text-primary);
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-s);
     padding: 0.5rem 0.65rem;
     min-height: 40px;
     width: 100%;

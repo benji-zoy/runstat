@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, effect, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Location } from '@angular/common';
@@ -11,26 +11,28 @@ import { ResultFormComponent } from '../ui/forms/result-form';
 import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 import { EntriesService } from '../core/entries.service';
 import { ScienceService } from '../core/science.service';
+import { CountUpDirective } from '../ui/count-up';
+import { MotionService } from '../ui/motion';
 
 const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 /** Fiche d'une sortie, avec sa propre adresse : liens depuis Aujourd'hui, le journal, les records */
 @Component({
   selector: 'app-run',
-  imports: [ActivityDetailComponent, IconComponent, RouterLink, ResultFormComponent, AiExportDialogComponent],
+  imports: [ActivityDetailComponent, IconComponent, RouterLink, ResultFormComponent, AiExportDialogComponent, CountUpDirective],
   template: `
     <button type="button" class="back" (click)="back()"><app-icon name="back" />Retour</button>
     @if (activity(); as a) {
-      <header class="page-head">
+      <header class="page-head vt-hero">
         <h1>{{ a.name || 'Sortie' }}</h1>
         <p class="lede">{{ when() }}</p>
       </header>
-      <div class="figures">
-        <div><span class="v">{{ num(a.distanceKm, 1) }}</span><span class="muted">km</span></div>
-        <div><span class="v">{{ clock(a.durationSec) }}</span><span class="muted">durée</span></div>
-        <div><span class="v">{{ pace(a.durationSec / a.distanceKm) }}</span><span class="muted">min/km</span></div>
+      <div class="figures hero">
+        <div><span class="v" [appCountUp]="num(a.distanceKm, 1)"></span><span class="muted">km</span></div>
+        <div><span class="v" [appCountUp]="clock(a.durationSec)"></span><span class="muted">durée</span></div>
+        <div><span class="v" [appCountUp]="pace(a.durationSec / a.distanceKm)"></span><span class="muted">min/km</span></div>
         @if (a.avgHr) {
-          <div><span class="v">{{ a.avgHr }}</span><span class="muted">FC moy.</span></div>
+          <div><span class="v" [appCountUp]="'' + a.avgHr"></span><span class="muted">FC moy.</span></div>
         }
       </div>
       @if (a.result; as r) {
@@ -104,6 +106,11 @@ const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numer
     .figures div { display: grid; }
     .figures .v { font: 600 1.5rem var(--font-mono); }
     .figures .muted { font-size: 0.8rem; }
+    /* Chiffres héros de la sortie : libellé discret au-dessus, valeur en grand */
+    .figures.hero div { gap: 0.25rem; }
+    .figures.hero .muted { order: -1; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; }
+    .figures.hero .v { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; font-size: 2.4rem; }
+    @media (max-width: 600px) { .figures.hero { gap: 1rem 1.6rem; } .figures.hero .v { font-size: 2rem; } }
     .missing { display: grid; gap: 0.75rem; justify-items: start; }
     .ai { justify-self: start; }
     .official { display: grid; gap: 0.6rem; }
@@ -134,6 +141,15 @@ export class RunPage {
     const id = this.params()?.get('id');
     return this.store.activities().find((a) => a.id === id) ?? null;
   });
+
+  constructor() {
+    // Au retour, la carte de cette sortie (Aujourd'hui, Journal) reprend la place de l'en-tête
+    const motion = inject(MotionService);
+    effect(() => {
+      const id = this.params()?.get('id');
+      if (id) motion.last = 'run:' + id;
+    });
+  }
   protected distLabel = (km: number) =>
     Math.abs(km - 42.195) < 0.05 ? 'Marathon' : Math.abs(km - 21.0975) < 0.05 ? 'Semi' : `${num(km, km % 1 ? 1 : 0)} km`;
   protected readonly isRace = computed(() => {

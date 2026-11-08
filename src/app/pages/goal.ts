@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Location } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,6 +15,7 @@ import { GoalFormComponent } from '../ui/forms/goal-form';
 import { DebriefFormComponent } from '../ui/forms/debrief-form';
 import { IconComponent } from '../ui/icon';
 import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
+import { MotionService } from '../ui/motion';
 
 type Part = GoalPart | 'confiance' | 'bilan';
 
@@ -44,7 +45,7 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
 
     @if (ev(); as e) {
       @let g = e.goal;
-      <header class="page-head">
+      <header class="page-head vt-hero">
         <div>
           <h1>{{ g.name }}</h1>
           <p class="lede">
@@ -125,14 +126,10 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
     .countdown { font-size: 2.2rem; color: var(--accent); white-space: nowrap; }
     .row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin: -0.4rem 0 -0.3rem; }
     .tiles { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fill, minmax(min(46%, 170px), 1fr)); }
-    .tile {
-      display: grid; gap: 0.25rem; align-content: start; text-align: left; font: inherit; color: inherit; cursor: pointer;
-      padding: 0.85rem 0.95rem; transition: border-color 0.15s, background 0.15s;
-    }
-    .tile:hover { border-color: var(--accent); }
+    .tile { display: grid; gap: 0.25rem; align-content: start; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 0.85rem 0.95rem; }
     .tile.active { border-color: var(--accent); background: var(--accent-soft); }
     .t-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
-    .t-value { font: 600 1.25rem var(--font-mono); color: var(--text-primary); }
+    .t-value { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; font-size: 1.6rem; color: var(--text-primary); }
     .t-value.tone { color: var(--tone); }
     .t-note { font-size: 0.8rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .panel { display: grid; gap: 1rem; scroll-margin-top: 1rem; }
@@ -161,6 +158,15 @@ export class GoalPage {
   protected readonly num = num;
 
   protected readonly ev = computed(() => this.sci.goals().find((e) => e.goal.id === this.params()?.get('id')) ?? null);
+
+  constructor() {
+    // Au retour, la carte de cet objectif (Courses, Aujourd'hui) reprend la place de l'en-tête
+    const motion = inject(MotionService);
+    effect(() => {
+      const id = this.params()?.get('id');
+      if (id) motion.last = 'goal:' + id;
+    });
+  }
   protected readonly archived = computed(() => {
     const e = this.ev();
     return !!e && this.sci.archivedGoals().includes(e);

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
@@ -21,6 +21,7 @@ import { LocalService } from './core/local.service';
 import { LOCAL_MODE } from './core/runtime';
 import { ShellService } from './core/shell.service';
 import { km } from './core/format';
+import { installSlidingIndicators } from './ui/motion';
 
 @Component({
   selector: 'app-root',
@@ -61,7 +62,23 @@ export class App {
     return d ? day(new Date(d.generatedAt)) : '';
   });
 
+  /** Synchro terminée sans problème : la rotation laisse place à une coche qui se dessine */
+  protected readonly synced = signal(false);
+
   constructor() {
+    installSlidingIndicators(inject(DestroyRef));
+    let wasRunning = false;
+    let syncedTimer: ReturnType<typeof setTimeout> | undefined;
+    effect(() => {
+      const running = this.sync.running();
+      if (wasRunning && !running && !untracked(this.sync.problems).length) {
+        this.synced.set(true);
+        clearTimeout(syncedTimer);
+        syncedTimer = setTimeout(() => this.synced.set(false), 1800);
+      }
+      wasRunning = running;
+    });
+
     // Les pages (Moi) ouvrent les fenêtres de saisie posées une seule fois ici
     const shell = inject(ShellService);
     shell.register('athlete', () => this.athleteForm().open());

@@ -68,25 +68,21 @@ import { IconComponent } from '../ui/icon';
   `,
   styles: `
     .tiles { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(min(46%, 250px), 1fr)); }
-    .tile {
-      display: grid; grid-template-rows: auto 1fr auto; gap: 0.6rem; color: inherit; text-decoration: none;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .tile:hover { border-color: var(--accent); }
+    .tile { display: grid; grid-template-rows: auto 1fr auto; gap: 0.6rem; color: inherit; text-decoration: none; }
     .tile:focus-visible { outline-offset: 3px; }
     .tile h3 { font-size: 0.98rem; line-height: 1.25; }
     .body { display: grid; align-content: start; gap: 0.5rem; min-width: 0; }
     .body :is(app-analysis, app-records, app-race-standing, app-recovery, app-habits, app-places) { display: grid; gap: 0.5rem; min-width: 0; }
     .body .verdict { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
     .race { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; }
-    .race .big { font: 600 1.6rem var(--font-mono); }
+    .race .big { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; font-size: 2.1rem; line-height: 1; font-variant-numeric: tabular-nums; }
     .race .muted { font-size: 0.82rem; }
     .more { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--accent-text); font-size: 0.82rem; font-weight: 600; --icon: 0.9rem; }
     @media (max-width: 600px) {
       .tiles { gap: 0.6rem; }
       .tile { padding: 0.85rem; }
       .tile h3 { font-size: 0.9rem; }
-      .race .big { font-size: 1.3rem; }
+      .race .big { font-size: 1.7rem; }
     }
   `,
 })

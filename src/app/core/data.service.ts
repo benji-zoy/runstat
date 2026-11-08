@@ -3,10 +3,12 @@ import { LocalService } from './local.service';
 import { LOCAL_MODE } from './runtime';
 import { CorosData } from './models';
 import { parseDay, startOfDay } from './stats';
+import { MotionService } from '../ui/motion';
 
 @Injectable({ providedIn: 'root' })
 export class DataService {
   private readonly local = inject(LocalService);
+  private readonly motion = inject(MotionService);
   readonly data = signal<CorosData | null>(null);
   readonly error = signal<string | null>(null);
   /** Compte sans données pour l'instant (nouveau compte hébergé : réglages et sources à renseigner, puis synchro) */
@@ -44,6 +46,17 @@ export class DataService {
     }
   }
 
+  /** Nouvelles données : les sorties qui n'existaient pas encore sont signalées (surbrillance dans les listes) */
+  private setData(d: CorosData): void {
+    const before = this.data()?.activities;
+    if (before) {
+      const known = new Set(before.map((a) => a.id));
+      const added = d.activities.filter((a) => !known.has(a.id)).map((a) => a.id);
+      if (added.length) this.motion.markFresh(added);
+    }
+    this.data.set(d);
+  }
+
   async load(): Promise<void> {
     if (LOCAL_MODE) {
       // Appli publique : snapshot calculé sur l'appareil ; aucun encore = compte vide (écran de bienvenue)
@@ -51,7 +64,7 @@ export class DataService {
         const d = await this.local.snapshot();
         this.empty.set(!d);
         this.error.set(null);
-        if (d) this.data.set(d);
+        if (d) this.setData(d);
       } catch (e) {
         this.error.set(`Stockage de l’appareil illisible (${(e as Error).message}).`);
       }
@@ -66,7 +79,7 @@ export class DataService {
       if (!res.ok || !json) throw new Error(`HTTP ${res.status}`);
       this.empty.set(false);
       this.error.set(null);
-      this.data.set(json);
+      this.setData(json);
     } catch (e) {
       this.error.set(`Impossible de charger data/coros.json (${(e as Error).message}). Lance « npm run data ».`);
     }

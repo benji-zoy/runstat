@@ -11,17 +11,17 @@
 
   <div class="tools">
     @if (sync.available()) {
-      <button type="button" class="icon-btn sync" [class.spinning]="sync.running()"
+      <button type="button" class="icon-btn sync" [class.spinning]="sync.running()" [class.done]="synced()"
         [class.warn]="sync.problems().length > 0" [disabled]="sync.running()" (click)="sync.trigger()"
         (mouseenter)="sync.refresh()" [title]="sync.title()" [attr.aria-label]="sync.running() ? 'Synchronisation en cours' : 'Synchroniser les données'">
-        <app-icon name="sync" />
+        <app-icon [name]="synced() ? 'check' : 'sync'" />
         @if (sync.notice(); as n) {
-          <span class="sync-notice" role="status">{{ n }}</span>
+          <span class="sync-notice" role="status" animate.enter="pop-in" animate.leave="pop-out">{{ n }}</span>
         }
       </button>
     } @else if (sync.notice(); as n) {
       <!-- Appli publique sans source connectée : message d'une connexion refusée, sans bouton de synchro -->
-      <span class="sync notice-anchor"><span class="sync-notice" role="status">{{ n }}</span></span>
+      <span class="sync notice-anchor"><span class="sync-notice" role="status" animate.enter="pop-in" animate.leave="pop-out">{{ n }}</span></span>
     }
     @if (local && localService.busy()) {
       <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
@@ -36,20 +36,20 @@
 
 <main>
   @if (pwa.updateReady()) {
-    <div class="banner" role="status">
+    <div class="banner" role="status" animate.enter="banner-in" animate.leave="banner-out">
       Nouvelle version de RunStat disponible
       <button type="button" class="btn small primary" (click)="pwa.reload()">Recharger</button>
     </div>
   }
   @if (iosHint()) {
-    <div class="banner" role="status">
+    <div class="banner" role="status" animate.enter="banner-in" animate.leave="banner-out">
       Sur iPhone, ajoute RunStat à l'écran d'accueil (Partager › Sur l'écran d'accueil) : sinon Safari efface tes données après
       7 jours sans visite.
       <button type="button" class="btn small" (click)="hideIosHint()">Compris</button>
     </div>
   }
   @if (!pwa.online() && data()) {
-    <div class="banner" role="status">Hors ligne · données du {{ updatedAt() }}</div>
+    <div class="banner" role="status" animate.enter="banner-in" animate.leave="banner-out">Hors ligne · données du {{ updatedAt() }}</div>
   }
   @if (standalone()) {
     <router-outlet />
@@ -57,7 +57,7 @@
     <p class="card error">{{ error() }}</p>
   } @else if (empty()) {
     <section class="card empty-account">
-      <h2>Bienvenue{{ me.me()?.name ? ', ' + me.me()?.name : '' }}</h2>
+      <h2 class="lanes">Bienvenue{{ me.me()?.name ? ', ' + me.me()?.name : '' }}</h2>
       @if (local) {
         <p>Tes données restent sur cet appareil{{ account.state() ? ", sauvegardées chiffrées (illisibles pour le serveur)" : " : rien n'est envoyé à un serveur" }}.
           Ouvre les Réglages : renseigne ta FC et ta
@@ -74,7 +74,12 @@
   } @else if (data()) {
     <router-outlet />
   } @else {
-    <p class="loading muted">Chargement des données…</p>
+    <div class="skeleton" role="status" aria-label="Chargement des données">
+      <span class="sk title"></span>
+      <span class="sk line"></span>
+      <div class="sk-row"><span class="sk tall"></span><span class="sk tall"></span></div>
+      <span class="sk block"></span>
+    </div>
   }
 </main>
 

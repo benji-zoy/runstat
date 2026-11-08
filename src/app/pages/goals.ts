@@ -11,6 +11,8 @@ import { GoalFormComponent } from '../ui/forms/goal-form';
 import { ResultFormComponent } from '../ui/forms/result-form';
 import { IconComponent } from '../ui/icon';
 import { PredictionHistoryComponent } from '../sections/prediction-history';
+import { CountUpDirective } from '../ui/count-up';
+import { MorphDirective, SignatureDirective } from '../ui/motion';
 
 const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--series-1)', warning: 'var(--warning)', serious: 'var(--serious)' };
 const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -21,7 +23,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
  */
 @Component({
   selector: 'app-goals',
-  imports: [RouterLink, GoalFormComponent, ResultFormComponent, IconComponent, PredictionHistoryComponent],
+  imports: [RouterLink, GoalFormComponent, ResultFormComponent, IconComponent, PredictionHistoryComponent, CountUpDirective, MorphDirective, SignatureDirective],
   template: `
     <header class="page-head">
       <h1>Courses</h1>
@@ -40,16 +42,16 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
       <h2>À venir</h2>
       <div class="tiles">
         @for (e of upcoming(); track e.goal.id) {
-          <a class="card tile" [routerLink]="['/courses', e.goal.id]" [style.--tone]="tone(e)">
+          <a class="card tile" [routerLink]="['/courses', e.goal.id]" [style.--tone]="tone(e)" [appMorph]="'goal:' + e.goal.id">
             <div class="head">
               <h3>{{ e.goal.name }}</h3>
               <span class="days display">{{ e.daysLeft > 0 ? 'J-' + e.daysLeft : 'Jour J' }}</span>
             </div>
             <span class="muted small">{{ fmt(e.goal.date) }} · {{ km(e) }}</span>
             <div class="figures">
-              <div><span class="v">{{ clock(e.predicted) }}</span><span class="muted small">chrono probable</span></div>
+              <div><span class="v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">chrono probable</span></div>
               <div>
-                <span class="v tone">{{ e.index }}<small>{{ e.probability !== null ? ' %' : '/100' }}</small></span>
+                <span class="v tone"><span [appCountUp]="'' + e.index"></span><small>{{ e.probability !== null ? ' %' : '/100' }}</small></span>
                 <span class="muted small">{{ e.probability !== null ? 'sous ' + clock(e.goal.targetSec!) : 'préparation' }}</span>
               </div>
             </div>
@@ -76,7 +78,8 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
         <h2>Passées <small class="muted">{{ past().length }}</small></h2>
         <div class="tiles">
           @for (p of past(); track p.e.goal.id) {
-            <a class="card tile past" [routerLink]="['/courses', p.e.goal.id]" [attr.data-tone]="p.tone">
+            <a class="card tile past" [routerLink]="['/courses', p.e.goal.id]" [attr.data-tone]="p.tone" [appMorph]="'goal:' + p.e.goal.id"
+              [appSignature]="p.tone === 'good' ? 'objectif:' + p.e.goal.id : null">
               <div class="head">
                 <h3>{{ p.e.goal.name }}</h3>
               </div>
@@ -145,20 +148,18 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
     .section h2 small { font-size: 0.85rem; margin-left: 0.3rem; }
     .intro { margin: -0.4rem 0 0; font-size: 0.88rem; }
     .tiles { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
-    .tile {
-      display: grid; gap: 0.55rem; align-content: start; color: inherit; text-decoration: none;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .tile:hover { border-color: var(--accent); }
+    .tile { display: grid; gap: 0.55rem; align-content: start; color: inherit; text-decoration: none; }
     .tile:focus-visible { outline-offset: 3px; }
     .head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
     .head h3 { font-size: 1.05rem; line-height: 1.2; }
     .days { color: var(--accent); font-size: 1.4rem; white-space: nowrap; }
     .small { font-size: 0.8rem; }
     .figures { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; }
-    .figures div { display: grid; }
-    .figures .v { font: 600 1.35rem var(--font-mono); }
-    .figures .v small { font-size: 0.8rem; }
+    /* Chiffre héros : libellé discret au-dessus, valeur en grand */
+    .figures div { display: grid; gap: 0.2rem; }
+    .figures .small { order: -1; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; }
+    .figures .v { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; font-size: 1.9rem; }
+    .figures .v small { font-family: var(--font-body); font-size: 0.42em; font-weight: 600; color: var(--text-secondary); }
     .tone { color: var(--tone); }
     .progress { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
     .progress span { display: block; height: 100%; border-radius: 3px; background: var(--tone); }
