@@ -54,6 +54,15 @@ import { LOCAL_MODE } from '../core/runtime';
       </ul>
       <p>Chacun applique sa propre politique de confidentialité. RunStat n'écrit jamais chez eux.</p>
 
+      <h2>Discuter avec une IA</h2>
+      <p>
+        Les boutons « … avec une IA » (fiche d'une sortie, d'un objectif, Moi) préparent un texte avec tes chiffres, à copier,
+        télécharger ou partager toi-même vers l'assistant de ton choix. <b>RunStat n'envoie rien à aucune IA.</b> Le texte ne
+        contient ni coordonnées GPS, ni lieu, ni nom de sortie (seul le nom d'une épreuve officielle ou d'un objectif y figure),
+        ni nom d'autres coureurs. Ta santé (sommeil, VFC, FC de repos, poids) n'y est que si la case est cochée ; relis l'aperçu
+        avant de l'envoyer. Une fois transmis, le texte relève de la politique de confidentialité de l'assistant choisi.
+      </p>
+
       <h2>Combien de temps</h2>
       <ul>
         <li>Sur ton appareil, et dans ton dossier sur le NAS : jusqu'à ce que tu les effaces. Safari peut effacer les données d'un site non

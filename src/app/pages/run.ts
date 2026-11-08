@@ -8,6 +8,7 @@ import { clock, num, pace } from '../core/format';
 import { ActivityDetailComponent } from '../ui/activity-detail';
 import { IconComponent } from '../ui/icon';
 import { ResultFormComponent } from '../ui/forms/result-form';
+import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 import { EntriesService } from '../core/entries.service';
 import { ScienceService } from '../core/science.service';
 
@@ -16,7 +17,7 @@ const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numer
 /** Fiche d'une sortie, avec sa propre adresse : liens depuis Aujourd'hui, le journal, les records */
 @Component({
   selector: 'app-run',
-  imports: [ActivityDetailComponent, IconComponent, RouterLink, ResultFormComponent],
+  imports: [ActivityDetailComponent, IconComponent, RouterLink, ResultFormComponent, AiExportDialogComponent],
   template: `
     <button type="button" class="back" (click)="back()"><app-icon name="back" />Retour</button>
     @if (activity(); as a) {
@@ -80,6 +81,8 @@ const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numer
         </div>
       }
       <app-result-form #resultForm />
+      <app-ai-export-dialog #aiDialog />
+      <button type="button" class="btn small ai" (click)="aiDialog.open({ run: a })"><app-icon name="chat" />Discuter de cette sortie avec une IA</button>
 
       <div class="card detail">
         <app-activity-detail [activity]="a" />
@@ -102,6 +105,7 @@ const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numer
     .figures .v { font: 600 1.5rem var(--font-mono); }
     .figures .muted { font-size: 0.8rem; }
     .missing { display: grid; gap: 0.75rem; justify-items: start; }
+    .ai { justify-self: start; }
     .official { display: grid; gap: 0.6rem; }
     .o-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
     .label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-text); }

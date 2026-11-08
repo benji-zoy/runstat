@@ -14,6 +14,7 @@ import { ConfidenceHistoryComponent } from '../sections/confidence-history';
 import { GoalFormComponent } from '../ui/forms/goal-form';
 import { DebriefFormComponent } from '../ui/forms/debrief-form';
 import { IconComponent } from '../ui/icon';
+import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 
 type Part = GoalPart | 'confiance' | 'bilan';
 
@@ -34,11 +35,12 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
  */
 @Component({
   selector: 'app-goal',
-  imports: [RouterLink, GoalCardComponent, RaceDebriefComponent, ConfidenceHistoryComponent, GoalFormComponent, DebriefFormComponent, IconComponent],
+  imports: [RouterLink, GoalCardComponent, RaceDebriefComponent, ConfidenceHistoryComponent, GoalFormComponent, DebriefFormComponent, IconComponent, AiExportDialogComponent],
   template: `
     <a class="back" routerLink="/courses"><app-icon name="back" />Courses</a>
     <app-goal-form #goalForm />
     <app-debrief-form #debriefForm />
+    <app-ai-export-dialog #aiDialog />
 
     @if (ev(); as e) {
       @let g = e.goal;
@@ -59,16 +61,22 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
         <span class="countdown display">{{ archived() ? 'Terminé' : e.daysLeft > 0 ? 'J-' + e.daysLeft : 'Jour J' }}</span>
       </header>
 
-      @if (entries.available()) {
-        <div class="row-actions">
+      <div class="row-actions">
+        @if (!archived()) {
+          <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'goal')"><app-icon name="chat" />En discuter avec une IA</button>
+          <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'plan')"><app-icon name="list" />Plan d'entraînement avec une IA</button>
+        } @else if (debrief()) {
+          <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'debrief')"><app-icon name="chat" />Bilan avec une IA</button>
+        }
+        @if (entries.available()) {
           @if (archived()) {
             <button type="button" class="btn small" (click)="debriefForm.open(g)">
               <app-icon [name]="g.debrief ? 'edit' : 'plus'" />{{ g.debrief ? 'Modifier le bilan' : 'Temps puce, gels, ressenti' }}
             </button>
           }
           <button type="button" class="btn small" (click)="goalForm.open(g)"><app-icon name="edit" />Modifier l'objectif</button>
-        </div>
-      }
+        }
+      </div>
 
       @if (!archived()) {
         <app-goal-card [ev]="e" part="chrono" [framed]="true" />
