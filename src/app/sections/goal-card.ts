@@ -42,14 +42,14 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
               }
               @if (g.kind === 'trail') {
                 <br />préparation {{ round(e.readinessScore * 100) }}/100
-                @if (e.daysLeft > 21 && e.readinessProjected > e.readinessScore + 0.01) {
-                  → <b>{{ round(e.readinessProjected * 100) }}</b> si tu suis les conseils
+                @if ((e.daysLeft > 21 || e.plannedPrep) && e.readinessProjected > e.readinessScore + 0.01) {
+                  → <b>{{ round(e.readinessProjected * 100) }}</b> {{ e.plannedPrep ? 'avec ton calendrier' : 'si tu suis les conseils' }}
                 }
               }
             } @else {
               indice de préparation pour finir
-              @if (e.daysLeft > 21 && e.readinessProjected > e.readinessScore + 0.01) {
-                <br />→ <b>{{ round(e.readinessProjected * 100) }}/100</b> si tu suis les conseils d'ici l'affûtage
+              @if ((e.daysLeft > 21 || e.plannedPrep) && e.readinessProjected > e.readinessScore + 0.01) {
+                <br />→ <b>{{ round(e.readinessProjected * 100) }}/100</b> {{ e.plannedPrep ? 'avec les séances prévues' : 'si tu suis les conseils' }} d'ici l'affûtage
               }
             }
           </p>
@@ -309,13 +309,37 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
               <span class="proj" [style.width.%]="r.projected * 100"></span>
               <span class="now" [style.width.%]="r.score * 100" [attr.data-tone]="r.score >= 0.95 ? 'good' : r.score >= 0.6 ? 'warning' : 'serious'"></span>
             </div>
-            <span class="ready-value">{{ r.value }} <small class="muted">/ {{ r.target }}</small></span>
+            <span class="ready-value">{{ r.value }} <small class="muted">/ {{ r.target }}</small>
+              @if (r.planned) {
+                <small class="planned">au calendrier : {{ r.planned }}</small>
+              }
+            </span>
           </div>
         }
-        @if (e.daysLeft > 21) {
-          <p class="muted legend"><span class="sw now"></span> aujourd'hui <span class="sw proj"></span> atteignable avant l'affûtage</p>
+        @if (e.daysLeft > 21 || e.plannedPrep) {
+          <p class="muted legend"><span class="sw now"></span> aujourd'hui <span class="sw proj"></span>
+            @if (e.plannedPrep) { avec les séances prévues, au début de l’affûtage } @else { atteignable avant l’affûtage }</p>
         }
       </div>
+      @if (e.calendar?.sessions?.length) {
+        <details class="method calendar">
+          <summary>Séances prévues d'ici la course ({{ e.calendar!.sessions.length }})</summary>
+          <table class="tbl">
+            <tbody>
+              @for (x of e.calendar!.sessions; track x.date + x.name) {
+                <tr>
+                  <td class="num">{{ dayLabel(x.date) }}</td>
+                  <td>{{ x.name }}</td>
+                  <td class="num">{{ x.distanceKm !== null ? fixed(x.distanceKm, 1) + ' km' : '' }}</td>
+                  <td class="num">{{ x.durationSec ? hm(x.durationSec) : '' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <p class="muted small">Calendrier de la montre (COROS), relu à chaque synchro. Il sert à projeter ta fraîcheur le jour J
+            et ce que ta préparation aura apporté au début de l'affûtage.</p>
+        </details>
+      }
 
       }
 
@@ -365,6 +389,10 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
       .ready-row .bar { grid-column: 1 / -1; grid-row: 2; }
     }
     .ready-value { font-variant-numeric: tabular-nums; }
+    .ready-value .planned { display: block; color: var(--text-muted); }
+    .calendar { margin-top: 0.8rem; }
+    .calendar td { white-space: normal; }
+    .calendar td.num { white-space: nowrap; }
     .bar { position: relative; height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
     .bar span { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
     .bar .proj { background: color-mix(in srgb, var(--good) 45%, var(--surface-3)); }
@@ -414,6 +442,7 @@ export class GoalCardComponent {
   protected signedPct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x * 100), 1)} %`;
   protected shortDate = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
   protected tone = (e: GoalEvaluation) => TONE[e.verdict.tone];
+  protected dayLabel = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   protected readonly chanceVerdict = chanceVerdict;
   protected lower = (s: string) => s.toLowerCase();
   protected signedGrade = (g: number) => `${g >= 0 ? '+' : '−'}${Math.abs(Math.round(g * 100))} %`;

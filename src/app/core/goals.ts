@@ -13,8 +13,12 @@
  * trail, 8 % en ultra) + extrapolation au-delà de ta plus longue sortie → probabilité de passer sous le chrono visé.
  * Objectif « finir » : indice de préparation pondéré (volume, sortie la plus longue, D+, expérience, nuit, durabilité,
  * régularité, récupération), aujourd'hui et projeté si tu suis la progression conseillée.
+ *
+ * Calendrier de la montre (séances prévues, COROS) : s'il couvre la période, la fraîcheur du jour J est projetée sur
+ * la charge des séances prévues (jours sans séance = repos) et la préparation projetée sur ce qu'elles apportent
+ * (volume, sortie la plus longue, sorties de nuit) au lieu de supposer que tu suis la progression conseillée.
  */
-import { Activity, Athlete, Goal, Health } from './models';
+import { Activity, Athlete, Goal, Health, PlannedCalendar, PlannedSession } from './models';
 import {
   CriticalSpeed, ExponentEstimate, Reference, SessionType, bestEfforts, criticalSpeed, heatPenalty, kmEffort, goalKmEffort,
   officialDistance, raceDistance, personalExponentFromRaces, references, riegel, tanda, tandaPace, timeForVdot, vickers, efficiency, isComparableEasy,
@@ -69,7 +73,38 @@ export interface GoalContext {
   health: Health | null;
   /** Ta courbe vitesse / pente (trail pour un trail, route pour la route) */
   terrain: Terrain;
+  /** Séances prévues d'ici la course (objectif à venir, calendrier de moins de 14 jours), sinon null */
+  calendar: GoalCalendar | null;
 }
+
+export interface GoalCalendar {
+  fetchedAt: string;
+  /** Séances restant à faire avant le jour de la course (celle d'aujourd'hui seulement si aucune sortie aujourd'hui) */
+  sessions: PlannedSession[];
+  /** Dernière séance prévue avant la course (AAAA-MM-JJ) */
+  last: string | null;
+}
+
+/** Séances prévues encore à faire avant la course ; null si le calendrier est absent, périmé ou la course passée */
+export function goalCalendar(goal: Goal, planned: PlannedCalendar | null | undefined, acts: Activity[], ref: Date, past: boolean): GoalCalendar | null {
+  if (past || !planned?.sessions) return null;
+  if (daysBetween(new Date(planned.fetchedAt), ref) > 14) return null;
+  const today = isoDay(ref);
+  const doneToday = acts.some((a) => a.date === today);
+  const sessions = planned.sessions
+    .filter((x) => x.date < goal.date && (x.date > today || (x.date === today && !doneToday)))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return { fetchedAt: planned.fetchedAt, sessions, last: sessions.at(-1)?.date ?? null };
+}
+
+/** Le calendrier va jusqu'à `date` (à une semaine près) : au-delà, on retombe sur les hypothèses par défaut */
+export function calendarCovers(cal: GoalCalendar | null, date: Date): cal is GoalCalendar & { last: string } {
+  return Boolean(cal?.last && parseDay(cal.last) >= addDays(date, -7));
+}
+
+/** L'affûtage commence 2 semaines avant (10 jours pour un 10 km / semi) : c'est la date limite des conseils */
+export const taperDays = (goal: Goal) => (goal.kind === 'trail' || goal.distanceKm > 30 ? 14 : 10);
+const NIGHT_NAME = /nuit|nocturne|frontale|night/i;
 
 export function goalContext(
   goal: Goal,
@@ -79,6 +114,7 @@ export function goalContext(
   today: Date,
   coros: Record<string, string | null>,
   health: Health | null,
+  planned: PlannedCalendar | null = null,
 ): GoalContext {
   const race = parseDay(goal.date);
   const past = race <= today;
@@ -95,6 +131,7 @@ export function goalContext(
     coros: past ? {} : coros,
     health,
     terrain: personalTerrain(acts, ref, athlete, goal.kind === 'trail'),
+    calendar: goalCalendar(goal, planned, acts, ref, past),
   };
 }
 
@@ -511,19 +548,35 @@ export interface Adjustment {
   note: string;
 }
 
-/** Fraîcheur (TSB) projetée au matin de la course si la charge redescend à `taper` × la forme de fond */
-export function projectedTsb(acts: Activity[], ref: Date, race: Date, taper = 0.5): { now: number; race: number } | null {
+/**
+ * Fraîcheur (TSB) projetée au matin de la course. Sans calendrier, la charge redescend à `taper` × la forme de fond ;
+ * avec, chaque jour couvert prend la charge de ses séances prévues (0 = repos), y compris la séance du jour pas encore
+ * faite, et les jours au-delà de la dernière séance restent au repos si elle tombe dans les 4 derniers jours.
+ */
+export function projectedTsb(
+  acts: Activity[], ref: Date, race: Date, taper = 0.5, cal: GoalCalendar | null = null,
+): { now: number; race: number; planned: boolean } | null {
   const days = pmc(acts, ref);
   const last = days.at(-1);
   if (!last) return null;
   const kCtl = 1 - Math.exp(-1 / 42), kAtl = 1 - Math.exp(-1 / 7);
   let ctl = last.ctl, atl = last.atl;
-  const load = taper * last.ctl;
+  const fallback = taper * last.ctl;
+  const planned = new Map<string, number>();
+  for (const x of cal?.sessions ?? []) planned.set(x.date, (planned.get(x.date) ?? 0) + (x.load ?? 0));
+  const usePlan = Boolean(cal?.last) && planned.size > 0;
+  const lastDay = usePlan ? parseDay(cal!.last!) : null;
+  const restAfter = lastDay !== null && daysBetween(lastDay, race) <= 4;
+  // Séance du jour pas encore faite : l'EWMA du jour reçoit k × sa charge en plus
+  const todayLoad = planned.get(isoDay(ref)) ?? 0;
+  ctl += todayLoad * kCtl;
+  atl += todayLoad * kAtl;
   for (let d = addDays(ref, 1); d < race; d = addDays(d, 1)) {
+    const load = lastDay && (d <= lastDay || restAfter) ? (planned.get(isoDay(d)) ?? 0) : fallback;
     ctl += (load - ctl) * kCtl;
     atl += (load - atl) * kAtl;
   }
-  return { now: last.ctl - last.atl, race: ctl - atl };
+  return { now: last.ctl - last.atl, race: ctl - atl, planned: usePlan };
 }
 
 /** Zone de fraîcheur optimale +5 à +25 ; en dessous on court fatigué, au-dessus on perd du rythme */
@@ -539,13 +592,16 @@ function adjustments(goal: Goal, ctx: GoalContext, daysLeft: number, course: Cou
   const out: Adjustment[] = [];
   const race = parseDay(goal.date);
   if (daysLeft <= 21) {
-    const tsb = projectedTsb(ctx.acts, ctx.ref, race);
+    const tsb = projectedTsb(ctx.acts, ctx.ref, race, 0.5, ctx.calendar);
     if (tsb) {
+      const n = ctx.calendar?.sessions.length ?? 0;
       out.push({
         label: 'Fraîcheur',
         pct: freshnessPct(tsb.race),
         note: daysLeft > 0
-          ? `fraîcheur ${signed(tsb.now)} aujourd'hui, ≈ ${signed(tsb.race)} le jour J si tu réduis à la moitié de ta charge habituelle (idéal : +5 à +25)`
+          ? tsb.planned
+            ? `fraîcheur ${signed(tsb.now)} aujourd'hui, ≈ ${signed(tsb.race)} le jour J en suivant ton calendrier (${n} séance${n > 1 ? 's' : ''} prévue${n > 1 ? 's' : ''}, idéal : +5 à +25)`
+            : `fraîcheur ${signed(tsb.now)} aujourd'hui, ≈ ${signed(tsb.race)} le jour J si tu réduis à la moitié de ta charge habituelle (idéal : +5 à +25)`
           : `fraîcheur ${signed(tsb.now)} la veille (idéal : +5 à +25)`,
       });
     }
@@ -605,8 +661,10 @@ export interface ReadinessItem {
   target: string;
   /** 0 à 1 */
   score: number;
-  /** Score atteignable d'ici le début de l'affûtage en suivant le conseil */
+  /** Score atteignable d'ici le début de l'affûtage : en suivant le conseil, ou ton calendrier s'il couvre la période */
   projected: number;
+  /** Ce que prévoit le calendrier d'ici le début de l'affûtage (projection fondée sur les séances prévues) */
+  planned?: string;
   weight: number;
   advice: string | null;
 }
@@ -624,23 +682,36 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
   const age = (a: Activity) => daysBetween(parseDay(a.date), ctx.ref);
   const window = (days: number) => ctx.acts.filter((a) => age(a) >= 0 && age(a) < days);
   const clamp = (x: number) => Math.max(0, Math.min(1, x));
-  // L'affûtage commence 2 semaines avant (10 jours pour un 10 km / semi) : c'est la date limite des conseils
-  const taperDays = goal.kind === 'trail' || goal.distanceKm > 30 ? 14 : 10;
-  const deadline = addDays(race, -taperDays);
+  const deadline = addDays(race, -taperDays(goal));
   const weeksLeft = Math.max(0, Math.floor(daysBetween(ctx.ref, deadline) / 7));
   const items: ReadinessItem[] = [];
+  // Calendrier : séances prévues d'ici le début de l'affûtage, prises en compte seulement s'il va jusque-là
+  const cal = ctx.calendar;
+  const planUntil = (end: Date) => (cal?.sessions ?? []).filter((x) => parseDay(x.date) <= end);
+  const usePlan = ctx.ref < deadline && calendarCovers(cal, deadline);
+  const beforeTaper = usePlan ? planUntil(deadline) : [];
+  const nameDay = (x: PlannedSession) => `${x.name.replace(/\s+/g, ' ').trim()}, le ${shortDate(parseDay(x.date))}`;
 
   const weekly = window(42).reduce((s, a) => s + a.distanceKm, 0) / 6;
   const volTarget = goal.kind === 'trail' ? Math.min(100, 0.75 * goal.distanceKm) : Math.min(80, Math.max(25, 1.7 * goal.distanceKm));
   const reachable = weekly * Math.pow(1.1, weeksLeft);
+  // Volume des 6 semaines qui précèdent l'affûtage : sorties faites dans cette fenêtre + séances prévues
+  const plannedWeekly = usePlan
+    ? (ctx.acts.filter((a) => parseDay(a.date) > addDays(deadline, -42)).reduce((s, a) => s + a.distanceKm, 0)
+      + beforeTaper.filter((x) => parseDay(x.date) > addDays(deadline, -42)).reduce((s, x) => s + (x.distanceKm ?? 0), 0)) / 6
+    : null;
   items.push({
     label: 'Volume',
     value: `${fr(weekly)} km/sem`,
     target: `${fr(volTarget)} km/sem`,
     score: clamp(weekly / volTarget),
-    projected: clamp(Math.max(weekly, Math.min(volTarget, reachable)) / volTarget),
+    projected: plannedWeekly !== null ? clamp(plannedWeekly / volTarget) : clamp(Math.max(weekly, Math.min(volTarget, reachable)) / volTarget),
+    ...(plannedWeekly !== null ? { planned: `≈ ${fr(plannedWeekly)} km/sem sur les 6 semaines avant le ${shortDate(deadline)}` } : {}),
     weight: goal.kind === 'trail' ? 20 : 25,
     advice: weekly >= volTarget || !weeksLeft ? null
+      : plannedWeekly !== null
+        ? plannedWeekly >= volTarget ? null
+          : `Ton calendrier mène à ≈ ${fr(plannedWeekly)} km/sem avant l'affûtage, pour ${fr(volTarget)} visés : ${reachable >= volTarget ? 'il y a de la marge pour ajouter du volume' : `vise plutôt ${fr(Math.min(volTarget, reachable))} km/sem`}, sans dépasser +10 % par semaine.`
       : reachable >= volTarget ? `Monter vers ${fr(volTarget)} km/sem d'ici le ${shortDate(deadline)}, sans dépasser +10 % par semaine.`
       : `+10 %/sem au maximum : vise ${fr(reachable)} km/sem d'ici le ${shortDate(deadline)}.`,
   });
@@ -648,14 +719,21 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
   if (goal.kind === 'trail') {
     const longest = window(112).reduce((m, a) => Math.max(m, a.durationSec), 0);
     const target = Math.min(6 * 3600, 0.45 * baseSec);
+    const longPlan = beforeTaper.reduce<PlannedSession | null>((m, x) => ((x.durationSec ?? 0) > (m?.durationSec ?? 0) ? x : m), null);
+    const longPlanned = Math.max(longest, longPlan?.durationSec ?? 0);
     items.push({
       label: 'Sortie la plus longue',
       value: hm(longest),
       target: hm(target),
       score: clamp(longest / target),
-      projected: weeksLeft >= 2 ? 1 : clamp(longest / target),
+      projected: usePlan ? clamp(longPlanned / target) : weeksLeft >= 2 ? 1 : clamp(longest / target),
+      ...(usePlan && longPlan ? { planned: `${hm(longPlan.durationSec!)} (${nameDay(longPlan)})` } : {}),
       weight: 25,
-      advice: longest >= target ? null : `Une sortie d'au moins ${hm(target)} (idéalement de nuit, avec le sac et la frontale) avant le ${shortDate(addDays(deadline, -7))}.`,
+      advice: longest >= target ? null
+        : usePlan && longPlanned < target
+          ? `Ton calendrier ne prévoit pas de sortie de ${hm(target)}${longPlan ? ` (la plus longue : ${hm(longPlan.durationSec!)}, ${nameDay(longPlan)})` : ''} : allonge-en une avant le ${shortDate(addDays(deadline, -7))}, idéalement de nuit, avec le sac et la frontale.`
+        : usePlan ? null
+        : `Une sortie d'au moins ${hm(target)} (idéalement de nuit, avec le sac et la frontale) avant le ${shortDate(addDays(deadline, -7))}.`,
     });
     const elev = window(42).reduce((s, a) => s + (a.elevGain ?? 0), 0) / 6;
     const elevTarget = 0.4 * (goal.elevGain ?? 0);
@@ -683,26 +761,36 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
       advice: ratio >= 0.75 ? null : `Ton plus gros effort (${best?.name}) ne fait que ${Math.round(ratio * 100)} % de la course : pars plus lentement que tu ne le penses, la gestion (allure, ravitaillement) comptera double.`,
     });
     const night = window(112).filter((a) => a.start && (new Date(a.start * 1000).getHours() >= 20 || new Date(a.start * 1000).getHours() < 5)).length;
+    const nightScore = (n: number) => (n >= 2 ? 1 : n === 1 ? 0.6 : 0.2);
+    // Séances de nuit prévues (d'après leur nom), jusqu'à la course : une sortie à la frontale reste utile pendant l'affûtage
+    const nightPlanned = calendarCovers(cal, addDays(race, -7)) ? cal.sessions.filter((x) => NIGHT_NAME.test(x.name)).length : null;
     items.push({
       label: 'Sorties de nuit',
       value: `${night} (16 sem.)`,
       target: '2',
-      score: night >= 2 ? 1 : night === 1 ? 0.6 : 0.2,
-      projected: weeksLeft >= 1 ? 1 : night >= 2 ? 1 : night === 1 ? 0.6 : 0.2,
+      score: nightScore(night),
+      projected: nightPlanned !== null ? nightScore(night + nightPlanned) : weeksLeft >= 1 ? 1 : nightScore(night),
+      ...(nightPlanned ? { planned: `${nightPlanned} séance${nightPlanned > 1 ? 's' : ''} de nuit` } : {}),
       weight: 5,
-      advice: night >= 2 ? null : 'Une ou deux sorties à la frontale pour régler l\'éclairage et la vigilance.',
+      advice: night + (nightPlanned ?? 0) >= 2 ? null : 'Une ou deux sorties à la frontale pour régler l\'éclairage et la vigilance.',
     });
   } else {
     const longest = window(56).reduce((m, a) => Math.max(m, a.distanceKm), 0);
     const target = Math.min(32, 0.9 * goal.distanceKm);
+    const longPlan = beforeTaper.reduce<PlannedSession | null>((m, x) => ((x.distanceKm ?? 0) > (m?.distanceKm ?? 0) ? x : m), null);
+    const longPlanned = Math.max(longest, longPlan?.distanceKm ?? 0);
     items.push({
       label: 'Sortie la plus longue',
       value: `${fr(longest, 1)} km`,
       target: `${fr(target)} km`,
       score: clamp(longest / target),
-      projected: weeksLeft >= 1 ? 1 : clamp(longest / target),
+      projected: usePlan ? clamp(longPlanned / target) : weeksLeft >= 1 ? 1 : clamp(longest / target),
+      ...(usePlan && longPlan ? { planned: `${fr(longPlan.distanceKm!, 1)} km (${nameDay(longPlan)})` } : {}),
       weight: 25,
-      advice: longest >= target ? null : `Une sortie de ${fr(target)} km avant le ${shortDate(deadline)}.`,
+      advice: longest >= target ? null
+        : usePlan && longPlanned < target ? `Ton calendrier ne prévoit pas de sortie de ${fr(target)} km avant le ${shortDate(deadline)} : allonge-en une.`
+        : usePlan ? null
+        : `Une sortie de ${fr(target)} km avant le ${shortDate(deadline)}.`,
     });
     if (goal.targetSec) {
       const pace = goal.targetSec / goal.distanceKm;
@@ -914,6 +1002,10 @@ export interface GoalEvaluation {
   readiness: ReadinessItem[];
   readinessScore: number;
   readinessProjected: number;
+  /** Séances prévues d'ici la course (calendrier de la montre), null sans calendrier */
+  calendar: GoalCalendar | null;
+  /** Préparation projetée sur le calendrier (il couvre la fin de la préparation) */
+  plannedPrep: boolean;
   /** Indice affiché (0-100) : probabilité pour un chrono, préparation pour « finir » */
   index: number;
   verdict: { label: string; tone: Tone };
@@ -945,10 +1037,18 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
   const readinessProjected = items.reduce((s, i) => s + i.projected * i.weight, 0) / wSum;
 
   const adj = adjustments(goal, ctx, Math.max(0, daysLeft), course, c.seconds);
-  // Préparation spécifique : jusqu'à +3 % si les fondations (volume, sortie longue, allure) sont incomplètes
-  const prepScore = daysLeft > 21 ? readinessProjected : readinessScore;
+  // Préparation spécifique : jusqu'à +3 % si les fondations (volume, sortie longue, allure) sont incomplètes. Projetée
+  // à plus de 3 semaines (en supposant le conseil suivi), ou dès que le calendrier couvre la fin de la préparation
+  // (projection fondée sur les séances prévues)
+  const planned = items.some((i) => i.planned) && daysLeft > taperDays(goal);
+  const projectedPrep = daysLeft > 21 || planned;
+  const prepScore = projectedPrep ? readinessProjected : readinessScore;
   if (prepScore < 0.8) {
-    adj.push({ label: 'Préparation', pct: (3 * (0.8 - prepScore)) / 0.8, note: `indice de préparation ${Math.round(prepScore * 100)}/100${daysLeft > 21 ? ' (projeté)' : ''}` });
+    adj.push({
+      label: 'Préparation',
+      pct: (3 * (0.8 - prepScore)) / 0.8,
+      note: `indice de préparation ${Math.round(prepScore * 100)}/100${planned ? ' (projeté sur ton calendrier)' : projectedPrep ? ' (projeté)' : ''}`,
+    });
   }
   const factor = adj.reduce((f, a) => f * (1 + a.pct / 100), 1);
   const predicted = c.seconds * factor;
@@ -962,7 +1062,7 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
   const sigma = Math.hypot(uncertainty.models, uncertainty.day, uncertainty.extrapolation);
   const probability = goal.targetSec ? chance(goal.targetSec, predicted, sigma) : null;
   const stretchProbability = goal.stretchSec ? chance(goal.stretchSec, predicted, sigma) : null;
-  const index = Math.round(100 * (probability ?? readinessScore));
+  const index = Math.round(100 * (probability ?? (planned ? readinessProjected : readinessScore)));
 
   const verdict: GoalEvaluation['verdict'] = probability !== null
     ? chanceVerdict(probability)
@@ -996,7 +1096,7 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
     goal, daysLeft, ke, models, base: c.seconds, adjustments: adj, predicted, sigma,
     low: predicted * Math.exp(-1.2816 * sigma), high: predicted * Math.exp(1.2816 * sigma),
     probability, stretchProbability, uncertainty, category: course.category, method: METHODS[course.category],
-    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, index, verdict, advice, raceRefs,
+    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, calendar: ctx.calendar, plannedPrep: planned, index, verdict, advice, raceRefs,
     progression: goal.kind === 'road' && raceRefs.length ? progressionSince(raceRefs[0], ctx) : null,
     plan: racePlan({ goal, daysLeft, ke, predicted, probability, raceRefs, athlete: ctx.athlete, acts: ctx.acts, course }),
     result: race <= today ? goalResult(goal, all) : null,

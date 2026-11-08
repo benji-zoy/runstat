@@ -10,7 +10,7 @@ Le conteneur `runstat-sync` (NAS, `scripts/sync/server.mjs`) lance `scripts/sync
 un run à la fois (`queue.mjs`), au démarrage, toutes les 3 h
 et à la demande (bouton de l'en-tête, `core/sync.service.ts` → `/api/sync`, proxy nginx ; masqué sans ce service ; `POST /api/fit?id=` →
 `run.mjs --fit <id>` : le FIT d'une seule sortie puis build-fit + build-data, sans toucher à la fenêtre de synchro ; `POST /api/fit?days=14` → `--refit` : retélécharge en écrasant les FIT, tracés Strava et détails COROS (dénivelé) des derniers jours, efface leur `fit-derived/`, puis reconstruit ; bouton « Relancer les FIT récents » de Réglages › Sources, `refetchRecent` du moteur, aussi sur l'appareil) : COROS (activités des derniers jours
-fusionnées dans `records.txt`, détails, forme, charge cumulée dans `load.txt`, FIT jusqu'au quota) et Google Health API
+fusionnées dans `records.txt`, détails, forme, charge cumulée dans `load.txt`, calendrier, FIT jusqu'au quota) et Google Health API
 (santé quotidienne + sommeil → `data-raw/health-api.json`, prioritaire sur `health.json` de Takeout), recouvrement de
 3 jours, puis build-fit, build-data, fit-queue, météo. **Le NAS fait foi pour `data-raw/`** : `npm run nas -- pull` avant
 de travailler sur les données. Les objectifs, bilans, classements et réglages se saisissent dans le site (voir Saisie) ; à la main,
@@ -25,6 +25,11 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
   avec `savedAt` et `refresh` facultatif). `coros.mjs`, `strava.mjs`, `garmin.mjs`, `google-health.mjs` et `run.mjs` n'en sont que des enveloppes Node
   (jetons dans un dossier de secrets : `nodeTokens` de `secrets.mjs`, `savedAt` = date du fichier ; zone raw = `NodeStore`).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
+- **Calendrier COROS** (séances prévues : plans d'entraînement et séances isolées) : `queryTrainingSchedule` sur 120 jours
+  (`PLAN_DAYS`) à chaque synchro COROS, activités ou santé (`syncCorosPlan`, jamais bloquant), `parseSchedule` →
+  `data-raw/planned.json` (`{ source, fetchedAt, from, to, sessions: [{ date, name, distanceKm, durationSec, load, fromPlan? }] }`,
+  remplacé à chaque fois), recopié dans `planned` du snapshot quelle que soit la source d'activités. **Garmin : impossible**,
+  la Personal API n'a aucun point d'accès calendrier ni séance planifiée (Swagger vérifié le 8 nov. 2026).
 - Tokens dans `secrets/` (poste) ou `users/<id>/secrets/` (NAS), jamais affichés. Connexion depuis le site, pour chaque compte :
   Réglages › « Connecter COROS » / « Connecter Google » (`oauth-connect.mjs`, `GET /api/coros|google/connect` puis `/callback`, mêmes
   gardes que Strava : state aléatoire lié au compte, 10 min, usage unique, `redirect_uri` = origine ts.net de `SYNC_PUBLIC_ORIGINS`, retour
@@ -381,6 +386,11 @@ Une méthode par catégorie (`raceCategory` : ultra dès 60 km-effort ou 45 km, 
 - Ultra : les mêmes, plus `ultraModel` = simulation tronçon par tronçon (`simulate`) à la vitesse sur le plat tenue à la FC LT1 (tours plats des
   sorties longues, ralentie de l'écart route / trail à FC égale au prorata du dénivelé), usure par heure (`fadeEstimate`), 5 % d'arrêts,
   recalée (±10 %) sur tes trails de plus de 2 h.
+Séances prévues (`planned`, calendrier de moins de 14 jours, `goalCalendar`) : la fraîcheur du jour J est projetée sur leur charge
+(jours sans séance = repos ; au-delà de la dernière séance, repos si elle tombe dans les 4 derniers jours, sinon ½ de la forme de fond) ;
+si le calendrier va jusqu'au début de l'affûtage (à 7 jours près), la préparation projetée (volume des 6 semaines avant l'affûtage,
+sortie la plus longue, sorties de nuit d'après le nom) remplace l'hypothèse « tu suis les conseils » et sert à l'ajustement « Préparation »
+même à moins de 3 semaines (`plannedPrep`). Liste et « au calendrier : … » dans la partie Préparation de la fiche.
 Ajustements : fraîcheur projetée, VFC/FC repos, Hadley, nuit **simulée sur le profil** (crépuscule civil `nightWindow`, `nightCost` : +3 % roulant,
 +8 % descente raide, +2 % de 2 h à 6 h), préparation. Incertitude log-normale : dispersion des modèles ⊕ jour de course (`daySd` : 2 % sur 5 km
 → 4 % au marathon, 6 % trail, 8 % ultra) ⊕ extrapolation en ultra (4 % × ln(durée / plus longue sortie de l'année)) → probabilité.

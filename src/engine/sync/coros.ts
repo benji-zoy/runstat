@@ -21,6 +21,7 @@ export const READ_TOOLS = new Set([
   'queryRecoveryStatus',
   'queryTrainingLoadAssessment',
   'queryFitnessAssessmentOverview',
+  'queryTrainingSchedule',
 ]);
 
 export interface CorosMeta {

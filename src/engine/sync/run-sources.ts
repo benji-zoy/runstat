@@ -1,6 +1,7 @@
 // Synchronisation des sources choisies (sources.json) dans la zone raw, portable : run.mjs sur le NAS (NodeStore, secrets/),
 // appli publique dans le navigateur (IndexedDB, jetons chiffrés dans la sauvegarde). Mêmes fichiers des deux côtés :
 //   activités COROS : records.txt (fusion par fenêtre), details/part-*.jsonl, fitness.txt, load.txt, fit/<id>.fit ;
+//   calendrier COROS (séances prévues, avec les activités ou la santé COROS) : planned.json ;
 //   activités Strava : strava/activities.json, tracks/strava-<id>.json.gz (streams) ;
 //   activités Garmin : garmin/activities.json, fit/garmin-<id>.fit ;
 //   santé : health-api.json (Google Health), health-coros.json (COROS), health-garmin.json (Garmin) ;
@@ -22,6 +23,8 @@ import type { GoogleClient } from './google.ts';
 import { GARMIN_KEY_FILE, type GarminClient } from './garmin.ts';
 
 export const SYNC_STATE = 'sync-state.json';
+/** Horizon du calendrier des séances prévues */
+export const PLAN_DAYS = 120;
 export type SourceKey = 'coros' | 'strava' | 'google' | 'corosHealth' | 'garmin' | 'garminHealth';
 export const GARMIN_FILE = 'garmin/activities.json';
 
@@ -233,6 +236,8 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     if (/Load Ratio/i.test(load.text)) await raw.write('load.txt', pc.mergeLoad(await raw.readText('load.txt'), load.text));
     else log(`  charge : réponse inattendue « ${load.text.slice(0, 120)} »`);
 
+    const plan = await syncCorosPlan();
+
     // 4. Fichiers FIT : nouvelles sorties d'abord, puis la file triée par utilité (fit-queue.txt)
     const fits = await syncFits(s, merged, all);
 
@@ -241,6 +246,7 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
       merged.added.length && `${merged.added.length} nouvelles`,
       merged.removed.length && `${merged.removed.length} retirées (supprimées dans COROS)`,
       `${details} détails`,
+      plan,
       fits,
     ]
       .filter(Boolean)
@@ -379,6 +385,34 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     return `tracé de ${id} (${a.date}) téléchargé`;
   }
 
+  // ---------- calendrier COROS ----------
+
+  /**
+   * Séances prévues de la montre (plans d'entraînement et séances isolées) sur PLAN_DAYS jours, à partir d'aujourd'hui :
+   * planned.json est remplacé à chaque fois. Jamais bloquant : en cas d'échec, l'ancien calendrier reste.
+   */
+  async function syncCorosPlan(): Promise<string> {
+    const from = today();
+    const to = addDays(from, PLAN_DAYS);
+    try {
+      const res = await toolText('queryTrainingSchedule', { startDate: compact(from), endDate: compact(to) });
+      await stage('coros', 'queryTrainingSchedule', from, { args: { from, to }, text: res.text });
+      if (res.isError || !/Training Schedule|\d{4}-\d{2}-\d{2}|no (scheduled )?workouts?/i.test(res.text)) {
+        log(`  calendrier : réponse inattendue « ${res.text.slice(0, 120)} »`);
+        return '';
+      }
+      const sessions = pc.parseSchedule(res.text).filter((x) => x.date >= from && x.date <= to);
+      const file: pc.PlannedFile = { source: 'coros', fetchedAt: new Date().toISOString(), from, to, sessions };
+      await writeJson('planned.json', file);
+      const n = sessions.length;
+      return `${n} séance${n > 1 ? 's' : ''} prévue${n > 1 ? 's' : ''}`;
+    } catch (e) {
+      if (e instanceof ReauthRequired || e instanceof RateLimited) throw e;
+      log(`  calendrier : ${(e as Error).message}`);
+      return '';
+    }
+  }
+
   // ---------- santé COROS ----------
 
   async function syncCorosHealth(s: SourceState): Promise<string> {
@@ -404,7 +438,8 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
     await writeJson('health-coros.json', mergeHealth(existing, health, new Date().toISOString()));
     const list = Object.values(health.days);
     const count = (k: string) => list.filter((d) => (d as Record<string, unknown>)[k] != null).length;
-    return `${list.length} jours du ${from}, ${count('sleepMin')} nuits, ${count('hrv')} VFC, ${count('rhr')} FC de repos`;
+    const plan = await syncCorosPlan();
+    return `${list.length} jours du ${from}, ${count('sleepMin')} nuits, ${count('hrv')} VFC, ${count('rhr')} FC de repos${plan ? `, ${plan}` : ''}`;
   }
 
   // ---------- Garmin (Personal API) ----------
