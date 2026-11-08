@@ -393,6 +393,21 @@ recalée sur le chrono visé et sur le probable ; tronçons entre les points de 
 Une course n'est « référence » que si elle est classée `race` (`RACE_NAME` dans `science.ts` : nom d'épreuve ou millésime ;
 la sortie d'un objectif passé l'est toujours, quel que soit son nom).
 
+## Discuter avec une IA (`src/app/core/ai/`, `core/ai-export.service.ts`, `ui/forms/ai-export-dialog.ts`)
+
+Export Markdown à donner à n'importe quel assistant (aucun appel à une IA, aucun envoi : copier, télécharger `.md`, partager par la
+feuille du téléphone : fichier `.txt`, car Chrome sur Android refuse les `.md` après les avoir annoncés partageables, sinon texte). Cinq points d'entrée : sortie (`/sortie/:id`), objectif à venir et plan
+d'entraînement (`/courses/:id`, contraintes : jours, séances, volume max, blessures, autres), bilan d'une course passée (avec un
+`RaceDebrief`), profil (Moi). Fenêtre : question facultative, détail résumé / complet (≈ 3-8 k / 6-20 k jetons), santé cochée par défaut
+(réglage et détail mémorisés dans `localStorage`, `runstat-ai-sante`, `runstat-ai-detail`), aperçu et taille estimée.
+- Fonctions pures (`md.ts` assembleur, `glossary.ts`, `context.ts` parties communes, `exports.ts`), sans Angular : réutilisables par un
+  futur MCP local. Ordre : titre et présentation, glossaire (seulement les notions employées, `MdDoc.use`), contenu, consigne, question.
+  Elles reçoivent les calculs de l'interface (`GoalEvaluation`, `RaceDebrief`, `RunnerMatrix`, `ConditionsReport`).
+- Confidentialité : ni coordonnées, ni lieu, ni nom de sortie (type de séance à la place ; seul le nom d'une épreuve ou d'un objectif),
+  ni nom de tiers ; sans la santé : ni poids, ni taille, ni VFC / FC de repos / sommeil (critère et ajustement « Récupération » masqués,
+  métriques `rhr` / `hrv` de la Runner Matrix retirées). Texte saisi ramené à une ligne (`inline`). Page Confidentialité à jour.
+- Glossaire à tenir à jour si un calcul change. Tests : `core/ai/exports.spec.ts` (snapshot fictif des fixtures du moteur).
+
 ## Coût des conditions (fiche d'une sortie et Aujourd'hui, `src/app/core/conditions.ts`, `ui/conditions-card.ts`)
 
 Façon « rapport Enduraw » : altitude 🗻, dénivelé 🚠, température 🔥, vent 💨 en % (négatif = coût) face à des conditions standard
@@ -470,7 +485,7 @@ barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `
   Questions : prêt (→ Courses), potentiel, records, classements (barème FFA), récupération (avec santé), charge, progrès (efficacité, chaleur),
   endurance (durabilité), séances, habitudes (Quand / Comment), carte (`sections/places.ts` : carte thermique des parcours `core/heat.ts` +
   `ui/heat-map.ts`, rendu canvas, cadrée sur la zone la plus fréquentée ; lieux de départ), profil (Runner Matrix).
-- **Moi** (`pages/me.ts`, `/moi`) : niveau et distance, amis (à venir), Souvenirs (`pages/memories.ts` : Récap, Badges, Jalons, Équivalences),
+- **Moi** (`pages/me.ts`, `/moi`) : niveau et distance, amis (à venir), profil pour une IA, Souvenirs (`pages/memories.ts` : Récap, Badges, Jalons, Équivalences),
   réglages : athlète et sources, compte et sauvegarde, proches, apparence, confidentialité. Les fenêtres de saisie restent dans `app.html`
   et s'ouvrent par `ShellService.open('athlete' | 'users' | 'account')`.
 

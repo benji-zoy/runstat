@@ -13,11 +13,12 @@ import { CAPABILITIES, sourcesOf } from '../core/sources';
 import { levelFor } from '../core/badges';
 import { day, km, num } from '../core/format';
 import { IconComponent } from '../ui/icon';
+import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 
 /** Moi : profil (niveau, distance), amis, souvenirs et tous les réglages, rangés derrière l'avatar de l'en-tête. */
 @Component({
   selector: 'app-me',
-  imports: [RouterLink, IconComponent],
+  imports: [RouterLink, IconComponent, AiExportDialogComponent],
   template: `
     <header class="profile">
       <span class="avatar" aria-hidden="true">{{ initial() }}</span>
@@ -51,6 +52,18 @@ import { IconComponent } from '../ui/icon';
         </div>
       </div>
     </section>
+
+    @if (total()) {
+      <section class="section">
+        <h2>Avec une IA</h2>
+        <button type="button" class="card row-link" (click)="aiDialog.open({ profile: true })">
+          <app-icon name="chat" />
+          <span><b>Discuter de mon profil avec une IA</b><small class="muted">Points forts, priorités d'entraînement : un texte à donner à l'assistant de ton choix</small></span>
+          <app-icon name="arrow" />
+        </button>
+      </section>
+      <app-ai-export-dialog #aiDialog />
+    }
 
     <section class="section">
       <h2>Souvenirs</h2>
@@ -128,6 +141,7 @@ import { IconComponent } from '../ui/icon';
       display: flex; align-items: center; gap: 0.9rem; width: 100%; min-height: 3.5rem; color: var(--text-primary);
       text-decoration: none; text-align: left; font: inherit; --icon: 1.2rem;
     }
+    button.row-link { cursor: pointer; }
     .row-link > span, .row > span:not(.switch) { flex: 1; display: grid; gap: 0.1rem; min-width: 0; }
     .row-link small, .row small { font-size: 0.8rem; }
     .row-link:hover { border-color: var(--accent); }
