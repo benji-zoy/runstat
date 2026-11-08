@@ -45,7 +45,7 @@ import { LOCAL_MODE } from '../core/runtime';
 
       <h2>Services contactés, seulement ceux que tu choisis</h2>
       <ul>
-        <li><b>COROS</b> (activités, fichiers FIT, santé) et <b>Strava</b> (activités, tracés) : lecture seule, avec ton autorisation.</li>
+        <li><b>COROS</b> (activités, fichiers FIT, santé, séances prévues au calendrier) et <b>Strava</b> (activités, tracés) : lecture seule, avec ton autorisation.</li>
         <li><b>Google Health</b> (santé et sommeil) : lecture seule, par le relais du NAS (voir plus haut).</li>
         <li><b>Garmin Connect</b> (activités, fichiers FIT, santé, poids) : lecture seule, avec ta clé personnelle ; dans l'appli
           publique, par le relais du NAS (voir plus haut).</li>

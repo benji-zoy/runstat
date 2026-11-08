@@ -16,11 +16,13 @@
 //   health-coros.json -> santé & sommeil COROS (source de santé « coros »)
 //   health-garmin.json -> santé & sommeil Garmin (source de santé « garmin »)
 //   goals.json       -> objectifs de course
+//   planned.json     -> séances prévues au calendrier de la montre (COROS), recopiées dans `planned`
 // Tout passe par un FileStore : le même code tourne sur le NAS (Node) et dans le navigateur (IndexedDB).
 import type { FitDerived } from '../fit/types.ts';
 import { firstPoint } from '../fit/analyse.ts';
 import { combineHealth, type Health, type HealthFile } from '../parsers/google.ts';
 import type { StravaActivity } from '../parsers/strava.ts';
+import type { PlannedFile, PlannedSession } from '../parsers/coros.ts';
 import { fileKey, normalizeSources, type ActivitySource, type Sources } from '../sources.ts';
 import { readJson, type FileStore, type Storage } from '../storage/types.ts';
 import { parseFitness, parseLoad, parseRecords, rawText, SPORTS, toSeconds, type Fitness, type LoadDay } from './coros-text.ts';
@@ -102,6 +104,16 @@ export interface Snapshot {
   load: LoadDay[];
   health: Health | null;
   goals: Goal[];
+  /** Séances prévues au calendrier de la montre (planned.json), absent sans calendrier */
+  planned?: PlannedSnapshot;
+}
+
+export interface PlannedSnapshot {
+  source: 'coros';
+  fetchedAt: string;
+  from: string;
+  to: string;
+  sessions: PlannedSession[];
 }
 
 export interface SnapshotStats {
@@ -366,6 +378,11 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
     health: await health(),
     goals,
   };
+  // Calendrier : indépendant de la source d'activités (une montre COROS synchronisée par Strava garde son calendrier)
+  const planned = await readJson<PlannedFile>(raw, 'planned.json');
+  if (planned?.sessions) {
+    snapshot.planned = { source: planned.source, fetchedAt: planned.fetchedAt, from: planned.from, to: planned.to, sessions: planned.sessions };
+  }
   return { snapshot, routes, missing: external ? null : missing, stats: { withFit, withLaps, withWeather, withResult }, warnings };
 }
 

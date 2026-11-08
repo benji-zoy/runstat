@@ -68,7 +68,7 @@ export class ScienceService {
     if (!d?.goals?.length) return [];
     const acts = this.store.activities();
     const evals = d.goals
-      .map((g) => evaluateGoal(g, goalContext(g, acts, this.types(), this.athlete(), this.today, d.fitness?.predictions ?? {}, d.health), this.today, acts))
+      .map((g) => evaluateGoal(g, goalContext(g, acts, this.types(), this.athlete(), this.today, d.fitness?.predictions ?? {}, d.health, d.planned), this.today, acts))
       .filter((e): e is GoalEvaluation => e !== null);
     const upcoming = evals.filter((e) => e.daysLeft >= 0).sort((a, b) => a.daysLeft - b.daysLeft);
     const past = evals.filter((e) => e.daysLeft < 0).sort((a, b) => b.daysLeft - a.daysLeft);

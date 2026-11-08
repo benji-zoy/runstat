@@ -4,10 +4,27 @@ import { fitQueue, fitQueueText } from '../fit-queue.ts';
 import { fileKey, idFromFileKey, normalizeSources } from '../sources.ts';
 import { corosDaily, corosHrv, corosRhr, csvFr } from '../testing/fixtures.ts';
 import { healthFromCoros } from './coros-health.ts';
-import { parseDetail, unwrap } from './coros.ts';
+import { parseDetail, parseSchedule, unwrap } from './coros.ts';
 import { activityFromApi, parseActivitiesCsv } from './strava.ts';
 
 describe('parseurs', () => {
+  it('calendrier COROS : une séance par bloc, plusieurs le même jour, champs absents à null', () => {
+    const text = JSON.stringify([
+      'Training Schedule', '========================', '',
+      '2026-11-14\n🆕 Plan B · Nocturne 2h30\nStandalone workout (scheduled from the workout library)\nidInPlan: 473\nDistance: 26.50 km\nEstimated Time: 2:45:00\nLoad: 211 TL',
+      '',
+      'Renforcement\nStandalone workout (scheduled from the workout library)\nidInPlan: 474\nEstimated Time: 20:00',
+      '',
+      '2026-11-15\nPiste 400 m\nPlan name: Prépa\nPlan ID: 12\nDistance: 800 m\nLoad: 30 TL',
+    ].join('\n'));
+    expect(parseSchedule(text)).toEqual([
+      { date: '2026-11-14', name: '🆕 Plan B · Nocturne 2h30', distanceKm: 26.5, durationSec: 9900, load: 211 },
+      { date: '2026-11-14', name: 'Renforcement', distanceKm: null, durationSec: 1200, load: null },
+      { date: '2026-11-15', name: 'Piste 400 m', distanceKm: 0.8, durationSec: null, load: 30, fromPlan: true },
+    ]);
+    expect(parseSchedule('Training Schedule\n====\n\nNo workouts scheduled.')).toEqual([]);
+  });
+
   it('santé COROS : sommeil, VFC et FC de repos fusionnés par jour', () => {
     const h = healthFromCoros({ daily: [corosDaily], hrv: [corosHrv], rhr: [corosRhr] });
     const days = Object.values(h.days);

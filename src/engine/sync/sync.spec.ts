@@ -16,6 +16,18 @@ const TOKEN = 'https://mcpeu.coros.com/oauth/token';
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
+// Calendrier fictif au format de queryTrainingSchedule (une séance passée, une isolée, une d'un plan)
+const SCHEDULE = [
+  'Training Schedule',
+  '========================',
+  '',
+  '2026-03-08\nFooting de la veille\nStandalone workout (scheduled from the workout library)\nidInPlan: 1\nDistance: 6.00 km\nEstimated Time: 36:00\nLoad: 50 TL',
+  '',
+  '2026-03-12\nFooting 45 min\nStandalone workout (scheduled from the workout library)\nidInPlan: 2\nDistance: 7.50 km\nEstimated Time: 45:00\nLoad: 60 TL\nTo view or modify this workout, use queryScheduledWorkoutDetails.',
+  '',
+  '2026-03-14\nSortie longue de nuit\nTraining plan workout (Plan ID: 99)\nidInPlan: 3\nDistance: 20.00 km\nEstimated Time: 2:10:00\nLoad: 160 TL',
+].join('\n');
+
 const RECORDS = [
   'Sport Records — 2026-03-01 to 2026-03-10 (2 records)',
   '========================',
@@ -68,6 +80,8 @@ function fakeCoros({ quota = false } = {}) {
           return text('Fitness Assessment Overview\n\nVO2max: 54');
         case 'queryTrainingLoadAssessment':
           return text('Training Load Assessment\n\n2026-03-09\nShort-Term Load: 60\nLong-Term Load: 55\nLoad Ratio: 1.09');
+        case 'queryTrainingSchedule':
+          return text(SCHEDULE);
         case 'queryActivityFitFileDownloadUrls':
           return text(quota ? 'You have reached the daily limit of 50 FIT downloads' : `https://s3eu.coros.com/fit/${msg.params.arguments.labelId}.fit`);
       }
@@ -163,7 +177,15 @@ describe('synchro des sources', () => {
     expect(await raw.readText('fitness.txt')).toContain('VO2max: 54');
     expect(await raw.readText('load.txt')).toContain('Load Ratio: 1.09');
     expect((await raw.list('fit')).sort()).toEqual(['200001.fit', '200002.fit']);
-    expect(state.coros?.lastSummary).toMatch(/2 activités du .* 2 détails, 2 FIT/);
+    expect(state.coros?.lastSummary).toMatch(/2 activités du .* 2 détails, 2 séances prévues, 2 FIT/);
+    // Calendrier : séances à partir d'aujourd'hui, la séance passée est écartée
+    const planned = JSON.parse((await raw.readText('planned.json'))!);
+    expect(planned).toMatchObject({ source: 'coros', from: '2026-03-10', to: '2026-07-08' });
+    expect(planned.sessions).toEqual([
+      { date: '2026-03-12', name: 'Footing 45 min', distanceKm: 7.5, durationSec: 2700, load: 60 },
+      { date: '2026-03-14', name: 'Sortie longue de nuit', distanceKm: 20, durationSec: 7800, load: 160, fromPlan: true },
+    ]);
+    expect(server.calls).toContain('queryTrainingSchedule');
     expect(JSON.parse((await raw.readText('sync-state.json'))!).coros.lastSuccessDate).toBe('2026-03-10');
     // stage: false (appareil) : pas de réponses brutes
     expect((await raw.keys()).some((k) => k.startsWith('raw/'))).toBe(false);

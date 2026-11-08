@@ -134,3 +134,66 @@ export const isFitQuota = (text: string): boolean => /daily limit|limit of \d+ .
 
 /** URL de fichiers FIT dans la réponse de queryActivityFitFileDownloadUrls */
 export const fitUrls = (text: string): string[] => [...new Set(unwrap(text).match(/https:\/\/[^\s"'<>)\]]+/g) ?? [])];
+
+/** Séance prévue au calendrier (COROS : queryTrainingSchedule) → data-raw/planned.json */
+export interface PlannedSession {
+  /** AAAA-MM-JJ, fuseau de la montre */
+  date: string;
+  name: string;
+  distanceKm: number | null;
+  durationSec: number | null;
+  /** Charge estimée (TL COROS, même échelle que trainingLoad) */
+  load: number | null;
+  /** Séance d'un plan d'entraînement plutôt qu'isolée */
+  fromPlan?: boolean;
+}
+
+/** Fichier data-raw/planned.json : calendrier remplacé à chaque synchro (il change d'un jour à l'autre) */
+export interface PlannedFile {
+  source: 'coros';
+  fetchedAt: string;
+  /** Fenêtre demandée (AAAA-MM-JJ) : un jour sans séance dans cette fenêtre est un jour de repos */
+  from: string;
+  to: string;
+  sessions: PlannedSession[];
+}
+
+const SCHEDULE_META =
+  /^(Standalone workout|Training plan|From training plan|Workout from|To view|To reschedule)\b|^(Plan ID|Plan name|Plan|idInPlan|Distance|Estimated Time|Duration|Load|Sport( type)?|Workout ID)\s*:/i;
+
+/** h:mm:ss ou mm:ss → secondes */
+const clockSec = (s: string | undefined): number | null => {
+  const p = s?.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+  if (!p) return null;
+  return p[3] != null ? +p[1] * 3600 + +p[2] * 60 + +p[3] : +p[1] * 60 + +p[2];
+};
+
+/**
+ * Calendrier texte de queryTrainingSchedule : blocs séparés par une ligne vide, chacun ouvert par la date
+ * (« 2026-11-14 ») puis le nom de la séance ; un bloc sans date reprend la précédente (plusieurs séances le même jour).
+ */
+export function parseSchedule(text: string): PlannedSession[] {
+  const out: PlannedSession[] = [];
+  let date: string | null = null;
+  for (const block of unwrap(text).split(/\n\s*\n/)) {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+    const head = lines[0].match(/^(\d{4}-\d{2}-\d{2})\b/);
+    if (head) (date = head[1]), lines.shift();
+    if (!date || !lines.length) continue;
+    const field = (name: string) => lines.find((l) => l.toLowerCase().startsWith(name.toLowerCase() + ':'))?.slice(name.length + 1).trim();
+    const name = lines.find((l) => !SCHEDULE_META.test(l) && !/^=+$/.test(l));
+    const dist = field('Distance')?.match(/([\d.]+)\s*(km|m)\b/i);
+    const load = field('Load')?.match(/[\d.]+/)?.[0];
+    if (!name && !dist && !load) continue;
+    out.push({
+      date,
+      name: (name ?? 'Séance').slice(0, 120),
+      distanceKm: dist ? Math.round((dist[2].toLowerCase() === 'm' ? +dist[1] / 1000 : +dist[1]) * 100) / 100 : null,
+      durationSec: clockSec(field('Estimated Time') ?? field('Duration')),
+      load: load != null ? Math.round(+load) : null,
+      ...(lines.some((l) => /plan id|training plan/i.test(l) && !/^Standalone/i.test(l)) ? { fromPlan: true } : {}),
+    });
+  }
+  return out;
+}

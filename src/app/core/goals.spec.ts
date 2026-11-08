@@ -1,8 +1,9 @@
 import { Activity, Athlete, Goal } from './models';
 import {
   chance, chanceVerdict, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT,
-  evaluateGoal, ultraModel,
+  evaluateGoal, ultraModel, projectedTsb, goalCalendar,
 } from './goals';
+import { PlannedCalendar, PlannedSession } from './models';
 import { classifyAll, kmEffortOf } from './science';
 import { courseSegments } from './course';
 import { priorCost, segmentsEffortKm } from './terrain';
@@ -144,5 +145,68 @@ describe('évaluation', () => {
     const f = evaluateGoal(finish, goalContext(finish, acts, types, ath, today, {}, null), today, acts)!;
     expect(f.probability).toBeNull();
     expect(f.index).toBe(Math.round(f.readinessScore * 100));
+  });
+});
+
+describe('calendrier des séances prévues', () => {
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // 10 semaines régulières : 5 sorties par semaine, une longue de 2 h le dimanche
+  const acts: Activity[] = [];
+  for (let i = 0; i < 70; i++) {
+    if (i % 7 === 2 || i % 7 === 4) continue;
+    const d = new Date(2026, 6, 27 + i);
+    acts.push(run(iso(d), i % 7 === 6 ? 20 : 9, i % 7 === 6 ? 7200 : 2900, { trainingLoad: i % 7 === 6 ? 160 : 70, kind: 'trail', sportType: 102, elevGain: 200 }));
+  }
+  const today = new Date(2026, 9, 5);
+  const goal: Goal = { id: 't', name: 'Trail', date: '2026-11-29', distanceKm: 50, elevGain: 1500, kind: 'trail', targetSec: 7 * 3600 };
+  const session = (date: string, km: number, sec: number, load: number, name = 'Footing'): PlannedSession =>
+    ({ date, name, distanceKm: km, durationSec: sec, load });
+  const sessions: PlannedSession[] = [];
+  for (let d = new Date(2026, 9, 6); d < new Date(2026, 10, 29); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 2)) {
+    sessions.push(session(iso(d), 8, 2700, 65));
+  }
+  sessions.push(session('2026-11-08', 22, 9000, 200, 'Sortie longue nocturne'));
+  const cal: PlannedCalendar = { source: 'coros', fetchedAt: today.toISOString(), from: iso(today), to: '2027-02-02', sessions };
+
+  it('ne garde que les séances à faire avant la course, ignore un calendrier périmé ou une course passée', () => {
+    const c = goalCalendar(goal, cal, acts, today, false)!;
+    expect(c.sessions.every((x) => x.date > iso(today) && x.date < goal.date)).toBe(true);
+    expect(c.last).toBe('2026-11-27');
+    expect(goalCalendar(goal, { ...cal, fetchedAt: '2026-09-01T00:00:00Z' }, acts, today, false)).toBeNull();
+    expect(goalCalendar(goal, cal, acts, today, true)).toBeNull();
+  });
+
+  it('projette la fraîcheur sur la charge prévue plutôt que sur un affûtage supposé', () => {
+    const race = new Date(2026, 10, 29);
+    const c = goalCalendar(goal, cal, acts, today, false);
+    const base = projectedTsb(acts, today, race)!;
+    const planned = projectedTsb(acts, today, race, 0.5, c)!;
+    expect(base.planned).toBe(false);
+    expect(planned.planned).toBe(true);
+    expect(planned.now).toBeCloseTo(base.now, 9);
+    expect(planned.race).not.toBeCloseTo(base.race, 1);
+    // Rien de prévu après aujourd'hui : repos complet jusqu'à la course, plus frais qu'avec l'affûtage supposé
+    const rest = projectedTsb(acts, today, race, 0.5, { fetchedAt: cal.fetchedAt, sessions: [session(iso(today), 0, 0, 0)], last: '2026-11-27' })!;
+    expect(rest.race).toBeGreaterThan(base.race);
+  });
+
+  it('projette la préparation sur les séances prévues et le dit', () => {
+    const ctxOf = (planned: PlannedCalendar | null) => goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null, planned);
+    const without = evaluateGoal(goal, ctxOf(null), today, acts)!;
+    const withPlan = evaluateGoal(goal, ctxOf(cal), today, acts)!;
+    expect(without.plannedPrep).toBe(false);
+    expect(withPlan.plannedPrep).toBe(true);
+    const longest = (e: typeof withPlan) => e.readiness.find((r) => r.label === 'Sortie la plus longue')!;
+    // Sans calendrier : on suppose la sortie longue faite ; avec : 2 h 30 prévues, moins que la durée visée
+    expect(longest(without).projected).toBe(1);
+    expect(longest(withPlan).projected).toBeLessThan(1);
+    expect(longest(withPlan).projected).toBeGreaterThan(longest(withPlan).score);
+    expect(longest(withPlan).planned).toBe('2 h 30 (Sortie longue nocturne, le 8 nov.)');
+    expect(longest(withPlan).advice).toMatch(/^Ton calendrier ne prévoit pas de sortie de/);
+    const night = withPlan.readiness.find((r) => r.label === 'Sorties de nuit')!;
+    expect(night.planned).toBe('1 séance de nuit');
+    expect(withPlan.calendar!.sessions.length).toBeGreaterThan(20);
+    // Hors fenêtre de fraîcheur (> 21 jours) : seul l'ajustement « Préparation » dépend du calendrier
+    expect(withPlan.adjustments.find((a) => a.label === 'Fraîcheur')).toBeUndefined();
   });
 });

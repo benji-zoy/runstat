@@ -237,6 +237,28 @@ export interface CorosData {
   activities: Activity[];
   fitness: Fitness | null;
   load: LoadDay[];
+  /** Séances prévues au calendrier de la montre (COROS), absent sans calendrier */
+  planned?: PlannedCalendar;
+}
+
+/** Séance prévue (calendrier COROS) */
+export interface PlannedSession {
+  date: string;
+  name: string;
+  distanceKm: number | null;
+  durationSec: number | null;
+  /** Charge estimée, même échelle que trainingLoad */
+  load: number | null;
+  fromPlan?: boolean;
+}
+
+export interface PlannedCalendar {
+  source: 'coros';
+  fetchedAt: string;
+  /** Fenêtre demandée : un jour sans séance dedans est un jour de repos */
+  from: string;
+  to: string;
+  sessions: PlannedSession[];
 }
 
 export interface Summary {
