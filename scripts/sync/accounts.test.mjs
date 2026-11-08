@@ -3,7 +3,7 @@
 // migration de l'instance mono-utilisateur. Dossiers temporaires, vrai serveur HTTP sur un port libre, runs factices.
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request } from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -258,6 +258,27 @@ test('API : gardes (en-tête du site, compte local-first, route inconnue, quota)
     fresh.close();
     rmSync(raw('bob', 'gros.bin'));
   }
+});
+
+test('API : une adresse invalide (URI brute transmise par nginx) donne 400 sans faire tomber le service', async () => {
+  const port = servers.lan.address().port;
+  const status = await new Promise((resolve, reject) =>
+    request({ host: '127.0.0.1', port, path: '//[/../api/me' }, (res) => (res.resume(), resolve(res.statusCode))).on('error', reject).end(),
+  );
+  assert.equal(status, 400);
+  assert.equal((await api('lan', '/api/me')).status, 200);
+});
+
+test('API : sur le réseau local, un nom de domaine public est refusé (DNS rebinding)', async () => {
+  const port = servers.lan.address().port;
+  const get = (host) =>
+    new Promise((resolve, reject) =>
+      request({ host: '127.0.0.1', port, path: '/api/data/coros.json', headers: { Host: host } }, (res) => (res.resume(), resolve(res.statusCode))).on('error', reject).end(),
+    );
+  assert.equal(await get('attaquant.example'), 421);
+  assert.equal(await get('192.168.1.24.nip.io:8080'), 421);
+  assert.equal(await get('192.168.1.24:8080'), 200);
+  assert.equal(await get('diskstation.local'), 200);
 });
 
 test('API : /api/me et administration réservée au propriétaire par le tailnet', async () => {

@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { root, usersDir } from '../paths.mjs';
 import { accountsLoader, runEnv, userPaths } from './accounts.mjs';
 import { createApp, ensureUserDirs } from './app.mjs';
+import { safeHandler } from './http-safe.mjs';
 import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
 import { oauthConnectRoutes } from './oauth-connect.mjs';
@@ -96,11 +97,14 @@ const strava = stravaConnectRoutes();
 const oauth = oauthConnectRoutes();
 const common = { accounts, queue, strava, oauth, appUrl: APP_URL, publicUrl: PUBLIC_URL, nextAt: () => nextAt, quotaBytes: QUOTA_BYTES, maxArchive: MAX_ARCHIVE };
 
+// Délai de toute la requête : 5 min par défaut dans Node, trop court pour une archive Strava de quelques centaines de Mo par Tailscale
+// (nginx relaie sans tampon, 600 s entre deux écritures) ; les en-têtes restent limités à 60 s (headersTimeout).
+const ARCHIVE_TIMEOUT_MS = 2 * 3600_000;
 const listen = (zone, port) =>
-  createServer(createApp({ zone, ...common })).listen(port, () => console.log(`API (${zone}) sur le port ${port}`));
+  createServer({ requestTimeout: ARCHIVE_TIMEOUT_MS }, safeHandler(createApp({ zone, ...common }))).listen(port, () => console.log(`API (${zone}) sur le port ${port}`));
 listen('lan', PORT);
 listen('tailnet', PORT + 1);
-createServer(createPublicApi({ accounts, usersDir: dir, appOrigins: APP_ORIGINS, googleRedirects: GOOGLE_REDIRECTS, quotaBytes: BACKUP_QUOTA }))
+createServer(safeHandler(createPublicApi({ accounts, usersDir: dir, appOrigins: APP_ORIGINS, googleRedirects: GOOGLE_REDIRECTS, quotaBytes: BACKUP_QUOTA })))
   .listen(PORT + 2, () => console.log(`API (public) sur le port ${PORT + 2}${APP_ORIGINS.length ? ` pour ${APP_ORIGINS.join(', ')}` : ', aucune origine autorisée'}`));
 
 // Ménage des sauvegardes local-first (manifestes de plus de 30 jours, objets orphelins, suppressions anciennes) et de celles des

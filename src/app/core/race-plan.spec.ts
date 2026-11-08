@@ -25,6 +25,23 @@ describe('plan d’allure', () => {
     }
   });
 
+  it('découpe toute distance route en tronçons contigus, dans la course, calés sur le chrono', () => {
+    for (const d of [3, 5, 8, 10, 12, 15, 21.0975, 25, 28, 42.195]) {
+      const parts = pacingProfile(d, 'road');
+      expect(parts[0].from).toBe(0);
+      expect(parts.at(-1)!.to).toBe(d);
+      for (const [i, p] of parts.entries()) {
+        expect(p.to).toBeGreaterThanOrEqual(p.from);
+        if (i) expect(p.from).toBe(parts[i - 1].to);
+      }
+      expect(passage(d, parts, segmentPaces(1200, d, 'road'))).toBeCloseTo(1200, 6);
+    }
+    // Bornes historiques inchangées
+    expect(pacingProfile(10, 'road').map((p) => p.to)).toEqual([2, 8, 10]);
+    expect(pacingProfile(42.195, 'road').map((p) => p.to)).toEqual([5, 30, 42.195]);
+    expect(pacingProfile(5, 'road').map((p) => p.to)).toEqual([1, 3, 5]);
+  });
+
   it('part plus lentement et finit plus vite sur semi', () => {
     const [start, cruise, end] = segmentPaces(5640, 21.0975, 'road');
     expect(start - cruise).toBeCloseTo(3, 6);

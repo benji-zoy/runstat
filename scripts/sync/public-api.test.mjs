@@ -398,13 +398,17 @@ test('sauvegarde : dix envois vides ne suffisent pas à tout effacer (30 jours),
   store.gc();
   assert.equal(store.hasObject(id), false);
   assert.deepEqual(store.list().map((m) => m.version), [11]);
-  // Suppression douce : récupérable 30 jours
+  // Suppression douce : récupérable 30 jours, et toujours comptée dans le quota jusque-là
+  const before = store.usage();
+  assert.ok(before > 0);
   assert.equal(store.softDelete(), true);
   assert.equal(store.latest(), null);
   assert.ok(readdirSync(base_).some((f) => f.startsWith('backup-supprimee-')));
+  assert.equal(store.usage(), before);
   now += 31 * 86_400_000;
   new BackupStore(base_, () => now).gc();
   assert.ok(!readdirSync(base_).some((f) => f.startsWith('backup-supprimee-')));
+  assert.equal(store.usage(), 0);
 });
 
 test('sauvegarde : suppression avec ré-authentification', async () => {

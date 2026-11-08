@@ -102,7 +102,10 @@ export class BackupStore {
     return true;
   }
 
-  /** Octets occupés par la sauvegarde (objets, manifestes, envois en cours) */
+  /**
+   * Octets occupés par la sauvegarde (objets, manifestes, envois en cours), sauvegardes supprimées comprises tant qu'elles sont
+   * gardées (30 jours) : sinon supprimer puis renvoyer contournerait le quota.
+   */
   usage() {
     const size = (d) => {
       if (!existsSync(d)) return 0;
@@ -110,7 +113,8 @@ export class BackupStore {
       for (const e of readdirSync(d, { withFileTypes: true })) t += e.isDirectory() ? size(join(d, e.name)) : statSync(join(d, e.name)).size;
       return t;
     };
-    return size(this.dir);
+    const deleted = existsSync(this.base) ? readdirSync(this.base).filter((f) => /^backup-supprimee-\d+$/.test(f)) : [];
+    return size(this.dir) + deleted.reduce((t, d) => t + size(join(this.base, d)), 0);
   }
 
   /**

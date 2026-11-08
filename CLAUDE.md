@@ -186,7 +186,10 @@ identifiants opaques, des tailles et des versions ; tout est chiffré sur l'appa
   avec `If-Match` (412 → relecture et nouvelle fusion, 4 essais). Fusion par fichier : horloge de Lamport, appareil pour départager,
   suppression = pierre tombale (pas d'horloge murale ; même fichier modifié sur deux appareils : le dernier écrit gagne). Fichiers de
   moins de 256 Kio regroupés en paquets de 4 Mio au plus. Anti-retour : plus haute version vue gardée dans `backup-index.json`, un manifeste
-  plus ancien est refusé (`Rollback`) ; manifeste le plus récent illisible → dernier lisible. Non sauvegardé : `fit-derived/`,
+  plus ancien est refusé (`Rollback`) ; manifeste le plus récent illisible → dernier lisible, jamais plus ancien qu'une version déjà
+  déchiffrée. Fichiers reçus notés dans l'index avant l'envoi du manifeste (un envoi raté ne les renvoie pas comme locaux) ; une passe à la
+  fois (verrou `runstat-sauvegarde`). Première synchro d'un appareil (index vide) face à une sauvegarde existante = restauration : la
+  sauvegarde l'emporte sur ses fichiers ; l'index est effacé à la déconnexion. Quota : sauvegardes supprimées comprises, envois réservés. Non sauvegardé : `fit-derived/`,
   `local-state.json`, `backup-index.json`, `missing-details.txt` (reconstruits). Restaurer = synchroniser un stockage vide, puis `rebuild`.
 - `account.service.ts` (IndexedDB `runstat-account` : NAS, jeton de session, appareil, clés de travail ; jamais la phrase de passe ni la
   clé de données) : `join` (invitation + passkey), `login` (passkey), `redeemLink` (lien de connexion), `create`, `unlock` (phrase ou code
@@ -545,7 +548,8 @@ vers `<destination>/app/` (relus à chaque synchro, sans redémarrage). Destinat
 Container Manager, puis la migration vers les comptes (voir Comptes). `server.mjs`, `app.mjs` ou `deploy/nginx/` modifié : Projet › runstat › Arrêter puis Construire. `docker-compose.yml` modifié :
 Container Manager garde **sa propre copie du YAML** (celle copiée par le déploiement est ignorée) → recopier le changement dans
 Projet › runstat › YAML, puis Arrêter › Nettoyer › Construire (un simple Construire redémarre sans recréer : nouvelles variables
-d'environnement ignorées ; vérifier `stravaOrigin` dans `GET /api/sync`). Accès hors du réseau
+d'environnement ignorées ; vérifier `stravaOrigin` dans `GET /api/sync`). Port du réseau local : hôte limité à une IP, un nom court ou .local/.lan/.home.arpa (DNS rebinding : 421, nginx et
+`lanHostAllowed`). Accès hors du réseau
 local via Tailscale uniquement : données personnelles, ne pas ouvrir de port.
 
 ## Vérifier

@@ -3,7 +3,7 @@
 // client_secret } dans le magasin du compte, jamais relu par le site ; jetons dans strava-tokens.json.
 // Politique API Strava : cache de 7 jours au plus (§ 6.2), assumé pour l'historique personnel.
 import { InvalidEntry } from '../entries.ts';
-import { fetchRetry, globalFetch, guardedRefresh, RateLimited, ReauthRequired, type Fetch, type TokenStore } from './http.ts';
+import { fetchRetry, globalFetch, guardedRefresh, RateLimited, ReauthRequired, TOKEN_REQUEST, type Fetch, type TokenStore } from './http.ts';
 
 /** Nouvelle adresse obligatoire au 1er juin 2027 : https://www.api-v3.strava.com */
 export const STRAVA_API_URL = 'https://www.strava.com/api/v3';
@@ -84,7 +84,7 @@ export function stravaClient({ tokens, fetch = globalFetch, api = STRAVA_API_URL
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: String(c.client_id), client_secret: c.client_secret, ...params }),
-    });
+    }, TOKEN_REQUEST);
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }
 
@@ -135,7 +135,7 @@ export function stravaClient({ tokens, fetch = globalFetch, api = STRAVA_API_URL
     const url = new URL(`${api}${path}`);
     for (const [k, v] of Object.entries(params)) if (v != null) url.searchParams.set(k, String(v));
     // Pas de nouvel essai sur 429 : la fenêtre est de 15 minutes
-    const res = await fetchRetry(fetch, url, { headers: { Authorization: `Bearer ${await accessToken()}` } }, { tries: 2 });
+    const res = await fetchRetry(fetch, url, { headers: { Authorization: `Bearer ${await accessToken()}` } }, { tries: 2, retry429: false });
     if (res.status === 429) throw new RateLimited('limite de débit Strava atteinte, suite au prochain run');
     if (nearLimit(res.headers)) throttled = true;
     if (res.status === 401) throw new ReauthRequired('strava', 'token refusé par l’API');

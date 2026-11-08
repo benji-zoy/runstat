@@ -1,12 +1,13 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { publicClient, nasOrigin, ApiError, type PublicClient } from '../../engine/backup/api';
 import { TamperedData, WrongPassphrase, newDataKey, normalizeRecovery, recoveryCode, unwrapKey, workKeys, wrapKey, type WorkKeys } from '../../engine/backup/crypto';
-import { Rollback, syncBackup, type BackupHeader, type SyncResult } from '../../engine/backup/sync';
+import { INDEX_FILE, Rollback, syncBackup, type BackupHeader, type SyncResult } from '../../engine/backup/sync';
 import { garminRelayFetch } from '../../engine/sync/garmin';
 import type { Fetch } from '../../engine/sync/http';
 import { DataService } from './data.service';
 import { EntryError } from './entry-error';
 import { LocalService } from './local.service';
+import { withLock } from './locks';
 import { LOCAL_MODE } from './runtime';
 
 /** Compte local-first, gardé dans la base IndexedDB `runstat-account` (jamais la phrase de passe ni la clé de données) */
@@ -229,7 +230,12 @@ export class AccountService {
     this.syncing.set(true);
     this.lastError.set(null);
     try {
-      const result = await syncBackup({ raw: await this.local.raw(), api: this.client().backup, keys: s.keys, account: s.user.id, device: s.device, header });
+      // Une passe à la fois (minuteur, renouvellement d'un jeton, autre onglet) : deux passes sur le même index verraient
+      // chacune les fichiers reçus par l'autre comme des modifications locales
+      const raw = await this.local.raw();
+      const result = (await withLock('runstat-sauvegarde', () =>
+        syncBackup({ raw, api: this.client().backup, keys: s.keys!, account: s.user.id, device: s.device, header }),
+      ))!;
       this.lastResult.set(result);
       await this.save({ ...this.state()!, lastSync: new Date().toISOString() });
       if (result.changed) {
@@ -325,5 +331,8 @@ export class AccountService {
     } catch {}
     clearTimeout(this.timer);
     await this.save(null);
+    // L'index de la sauvegarde est propre à ce compte (empreintes sous sa clé, versions vues) : la prochaine connexion,
+    // peut-être à un autre compte, repart comme une restauration
+    await (await this.local.raw()).remove(INDEX_FILE).catch(() => undefined);
   }
 }

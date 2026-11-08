@@ -13,6 +13,7 @@ import { DataService } from './data.service';
 import { EntryError } from './entry-error';
 import { LocalService } from './local.service';
 import { LOCAL_MODE } from './runtime';
+import { withLock } from './locks';
 
 /** Appareil qui synchronise les sources (sauvegardé et fusionné comme les autres fichiers) */
 export const PRIMARY_FILE = 'sync-primary.json';
@@ -348,11 +349,4 @@ export class DeviceSyncService {
     await this.reload();
     return { result: 'ok', reason };
   }
-}
-
-/** Web Locks (onglets, worker) ; `ifAvailable` : null si déjà pris. Sans l'API (anciens navigateurs), appel direct. */
-async function withLock<T>(name: string, fn: () => Promise<T>, ifAvailable = false): Promise<T | null> {
-  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
-  if (!locks) return fn();
-  return locks.request(name, { ifAvailable }, async (lock) => (lock ? fn() : null)) as Promise<T | null>;
 }

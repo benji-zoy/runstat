@@ -89,6 +89,27 @@ describe('export pour une IA', () => {
     expectPrivate(md);
   });
 
+  it('objectif sans la santé : ni ajustement ni conseil « Récupération », ni grammes déduits du poids', () => {
+    const base = evaluate(data.goals!.find((g) => g.id === 'marathon-test')!);
+    const sleep = 'Le sommeil des derniers jours est court : priorité aux nuits de 7 h et plus d\'ici la course.';
+    const e = {
+      ...base,
+      adjustments: [...base.adjustments, { label: 'Récupération', pct: 1.5, note: 'VFC sous ta base' }],
+      readiness: [...base.readiness, { label: 'Récupération', value: 'VFC basse, 6 h 10', target: 'base, 7 h', score: 0.4, projected: 0.4, weight: 10, advice: sleep }],
+      advice: [...base.advice, sleep],
+      plan: { ...base.plan, blocks: [...base.plan.blocks.filter((b) => b.title !== 'Les derniers jours'), { icon: '🍝', title: 'Les derniers jours', items: ['Recharge : soit 490 à 700 g par jour.'], withoutWeight: ['Recharge : 7 à 10 g par kg et par jour.'] }] },
+    } as typeof base;
+    const shared = goalExport(e, input, full).markdown;
+    expect(shared).toContain(sleep);
+    expect(shared).toContain('490 à 700 g');
+    const md = goalExport(e, input, { ...full, health: false }).markdown;
+    expect(md).not.toContain(sleep);
+    expect(md).not.toContain('Récupération');
+    expect(md).not.toContain('+1,5 %');
+    expect(md).not.toContain('490');
+    expect(md).toContain('7 à 10 g par kg et par jour');
+  });
+
   it('prépare un plan avec les contraintes et les allures d\'entraînement', () => {
     const e = evaluate(data.goals!.find((g) => g.id === 'trail-test')!);
     const md = planExport(e, input, summary, { days: [1, 3, 5], sessionsPerWeek: 3, maxKmPerWeek: 50, injuries: 'tendon d\'Achille\nsensible', notes: '' }).markdown;

@@ -43,6 +43,16 @@ describe('bilan de course', () => {
     expect(d.previous?.name).toBe('Semi des Collines 2025');
   });
 
+  it('sans temps puce, prend le temps officiel du classement saisi plutôt que la montre', () => {
+    const g = { ...goal, debrief: undefined };
+    const r = { ...race, result: { event: 'Semi', course: null, distanceKm: 21.0975, officialSec: total - 20, rank: null, finishers: null, sex: null, sexRank: null, sexCount: null, category: null, catRank: null, catCount: null, fetchedAt: '' } };
+    const list = [collines, dix, r];
+    const ev = evaluateGoal(g, goalContext(g, list, classifyAll(list, ath), ath, today, {}, null), today, list)!;
+    const db = raceDebrief(ev, r, ath, list, null);
+    expect(db.official).toBe(total - 20);
+    expect(db.fromChip).toBe(true);
+  });
+
   it('ramène les km GPS à la distance officielle et finit l’écart au plan sur le temps officiel', () => {
     const f = 21.0975 / 21.3;
     const ts = d.official / total;

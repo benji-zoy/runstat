@@ -54,6 +54,8 @@ export interface PlanBlock {
   icon: string;
   title: string;
   items: string[];
+  /** Les mêmes conseils sans les quantités calculées sur le poids (export sans les données de santé) */
+  withoutWeight?: string[];
 }
 
 export interface RacePlan {
@@ -82,6 +84,15 @@ interface ProfilePart {
   tip: string;
 }
 
+/**
+ * Bornes route (km) du départ et du final : celles du 10 km, du semi et du marathon, ramenées dans la course quand elle est plus
+ * courte (5 km, 15 km, 28 km…) : départ ≤ 20 % de la distance, final d'au moins `finalKm` (et jamais avant la fin du départ).
+ */
+function bounds(D: number, startKm: number, finalFrom: number, finalKm: number): [number, number] {
+  const a = Math.min(startKm, 0.2 * D);
+  return [a, Math.max(a, Math.min(finalFrom, D - finalKm))];
+}
+
 /** Découpage de la course : départ prudent, croisière, final (route) ; quarts à fatigue croissante (trail) */
 export function pacingProfile(distanceKm: number, kind: Goal['kind']): { label: string; from: number; to: number; shift: number; tip: string }[] {
   const D = distanceKm;
@@ -94,22 +105,25 @@ export function pacingProfile(distanceKm: number, kind: Goal['kind']): { label: 
       { label: 'Final', from: 0.75 * D, to: D, shift: 1.07, tip: 'Quadriceps fatigués : petits pas rapides en descente, relance sur le plat.' },
     ];
   } else if (D <= 12) {
+    const [a, b] = bounds(D, 2, 8, 2);
     parts = [
-      { label: 'Départ', from: 0, to: 2, shift: 3, tip: 'Ne te laisse pas embarquer par la foule : 2 à 3 s/km plus lent que la cible.' },
-      { label: 'Croisière', from: 2, to: 8, shift: 0, tip: 'Allure cible, régulière ; épaules relâchées, respiration ample.' },
-      { label: 'Final', from: 8, to: D, shift: -4, tip: 'Accélère progressivement, tout donner sur le dernier kilomètre.' },
+      { label: 'Départ', from: 0, to: a, shift: 3, tip: 'Ne te laisse pas embarquer par la foule : 2 à 3 s/km plus lent que la cible.' },
+      { label: 'Croisière', from: a, to: b, shift: 0, tip: 'Allure cible, régulière ; épaules relâchées, respiration ample.' },
+      { label: 'Final', from: b, to: D, shift: -4, tip: 'Accélère progressivement, tout donner sur le dernier kilomètre.' },
     ];
   } else if (D <= 25) {
+    const [a, b] = bounds(D, 3, 16, 5);
     parts = [
-      { label: 'Mise en route', from: 0, to: 3, shift: 3, tip: 'Laisse partir la foule, 2 à 3 s/km plus lent : la FC met quelques minutes à se stabiliser.' },
-      { label: 'Croisière', from: 3, to: 16, shift: 0, tip: 'Régularité : contrôle les temps de passage aux panneaux km plutôt que l\'allure instantanée.' },
-      { label: 'Final', from: 16, to: D, shift: -3, tip: 'Plus que 5 km : si la FC le permet, accélère d\'un cran, puis vide le réservoir sur le dernier km.' },
+      { label: 'Mise en route', from: 0, to: a, shift: 3, tip: 'Laisse partir la foule, 2 à 3 s/km plus lent : la FC met quelques minutes à se stabiliser.' },
+      { label: 'Croisière', from: a, to: b, shift: 0, tip: 'Régularité : contrôle les temps de passage aux panneaux km plutôt que l\'allure instantanée.' },
+      { label: 'Final', from: b, to: D, shift: -3, tip: 'Plus que 5 km : si la FC le permet, accélère d\'un cran, puis vide le réservoir sur le dernier km.' },
     ];
   } else if (D <= 45) {
+    const [a, b] = bounds(D, 5, 30, 12);
     parts = [
-      { label: 'Mise en route', from: 0, to: 5, shift: 4, tip: 'Le piège du marathon : chaque seconde gagnée au départ se paie au 30e km.' },
-      { label: 'Croisière', from: 5, to: 30, shift: 0, tip: 'Allure cible, ravitaillement régulier dès le 5e km, cherche un groupe.' },
-      { label: 'Tenir', from: 30, to: D, shift: 0, tip: 'Tenir l\'allure ; ne relance qu\'après le 35e si tout va bien.' },
+      { label: 'Mise en route', from: 0, to: a, shift: 4, tip: 'Le piège du marathon : chaque seconde gagnée au départ se paie au 30e km.' },
+      { label: 'Croisière', from: a, to: b, shift: 0, tip: 'Allure cible, ravitaillement régulier dès le 5e km, cherche un groupe.' },
+      { label: 'Tenir', from: b, to: D, shift: 0, tip: 'Tenir l\'allure ; ne relance qu\'après le 35e si tout va bien.' },
     ];
   } else {
     parts = [
@@ -332,14 +346,13 @@ export function racePlan(p: PlanInput): RacePlan {
   // Derniers jours
   if (p.daysLeft >= 0) {
     const days: string[] = [];
-    if (hours < 1.5) days.push(`La veille : repas riches en glucides (≈ ${frNum(7 * w)} g dans la journée, 7 g/kg), pauvres en fibres et en graisses.`);
-    else if (hours < 4) days.push(`Recharge J-2 et J-1 : 7 à 10 g de glucides par kg, soit ${tens(7 * w)} à ${tens(10 * w)} g par jour (pâtes, riz, pain, semoule, jus), en réduisant fibres et graisses.`);
-    else days.push(`Recharge de J-3 à J-1 : 10 à 12 g de glucides par kg, soit ${tens(10 * w)} à ${tens(12 * w)} g par jour, fractionnés (collations, jus, compotes).`);
-    days.push(
-      night
-        ? `Départ à ${hourLabel(startMin)} : vrai repas riche en glucides vers ${hourLabel(startMin - 240)}, collation 1 h avant, et essaie de dormir 1 à 2 h l'après-midi.`
-        : `Petit-déjeuner vers ${hourLabel(startMin - 180)} (3 h avant) : 1 à 2 g de glucides par kg (${tens(w)} à ${tens(2 * w)} g), aliments habituels, peu de fibres.`,
-    );
+    // Quantités en grammes : déduites du poids, donc absentes de la version sans santé
+    const weighed: [string, string][] = [];
+    if (hours < 1.5) weighed.push([`La veille : repas riches en glucides (≈ ${frNum(7 * w)} g dans la journée, 7 g/kg), pauvres en fibres et en graisses.`, 'La veille : repas riches en glucides (7 g/kg dans la journée), pauvres en fibres et en graisses.']);
+    else if (hours < 4) weighed.push([`Recharge J-2 et J-1 : 7 à 10 g de glucides par kg, soit ${tens(7 * w)} à ${tens(10 * w)} g par jour (pâtes, riz, pain, semoule, jus), en réduisant fibres et graisses.`, 'Recharge J-2 et J-1 : 7 à 10 g de glucides par kg et par jour (pâtes, riz, pain, semoule, jus), en réduisant fibres et graisses.']);
+    else weighed.push([`Recharge de J-3 à J-1 : 10 à 12 g de glucides par kg, soit ${tens(10 * w)} à ${tens(12 * w)} g par jour, fractionnés (collations, jus, compotes).`, 'Recharge de J-3 à J-1 : 10 à 12 g de glucides par kg et par jour, fractionnés (collations, jus, compotes).']);
+    if (night) days.push(`Départ à ${hourLabel(startMin)} : vrai repas riche en glucides vers ${hourLabel(startMin - 240)}, collation 1 h avant, et essaie de dormir 1 à 2 h l'après-midi.`);
+    else weighed.push([`Petit-déjeuner vers ${hourLabel(startMin - 180)} (3 h avant) : 1 à 2 g de glucides par kg (${tens(w)} à ${tens(2 * w)} g), aliments habituels, peu de fibres.`, `Petit-déjeuner vers ${hourLabel(startMin - 180)} (3 h avant) : 1 à 2 g de glucides par kg, aliments habituels, peu de fibres.`]);
     if (!trail && p.daysLeft <= 7) {
       const plan: Record<number, string> = {
         4: '40 min faciles',
@@ -358,7 +371,7 @@ export function racePlan(p: PlanInput): RacePlan {
     }
     days.push(`La nuit de J-2 compte plus que celle de la veille (souvent agitée) : couche-toi tôt dès ${dayLabel(addDays(race, -2))}.`);
     days.push(`Prépare tout la veille : dossard, épingles, gels, tenue déjà portée, montre chargée${trail ? ', frontale et batteries de rechange, matériel obligatoire' : ''}.`);
-    blocks.push({ icon: '🍝', title: 'Les derniers jours', items: days });
+    blocks.push({ icon: '🍝', title: 'Les derniers jours', items: [...weighed.map(([x]) => x), ...days], withoutWeight: [...weighed.map(([, x]) => x), ...days] });
   }
 
   // Échauffement et départ

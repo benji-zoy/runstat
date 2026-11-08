@@ -22,12 +22,14 @@ export interface RetryOptions {
   tries?: number;
   baseMs?: number;
   timeoutMs?: number;
+  /** false : un 429 est rendu tel quel (quota de fenêtre déjà épuisé, un nouvel essai 2 s plus tard ne sert à rien) */
+  retry429?: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** fetch avec nouvelles tentatives sur les erreurs passagères (réseau, 429, 5xx), délai croissant */
-export async function fetchRetry(fetch: Fetch, url: string | URL, init: RequestInit = {}, { tries = 4, baseMs = 2000, timeoutMs = 60_000 }: RetryOptions = {}): Promise<Response> {
+export async function fetchRetry(fetch: Fetch, url: string | URL, init: RequestInit = {}, { tries = 4, baseMs = 2000, timeoutMs = 60_000, retry429 = true }: RetryOptions = {}): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
     let res: Response | undefined;
     let error: unknown;
@@ -36,7 +38,7 @@ export async function fetchRetry(fetch: Fetch, url: string | URL, init: RequestI
     } catch (e) {
       error = e;
     }
-    const transient = error !== undefined || res!.status === 429 || res!.status >= 500;
+    const transient = error !== undefined || (retry429 && res!.status === 429) || res!.status >= 500;
     if (!transient || attempt >= tries) {
       if (error !== undefined) throw error;
       return res!;
@@ -48,13 +50,19 @@ export async function fetchRetry(fetch: Fetch, url: string | URL, init: RequestI
   }
 }
 
-/** POST d'un formulaire, réponse JSON (ou erreur lisible si ce n'en est pas) */
+/**
+ * Requête au point d'accès des jetons : jamais de nouvel essai. Si le serveur a traité un renouvellement dont la réponse s'est
+ * perdue, renvoyer l'ancien refresh token (déjà remplacé) le ferait révoquer ; mieux vaut échouer et réessayer à la synchro suivante.
+ */
+export const TOKEN_REQUEST: RetryOptions = { tries: 1 };
+
+/** POST d'un formulaire au point d'accès des jetons, réponse JSON (ou erreur lisible si ce n'en est pas) */
 export async function postForm(fetch: Fetch, url: string, params: Record<string, string>): Promise<{ status: number; body: Record<string, any> }> {
   const res = await fetchRetry(fetch, url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams(params),
-  });
+  }, TOKEN_REQUEST);
   const text = await res.text();
   try {
     return { status: res.status, body: JSON.parse(text) };
