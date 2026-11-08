@@ -1,0 +1,470 @@
+// Mouvement : un seul vocabulaire pour toute l'appli (jetons dans styles.scss).
+// - Ce qui arrive décélère et se pose : --ease-arrivee, --dur-long.
+// - Ce qui part accélère et sort à vitesse de croisière, sans freiner : --ease-depart, environ ⅔ de la durée d'arrivée.
+// - « Réduire les animations » (réglage du système) : --move passe à 0, les déplacements disparaissent, les fondus restent.
+//   Le JavaScript lit `prefersReducedMotion()` (ui/motion.ts).
+
+:root {
+  --move: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --move: 0;
+  }
+}
+
+// ── Arrivée des cartes en cascade ────────────────────────────────────────────
+// Seulement à l'insertion dans la page : un rechargement des données garde les éléments (track), donc pas de rejeu.
+// `backwards` et non `both` : une fois posée, la carte ne garde aucune transformation (pas de contexte d'empilement).
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(calc(12px * var(--move)));
+  }
+}
+
+@keyframes depart {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-8px * var(--move)));
+  }
+}
+
+main :is(.card, .kpis, app-brief):not(dialog *) {
+  animation: arrive var(--dur-long) var(--ease-arrivee) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+main :is(.card, .kpis, app-brief):not(dialog *) {
+  &:nth-child(2) { --i: 1; }
+  &:nth-child(3) { --i: 2; }
+  &:nth-child(4) { --i: 3; }
+  &:nth-child(5) { --i: 4; }
+  &:nth-child(6) { --i: 5; }
+  &:nth-child(7) { --i: 6; }
+  &:nth-child(n + 8) { --i: 7; }
+}
+
+// Sous-éléments qui arrivent ou partent avec @if / @for (animate.enter / animate.leave d'Angular)
+.arrive {
+  animation: arrive var(--dur-long) var(--ease-arrivee) backwards;
+}
+
+.depart {
+  animation: depart var(--dur-moyen) var(--ease-depart) forwards;
+}
+
+// ── Cartes cliquables : s'élèvent au survol, s'enfoncent à la pression, reviennent avec un léger ressort ──
+main :is(a.card, button.card, a.kpis):not(dialog *) {
+  transition:
+    transform var(--dur-long) var(--ease-ressort),
+    box-shadow var(--dur-moyen) var(--ease-arrivee),
+    border-color var(--dur-moyen) var(--ease-arrivee),
+    background-color var(--dur-moyen) var(--ease-arrivee);
+  -webkit-tap-highlight-color: transparent;
+
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(calc(-2px * var(--move)));
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      box-shadow: inset 0 1px 0 var(--edge), var(--shadow-lift);
+    }
+  }
+
+  &:active {
+    transform: scale(calc(1 - 0.015 * var(--move)));
+    transition-duration: 90ms;
+    transition-timing-function: var(--ease-depart);
+  }
+}
+
+// ── Fenêtres <dialog> : posées en douceur, renvoyées en accélérant ──────────
+// Ouverture : style de [open] (courbe d'arrivée) depuis @starting-style. Fermeture : style sans [open] (courbe de départ),
+// `allow-discrete` garde la fenêtre dans la couche supérieure le temps de la sortie (Chrome, Edge ; ailleurs, sortie sèche).
+dialog:is(.sheet, .zoom-dialog) {
+  opacity: 0;
+  transform: translateY(calc(10px * var(--move))) scale(calc(1 - 0.02 * var(--move)));
+  transition:
+    opacity var(--dur-moyen) var(--ease-depart),
+    transform var(--dur-moyen) var(--ease-depart),
+    overlay var(--dur-moyen) var(--ease-depart) allow-discrete,
+    display var(--dur-moyen) var(--ease-depart) allow-discrete;
+
+  &[open] {
+    opacity: 1;
+    transform: none;
+    transition-duration: var(--dur-long);
+    transition-timing-function: var(--ease-arrivee);
+  }
+
+  @starting-style {
+    &[open] {
+      opacity: 0;
+      transform: translateY(calc(16px * var(--move))) scale(calc(1 - 0.04 * var(--move)));
+    }
+  }
+
+  &::backdrop {
+    background-color: transparent;
+    transition:
+      background-color var(--dur-moyen) var(--ease-depart),
+      overlay var(--dur-moyen) var(--ease-depart) allow-discrete,
+      display var(--dur-moyen) var(--ease-depart) allow-discrete;
+  }
+
+  &[open]::backdrop {
+    background-color: rgb(0 0 0 / 0.58);
+    transition-duration: var(--dur-long);
+    transition-timing-function: var(--ease-arrivee);
+  }
+
+  @starting-style {
+    &[open]::backdrop {
+      background-color: transparent;
+    }
+  }
+}
+
+// Téléphone : la fenêtre de saisie est un volet qui monte du bas et y redescend
+@media (max-width: 640px) {
+  dialog.sheet {
+    transform: translateY(calc(100% * var(--move)));
+
+    &[open] {
+      transform: none;
+    }
+
+    @starting-style {
+      &[open] {
+        transform: translateY(calc(100% * var(--move)));
+      }
+    }
+  }
+}
+
+// ── Parties repliables : la hauteur suit le contenu ─────────────────────────
+@supports selector(::details-content) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+
+  details::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    opacity: 0;
+    transition:
+      block-size var(--dur-moyen) var(--ease-depart),
+      opacity var(--dur-moyen) var(--ease-depart),
+      content-visibility var(--dur-moyen) var(--ease-depart) allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+    transition-duration: var(--dur-long);
+    transition-timing-function: var(--ease-arrivee);
+  }
+}
+
+// ── Transitions de page (API View Transitions, routeur : withViewTransitions) ─
+// L'ancienne page s'efface en accélérant, la nouvelle se pose en décélérant. Barres de navigation à part : immobiles.
+.topbar {
+  view-transition-name: topbar;
+}
+
+.bottom {
+  view-transition-name: bottombar;
+}
+
+::view-transition-old(topbar),
+::view-transition-old(bottombar) {
+  display: none;
+}
+
+::view-transition-new(topbar),
+::view-transition-new(bottombar),
+::view-transition-group(topbar),
+::view-transition-group(bottombar) {
+  animation: none;
+}
+
+@keyframes vt-out {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-6px * var(--move)));
+  }
+}
+
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(10px * var(--move)));
+  }
+}
+
+::view-transition-old(root) {
+  animation: vt-out var(--dur-court) var(--ease-depart) both;
+}
+
+::view-transition-new(root) {
+  animation: vt-in var(--dur-long) var(--ease-arrivee) 40ms both;
+}
+
+// Carte touchée → en-tête de la fiche (et retour) : `vt-hero` sur la destination, `appMorph` sur la carte.
+.vt-hero {
+  view-transition-name: hero;
+}
+
+::view-transition-group(hero) {
+  animation-duration: var(--dur-long);
+  animation-timing-function: var(--ease-arrivee);
+}
+
+::view-transition-image-pair(hero) {
+  overflow: clip;
+  border-radius: var(--radius);
+}
+
+::view-transition-old(hero),
+::view-transition-new(hero) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+
+::view-transition-old(hero) {
+  animation: vt-fade-out var(--dur-moyen) var(--ease-depart) both;
+}
+
+::view-transition-new(hero) {
+  animation: vt-fade-in var(--dur-long) var(--ease-arrivee) both;
+}
+
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation: none;
+  }
+}
+
+// ── Indicateur qui glisse (onglets, bascules, barre du bas) : ui/motion.ts ──
+.slide-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.slide-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.sliding > .active {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+// ── Squelettes de chargement ─────────────────────────────────────────────────
+@keyframes shimmer {
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.skeleton {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+.sk {
+  border-radius: var(--radius);
+  min-height: 1rem;
+  background: linear-gradient(100deg, var(--surface-1) 0 40%, var(--surface-2) 50%, var(--surface-1) 60% 100%) 100% 0 / 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+
+  &.title {
+    width: min(60%, 22rem);
+    height: 2.3rem;
+  }
+
+  &.line {
+    width: min(80%, 32rem);
+    height: 0.9rem;
+  }
+
+  &.block {
+    height: 9rem;
+  }
+
+  &.tall {
+    height: 14rem;
+  }
+}
+
+.sk-row {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+    background: var(--surface-1);
+  }
+}
+
+// ── Nouveauté après une synchro : surlignée en volt, puis la surbrillance s'estompe ──
+@keyframes fresh {
+  from {
+    background-color: color-mix(in srgb, var(--accent-fill) 22%, transparent);
+  }
+}
+
+.fresh {
+  animation:
+    arrive var(--dur-long) var(--ease-arrivee) backwards,
+    fresh 1.8s var(--ease-depart) 0.2s backwards;
+}
+
+// ── Moment signature (record, objectif atteint) : un reflet volt balaie la carte, le fil d'arrivée se tend ──
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes tape {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.signature {
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--accent-fill) 28%, transparent) 50%, transparent 65%);
+    transform: translateX(-100%);
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent-fill);
+    transform-origin: left;
+  }
+
+  &.play::after {
+    animation: sweep 1.2s var(--ease-arrivee) 0.35s both;
+  }
+
+  &.play::before {
+    animation: tape 0.9s var(--ease-arrivee) 0.25s backwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signature.play::after,
+  .signature.play::before {
+    animation: none;
+  }
+}
+
+// ── Couloirs de piste : décor discret derrière un en-tête ───────────────────
+.lanes {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: -1.75rem;
+    right: 0;
+    bottom: -0.5rem;
+    width: min(70%, 520px);
+    pointer-events: none;
+    // Virage de piste : couloirs concentriques tous les 14 px, le 15e (le tien) en volt
+    background:
+      radial-gradient(circle at 100% 170%, transparent 0 209px, color-mix(in srgb, var(--accent) 55%, transparent) 209px 211px, transparent 211px),
+      repeating-radial-gradient(circle at 100% 170%, transparent 0 13px, var(--lane) 13px 14px);
+    mask-image: linear-gradient(to left, black 30%, transparent 95%), linear-gradient(to top, black 35%, transparent);
+    mask-composite: intersect;
+  }
+}
+
+// ── Graphiques : la courbe se trace de gauche à droite à la première apparition (ui/chart.ts) ──
+@keyframes reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+canvas.reveal {
+  animation: reveal 900ms var(--ease-arrivee) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  canvas.reveal {
+    animation: vt-fade-in var(--dur-long) var(--ease-arrivee) backwards;
+  }
+}
+
+// ── Synchro terminée : la coche se dessine (app.html, .sync.done) ───────────
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.sync.done app-icon path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: draw 520ms var(--ease-arrivee) backwards;
+}
+
+// ── Barres de progression : se remplissent en décélérant à l'apparition ─────
+@keyframes fill-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.progress > span {
+  transform-origin: left;
+  animation: fill-in 900ms var(--ease-arrivee) 0.2s backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress > span {
+    animation: none;
+  }
+}

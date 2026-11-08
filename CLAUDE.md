@@ -519,6 +519,15 @@ chaque usage), corps en Inter, chiffres en JetBrains Mono (`--font-mono`). Thèm
 (`styles.scss`) ; dans les graphiques Chart.js et les cartes Leaflet, utiliser les jetons de `ui/palette.ts` (`C.s1`, `alpha(C.accent, 0.3)`…), résolus au dessin
 (`resolveColors` dans `ui/chart.ts`), jamais de couleur hexadécimale en dur. Interface en tutoiement.
 
+Mouvement (`src/motion.scss`, `ui/motion.ts`, `ui/count-up.ts`) : ce qui arrive décélère et se pose (`--ease-arrivee`, `--dur-long`), ce
+qui part accélère et sort à vitesse de croisière sans freiner (`--ease-depart`, ≈ ⅔ de la durée) ; « Réduire les animations » met `--move` à 0
+(fondus gardés, déplacements supprimés ; `prefersReducedMotion()` côté JS). Transitions de page par `withViewTransitions` (pas pour un simple
+changement de `?…`), carte → en-tête de fiche par `[appMorph]="'run:' + id"` et `.vt-hero` (un seul nom `hero` à la fois), cartes en cascade,
+`<dialog>` par `@starting-style`, `details` par `::details-content`, indicateur qui glisse (`installSlidingIndicators` : `.seg`, sous-onglets,
+barres de navigation), chiffres clés `[appCountUp]` (texte déjà formaté, chronos en secondes), graphiques animés à leur première apparition
+à l'écran puis transformés d'une donnée à l'autre, sorties nouvelles après une synchro `.fresh` (`MotionService.fresh`), moment signature
+`[appSignature]` (une fois par clé et par appareil). Profondeur : `--edge`, `--shadow`, `--shadow-lift` ; rayons `--radius-s` / `--radius` / `--radius-l`.
+
 Appli installable (PWA) : `@angular/service-worker` (`ngsw-config.json` : coquille en cache, `data/` en `freshness` 4 s puis cache,
 `/api/` jamais), `public/manifest.webmanifest`, icônes `public/icons/*-piste.png` et `favicon-piste.svg` (tracé de `ui/icon.ts`, volt sur graphite ; nom suffixé par l'identité : à
 changer avec le logo, sinon nginx (7 jours) et les téléphones gardent l'ancien),

@@ -2,6 +2,7 @@ import { Component, DestroyRef, ElementRef, effect, inject, input, signal, viewC
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 import { ThemeService } from '../core/theme.service';
 import { cssVar, resolveColors } from './palette';
+import { prefersReducedMotion } from './motion';
 
 Chart.register(...registerables);
 Chart.defaults.font.family = "'Inter Variable', 'Inter', system-ui, sans-serif";
@@ -93,6 +94,31 @@ export function zoomConfig(config: ChartConfiguration): ChartConfiguration {
 }
 
 /**
+ * Première apparition : les barres montent l'une après l'autre en se posant, les courbes se tracent de gauche à droite
+ * (masque CSS `reveal` du canevas), les autres (anneau, radar) s'ouvrent en décélérant. Rien si la configuration a coupé
+ * les animations (beaucoup de points) ou si le système demande de les réduire : seulement un fondu.
+ */
+function entrance(config: ChartConfiguration, canvas: HTMLCanvasElement): ChartConfiguration {
+  canvas.classList.remove('reveal');
+  const off = config.options?.animation === false;
+  const types = new Set([config.type, ...config.data.datasets.map((d) => (d as { type?: string }).type ?? config.type)]);
+  const bars = types.size === 1 && types.has('bar');
+  if (off || prefersReducedMotion() || !bars) {
+    void canvas.offsetWidth;
+    canvas.classList.add('reveal');
+  }
+  if (off || prefersReducedMotion()) return config;
+  const count = Math.max(1, ...config.data.datasets.map((d) => d.data.length));
+  const step = Math.min(24, 420 / count);
+  const animation = bars
+    ? { duration: 650, easing: 'easeOutQuart', delay: (c: { type: string; mode: string; dataIndex: number }) => (c.type === 'data' && c.mode === 'default' ? c.dataIndex * step : 0) }
+    : cartesian(config)
+      ? false
+      : { duration: 700, easing: 'easeOutQuart' };
+  return { ...config, options: { ...config.options, animation } as ChartConfiguration['options'] };
+}
+
+/**
  * Enveloppe minimale autour de Chart.js : recrée le graphique quand la config ou le thème change.
  * `mini` : vignette (cartes) ; sinon un bouton ouvre le même graphique en grand, avec tous ses axes, dans une fenêtre.
  */
@@ -127,9 +153,8 @@ export function zoomConfig(config: ChartConfiguration): ChartConfiguration {
     :host(:hover) .zoom, .zoom:focus-visible { opacity: 1; color: var(--text-primary); }
     .zoom-dialog {
       width: min(96vw, 1200px); max-width: none; height: min(86vh, 760px); max-height: none; padding: 0;
-      border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); color: var(--text-primary);
+      border: 1px solid var(--border); border-radius: var(--radius-l); background: var(--surface-1); color: var(--text-primary);
     }
-    .zoom-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
     .zoom-body { position: relative; height: 100%; box-sizing: border-box; padding: 3rem 1.25rem 1.25rem; }
     .zoom-chart { position: relative; height: 100%; }
     .zoom-close {
@@ -152,18 +177,45 @@ export class ChartComponent {
   /** Grand écran : les vignettes gardent des axes discrets */
   protected readonly wide = signal(matchMedia('(min-width: 1024px)').matches);
 
+  /** Le graphique n'est dessiné qu'une fois à l'écran : son apparition se voit (et les cartes hors écran ne coûtent rien) */
+  private readonly visible = signal(typeof IntersectionObserver === 'undefined');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+
   constructor() {
     const media = matchMedia('(min-width: 1024px)');
     const onMedia = (e: MediaQueryListEvent) => this.wide.set(e.matches);
     media.addEventListener('change', onMedia);
+    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        this.visible.set(true);
+        io?.disconnect();
+      },
+      { threshold: 0.15 },
+    );
+    io?.observe(this.host);
+    let theme: string | undefined;
     effect(() => {
       const config = this.mini() ? miniConfig(this.config(), this.wide()) : this.config();
-      this.theme();
+      const t = this.theme();
+      if (!this.visible()) return;
       applyThemeDefaults();
-      this.chart?.destroy();
-      this.chart = new Chart(this.canvas().nativeElement, resolveColors(config));
+      const resolved = resolveColors(config);
+      const chart = this.chart;
+      // Même graphique, nouvelles données (période, filtre) : les barres et courbes se transforment au lieu de clignoter
+      if (chart && t === theme && (chart.config as ChartConfiguration).type === resolved.type && !resolved.plugins?.length && !this.mini()) {
+        chart.data = resolved.data;
+        chart.options = { ...resolved.options, animation: resolved.options?.animation === false || prefersReducedMotion() ? false : { duration: 450, easing: 'easeOutQuart' } };
+        chart.update();
+        return;
+      }
+      const first = !chart;
+      theme = t;
+      chart?.destroy();
+      this.chart = new Chart(this.canvas().nativeElement, first ? entrance(resolved, this.canvas().nativeElement) : resolved);
     });
     inject(DestroyRef).onDestroy(() => {
+      io?.disconnect();
       media.removeEventListener('change', onMedia);
       this.chart?.destroy();
       this.zoomed?.destroy();
@@ -181,8 +233,10 @@ export class ChartComponent {
   }
 
   protected closeZoom(): void {
-    this.zoomed?.destroy();
+    // Après la sortie de la fenêtre (motion.scss), pas pendant
+    const zoomed = this.zoomed;
     this.zoomed = undefined;
+    setTimeout(() => zoomed?.destroy(), 260);
   }
 
   /** Un clic sur le fond (hors du contenu) ferme la fenêtre */

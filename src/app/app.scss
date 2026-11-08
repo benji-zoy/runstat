@@ -379,7 +379,13 @@ footer {
 
       &.active {
         color: var(--accent-text);
+        background: var(--accent-soft);
       }
+    }
+
+    a {
+      border-radius: var(--radius);
+      margin: 0 0.2rem;
     }
   }
 }
@@ -398,4 +404,53 @@ footer {
   background: var(--surface-1);
   color: var(--text-secondary);
   font-size: 0.86rem;
+}
+
+// Bandeaux et message de synchro : arrivent en se posant, repartent en accélérant (animate.enter / animate.leave)
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-10px * var(--move)));
+  }
+}
+
+@keyframes banner-out {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-10px * var(--move)));
+  }
+}
+
+.banner-in {
+  animation: banner-in var(--dur-long) var(--ease-arrivee) backwards;
+}
+
+.banner-out {
+  animation: banner-out var(--dur-moyen) var(--ease-depart) forwards;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-6px * var(--move))) scale(calc(1 - 0.04 * var(--move)));
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-4px * var(--move)));
+  }
+}
+
+.pop-in {
+  animation: pop-in var(--dur-long) var(--ease-arrivee) backwards;
+}
+
+.pop-out {
+  animation: pop-out var(--dur-moyen) var(--ease-depart) forwards;
+}
+
+.sync.done {
+  color: var(--accent-text);
 }

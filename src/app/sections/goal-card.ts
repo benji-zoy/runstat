@@ -6,6 +6,7 @@ import { clock, fixed, num, pace } from '../core/format';
 import { parseDay } from '../core/stats';
 import { ChartComponent } from '../ui/chart';
 import { C, alpha } from '../ui/palette';
+import { CountUpDirective } from '../ui/count-up';
 
 const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--series-1)', warning: 'var(--warning)', serious: 'var(--serious)' };
 
@@ -16,9 +17,10 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
  * Une partie de la fiche d'un objectif : indice et chrono probable, courses de référence, stratégie, modèles,
  * ajustements, préparation ou conseils. `archived` : objectif terminé, l'indice est celui de la veille.
  */
+
 @Component({
   selector: 'app-goal-card',
-  imports: [ChartComponent],
+  imports: [ChartComponent, CountUpDirective],
   template: `
     @let e = ev();
     @let g = e.goal;
@@ -31,7 +33,7 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
             <circle cx="60" cy="60" r="52" class="value" [attr.stroke-dasharray]="dash(e.index)" />
           </svg>
           <div class="gauge-text">
-            <span class="display big">{{ e.index }}<small>{{ e.probability !== null ? '%' : '/100' }}</small></span>
+            <span class="display big"><span [appCountUp]="'' + e.index"></span><small>{{ e.probability !== null ? '%' : '/100' }}</small></span>
             <span class="verdict">{{ e.verdict.label }}</span>
           </div>
           <p class="gauge-caption">
@@ -362,7 +364,14 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
     .gauge svg { width: 170px; height: 170px; transform: rotate(-90deg); }
     .gauge circle { fill: none; stroke-width: 10; }
     .gauge .track { stroke: var(--surface-3); }
-    .gauge .value { stroke: var(--tone); stroke-linecap: round; transition: stroke-dasharray 0.6s; }
+    /* L'anneau se remplit en décélérant, le verdict se pose quand il s'arrête ; ensuite, d'une valeur à l'autre */
+    .gauge .value {
+      stroke: var(--tone); stroke-linecap: round; transition: stroke-dasharray 0.6s var(--ease-arrivee);
+      animation: gauge-fill 1.1s var(--ease-arrivee) 0.15s backwards;
+    }
+    @keyframes gauge-fill { from { stroke-dasharray: 0 400; } }
+    .gauge-text .verdict { animation: arrive var(--dur-long) var(--ease-arrivee) 1s backwards; }
+    @media (prefers-reduced-motion: reduce) { .gauge .value { animation: none; } }
     .gauge-text { position: absolute; top: 0; height: 170px; display: grid; place-content: center; text-align: center; }
     .big { font-size: 3.2rem; }
     .big small { font-size: 1.2rem; margin-left: 2px; }

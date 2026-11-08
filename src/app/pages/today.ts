@@ -11,6 +11,8 @@ import { clock, day, duration, fixed, km, num, pace } from '../core/format';
 import { Brief, BriefComponent } from '../ui/brief';
 import { IconComponent } from '../ui/icon';
 import { ConditionsCardComponent } from '../ui/conditions-card';
+import { CountUpDirective } from '../ui/count-up';
+import { MorphDirective, MotionService, SignatureDirective } from '../ui/motion';
 
 const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const runDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -19,9 +21,9 @@ const DAY_MS = 86_400_000;
 /** Aujourd'hui : où j'en suis. Le résumé du jour, la prochaine course, la forme, l'année et les dernières sorties. */
 @Component({
   selector: 'app-today',
-  imports: [RouterLink, BriefComponent, IconComponent, ConditionsCardComponent],
+  imports: [RouterLink, BriefComponent, IconComponent, ConditionsCardComponent, CountUpDirective, MorphDirective, SignatureDirective],
   template: `
-    <header class="page-head">
+    <header class="page-head lanes">
       <h1>{{ title() }}</h1>
       <p class="lede">{{ lede() }}</p>
     </header>
@@ -30,7 +32,7 @@ const DAY_MS = 86_400_000;
 
     <div class="row">
       @if (nextGoal(); as e) {
-        <a class="card race" [routerLink]="['/courses', e.goal.id]">
+        <a class="card race" [routerLink]="['/courses', e.goal.id]" [appMorph]="'goal:' + e.goal.id">
           <span class="label head">Prochaine course <span class="go">Plan de course <app-icon name="arrow" /></span></span>
           <div class="race-id">
             <span class="display days">{{ e.daysLeft ? 'J-' + e.daysLeft : 'Jour J' }}</span>
@@ -43,11 +45,11 @@ const DAY_MS = 86_400_000;
             </div>
           </div>
           <div class="race-stats">
-            <div><span class="display v">{{ clock(e.predicted) }}</span><span class="muted small">chrono probable</span></div>
+            <div><span class="display v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">chrono probable</span></div>
             @if (e.probability !== null) {
-              <div><span class="display v">{{ e.index }}<small> %</small></span><span class="muted small">sous {{ clock(e.goal.targetSec!) }}</span></div>
+              <div><span class="display v"><span [appCountUp]="'' + e.index"></span><small> %</small></span><span class="muted small">sous {{ clock(e.goal.targetSec!) }}</span></div>
             } @else {
-              <div><span class="display v">{{ e.index }}<small>/100</small></span><span class="muted small">préparation</span></div>
+              <div><span class="display v"><span [appCountUp]="'' + e.index"></span><small>/100</small></span><span class="muted small">préparation</span></div>
             }
           </div>
           <div class="progress" aria-hidden="true"><span [style.width.%]="e.index"></span></div>
@@ -60,23 +62,23 @@ const DAY_MS = 86_400_000;
         </span>
         <div class="grid4">
           @if (readiness(); as r) {
-            <div class="vital"><span class="display v">{{ r.score }}<small>/100</small></span><span class="muted small">préparation{{ r.estimated ? ' estimée' : '' }}</span></div>
+            <div class="vital"><span class="display v"><span [appCountUp]="'' + r.score"></span><small>/100</small></span><span class="muted small">préparation{{ r.estimated ? ' estimée' : '' }}</span></div>
           }
           @if (health()?.hrv?.avg7; as hrv) {
             <div class="vital">
-              <span class="display v">{{ num(hrv) }}<small> ms</small></span>
+              <span class="display v"><span [appCountUp]="num(hrv)"></span><small> ms</small></span>
               @if (hrvState(); as s) { <span class="pill" [attr.data-tone]="s.tone">VFC {{ s.label.toLowerCase() }}</span> }
             </div>
           }
           @if (health()?.rhr?.avg7; as rhr) {
             <div class="vital">
-              <span class="display v">{{ fixed(rhr, 1) }}<small> bpm</small></span>
+              <span class="display v"><span [appCountUp]="fixed(rhr, 1)"></span><small> bpm</small></span>
               @if (rhrState(); as s) { <span class="pill" [attr.data-tone]="s.tone">{{ s.label }} vs base</span> }
             </div>
           }
           @if (pmcNow(); as n) {
             <div class="vital">
-              <span class="display v">{{ n.tsb > 0 ? '+' : '' }}{{ num(n.tsb) }}</span>
+              <span class="display v" [appCountUp]="(n.tsb > 0 ? '+' : '') + num(n.tsb)"></span>
               <span class="pill" [attr.data-tone]="fresh().tone">fraîcheur {{ fresh().label.toLowerCase() }}</span>
             </div>
           }
@@ -88,7 +90,7 @@ const DAY_MS = 86_400_000;
       <h2>{{ year }} <small>depuis le 1er janvier</small></h2>
       <a class="kpis" routerLink="/journal" [queryParams]="{ section: 'volume', vue: null, date: null }">
         <div class="kpi hero">
-          <span class="display v">{{ num(ytd().km) }}<small>km</small></span>
+          <span class="display v"><span [appCountUp]="num(ytd().km)"></span><small>km</small></span>
           @if (ytdDiff(); as d) {
             <span class="delta" [class.down]="d < 0">{{ d >= 0 ? '+' : '−' }}{{ km(Math.abs(d)) }} sur {{ year - 1 }} à la même date</span>
           }
@@ -96,10 +98,10 @@ const DAY_MS = 86_400_000;
             <span class="muted small">fin d'année vers {{ km(p.projected) }}</span>
           }
         </div>
-        <div class="kpi"><span class="label">Sorties</span><span class="display v">{{ ytd().count }}</span></div>
-        <div class="kpi"><span class="label">Temps</span><span class="display v">{{ duration(ytd().sec) }}</span></div>
-        <div class="kpi"><span class="label">Dénivelé +</span><span class="display v">{{ num(ytd().elev) }}<small> m</small></span></div>
-        <div class="kpi"><span class="label">Cette semaine</span><span class="display v">{{ num(week().km, 1) }}<small> km</small></span>
+        <div class="kpi"><span class="label">Sorties</span><span class="display v" [appCountUp]="'' + ytd().count"></span></div>
+        <div class="kpi"><span class="label">Temps</span><span class="display v" [appCountUp]="duration(ytd().sec)"></span></div>
+        <div class="kpi"><span class="label">Dénivelé +</span><span class="display v"><span [appCountUp]="num(ytd().elev)"></span><small> m</small></span></div>
+        <div class="kpi"><span class="label">Cette semaine</span><span class="display v"><span [appCountUp]="num(week().km, 1)"></span><small> km</small></span>
           <span class="muted small">{{ week().count }} sortie{{ week().count > 1 ? 's' : '' }}</span>
         </div>
       </a>
@@ -109,7 +111,7 @@ const DAY_MS = 86_400_000;
       <section class="card runs">
         <span class="label head">Dernières sorties <a class="go" routerLink="/journal">Journal <app-icon name="arrow" /></a></span>
         @for (a of latest(); track a.id) {
-          <a class="run" [routerLink]="['/sortie', a.id]">
+          <a class="run" [routerLink]="['/sortie', a.id]" [appMorph]="'run:' + a.id" [class.fresh]="motion.fresh().has(a.id)">
             <span class="run-date muted">{{ fmtDate(a.date) }}</span>
             <span class="run-name">{{ a.name || 'Sortie' }}</span>
             <span class="run-stat"><b>{{ num(a.distanceKm, 1) }}</b> km</span>
@@ -130,11 +132,19 @@ const DAY_MS = 86_400_000;
       <section class="card highlights">
         <span class="label head">Moments forts {{ year }} <a class="go" routerLink="/comprendre/records">Records <app-icon name="arrow" /></a></span>
         @for (h of highlights(); track h.label) {
+          @if (h.recent) {
+            <div class="hl" [appSignature]="'hl:' + h.label + ':' + h.value">
+              <span class="label">{{ h.label }} <span class="new">nouveau</span></span>
+              <span class="display v">{{ h.value }}</span>
+              <span class="muted small">{{ h.detail }}</span>
+            </div>
+          } @else {
           <div class="hl">
             <span class="label">{{ h.label }}</span>
             <span class="display v">{{ h.value }}</span>
             <span class="muted small">{{ h.detail }}</span>
           </div>
+          }
         }
       </section>
     </div>
@@ -144,8 +154,7 @@ const DAY_MS = 86_400_000;
     .row { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); margin-top: 1rem; }
     .row2 { margin-top: 2.5rem; grid-template-columns: minmax(0, 3fr) minmax(min(100%, 280px), 2fr); }
     @media (max-width: 860px) { .row2 { grid-template-columns: minmax(0, 1fr); margin-top: 2rem; } }
-    a.card { color: inherit; text-decoration: none; transition: border-color 0.15s; }
-    a.card:hover, a.kpis:hover { border-color: var(--surface-3); }
+    a.card { color: inherit; text-decoration: none; }
     .card { display: grid; gap: 0.9rem; align-content: start; }
     .head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
     .go { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 0.8rem; text-decoration: none; }
@@ -170,6 +179,7 @@ const DAY_MS = 86_400_000;
     .kpis {
       display: grid; grid-template-columns: 1.5fr repeat(4, minmax(0, 1fr)); color: inherit; text-decoration: none;
       background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+      box-shadow: inset 0 1px 0 var(--edge), var(--shadow);
     }
     .kpi { display: grid; gap: 0.3rem; align-content: start; padding: 1rem 1.1rem; box-shadow: -1px -1px 0 var(--border); }
     .kpi.hero .v { font-size: 2.8rem; }
@@ -189,6 +199,8 @@ const DAY_MS = 86_400_000;
       padding: 0.6rem 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums;
       color: inherit; text-decoration: none; min-height: 44px;
     }
+    .run { margin: 0 -0.6rem; padding-inline: 0.6rem; border-radius: var(--radius-s); transition: background-color var(--dur-moyen) var(--ease-arrivee); }
+    .run:hover { background: var(--surface-2); }
     .run:hover .run-name { color: var(--accent-text); }
     .run-date { font-size: 0.82rem; }
     .run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -201,6 +213,8 @@ const DAY_MS = 86_400_000;
     .last-cond { display: grid; gap: 0.35rem; padding: 0 0 0.7rem; }
     .highlights { gap: 1rem; }
     .hl { display: grid; gap: 0.15rem; }
+    .hl.signature { margin: -0.5rem -0.6rem; padding: 0.5rem 0.6rem 0.6rem; border-radius: var(--radius-s); }
+    .new { margin-left: 0.3rem; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--accent-fill); color: var(--on-accent); letter-spacing: 0.04em; font-size: 0.62rem; }
     .hl .v { font-size: 1.6rem; }
   `,
 })
@@ -208,6 +222,7 @@ export class TodayPage {
   private readonly store = inject(DataService);
   protected readonly sci = inject(ScienceService);
   private readonly today = inject(PeriodService).today;
+  protected readonly motion = inject(MotionService);
 
   protected readonly Math = Math;
   protected readonly km = km;
@@ -279,19 +294,21 @@ export class TodayPage {
     const acts = inRange(this.acts(), this.yearStart, addDays(this.today, 1));
     if (!acts.length) return [];
     const describe = (a: Activity) => `${a.name || 'Sortie'} · ${day(parseDay(a.date))}`;
-    const out: { label: string; value: string; detail: string }[] = [];
+    // Battu ces 7 derniers jours : moment signature (joué une fois)
+    const recent = (d: Date) => this.today.getTime() - d.getTime() < 7 * DAY_MS;
+    const out: { label: string; value: string; detail: string; recent: boolean }[] = [];
     const longest = maxBy(acts, (a) => a.distanceKm)!;
-    out.push({ label: 'Plus longue sortie', value: km(longest.distanceKm), detail: describe(longest) });
+    out.push({ label: 'Plus longue sortie', value: km(longest.distanceKm), detail: describe(longest), recent: recent(parseDay(longest.date)) });
     for (const [label, min] of [['semi', 21.0975], ['10 km', 10], ['5 km', 5]] as const) {
       const a = fastestOver(acts, min);
       if (a) {
-        out.push({ label: `Meilleure allure ≥ ${label}`, value: `${pace(a.durationSec / a.distanceKm)} /km`, detail: describe(a) });
+        out.push({ label: `Meilleure allure ≥ ${label}`, value: `${pace(a.durationSec / a.distanceKm)} /km`, detail: describe(a), recent: recent(parseDay(a.date)) });
         break;
       }
     }
     const weeks = weekly(acts, this.today, isoWeek(this.today) + 1).filter((w) => w.count);
     const best = maxBy(weeks, (w) => w.km);
-    if (best) out.push({ label: 'Plus grosse semaine', value: km(best.km), detail: `semaine du ${day(best.start)} · ${best.count} sorties` });
+    if (best) out.push({ label: 'Plus grosse semaine', value: km(best.km), detail: `semaine du ${day(best.start)} · ${best.count} sorties`, recent: recent(best.start) && best.start <= this.today });
     return out;
   });
 

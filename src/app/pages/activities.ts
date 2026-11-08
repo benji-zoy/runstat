@@ -8,6 +8,7 @@ import { clock, duration, km, num, pace } from '../core/format';
 import { PeriodNavComponent } from '../ui/period-nav';
 import { ScienceService } from '../core/science.service';
 import { SESSION_TYPES } from '../core/science';
+import { MorphDirective, MotionService } from '../ui/motion';
 
 type SortKey = 'date' | 'distanceKm' | 'durationSec' | 'pace' | 'elevGain' | 'avgHr' | 'trainingLoad';
 
@@ -31,7 +32,7 @@ export class JournalState {
 
 @Component({
   selector: 'app-activities',
-  imports: [PeriodNavComponent, RouterLink],
+  imports: [PeriodNavComponent, RouterLink, MorphDirective],
   template: `
     <app-period-nav />
 
@@ -71,7 +72,7 @@ export class JournalState {
       <!-- Téléphone : une carte par sortie, qui ouvre la fiche de la sortie -->
       <div class="mlist">
         @for (a of shown(); track a.id) {
-          <div class="card mrun">
+          <div class="card mrun" [appMorph]="'run:' + a.id" [class.fresh]="motion.fresh().has(a.id)">
             <a class="mrun-head" [routerLink]="['/sortie', a.id]">
               <span class="m-top">
                 <span class="muted m-date">{{ fmtDate(a.date) }}</span>
@@ -112,7 +113,7 @@ export class JournalState {
             </thead>
             <tbody>
               @for (a of shown(); track a.id) {
-                <tr class="row" (click)="open(a.id)">
+                <tr class="row" (click)="open(a.id)" [appMorph]="'run:' + a.id" [class.fresh]="motion.fresh().has(a.id)">
                   <td>{{ fmtDate(a.date) }}</td>
                   <td class="name"><a [routerLink]="['/sortie', a.id]" (click)="$event.stopPropagation()">{{ a.name || 'Sortie' }}</a></td>
                   <td class="muted"><span class="t-icon" [title]="typeOf(a.id).label">{{ typeOf(a.id).icon }}</span> {{ kindLabel(a.kind) }}</td>
@@ -174,6 +175,7 @@ export class JournalState {
 })
 export class ActivitiesPage {
   private readonly store = inject(DataService);
+  protected readonly motion = inject(MotionService);
   private readonly ps = inject(PeriodService);
   private readonly sci = inject(ScienceService);
   protected typeOf = (id: string) => SESSION_TYPES[this.sci.types().get(id) ?? 'easy'];

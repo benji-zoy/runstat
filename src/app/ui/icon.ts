@@ -29,6 +29,7 @@ const PATHS = {
   copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
   download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
   share: 'M4 12v8h16v-8M12 3v13M7 8l5-5 5 5',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -38,7 +39,7 @@ export type IconName = keyof typeof PATHS;
   template: `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" [attr.stroke-width]="stroke()" stroke-linecap="round"
       stroke-linejoin="round" aria-hidden="true" focusable="false">
-      <path [attr.d]="d()" />
+      <path [attr.d]="d()" pathLength="1" />
     </svg>
   `,
   styles: `
