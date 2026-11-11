@@ -245,18 +245,18 @@ const read = (k: string) => {
             }
           </div>
 
-          <footer>
+          <footer [class.recap]="step() === 'recap'">
             @if (index() > 0) {
-              <button type="button" class="btn" (click)="back()"><app-icon name="back" />Retour</button>
+              <button type="button" class="btn back" (click)="back()" aria-label="Retour"><app-icon name="back" /><span class="back-label">Retour</span></button>
             }
             <span class="spacer"></span>
             @if (step() === 'recap') {
               @if (canShare) {
-                <button type="button" class="btn" (click)="share()"><app-icon name="share" />Partager</button>
+                <button type="button" class="btn act" (click)="share()"><app-icon name="share" />Partager</button>
               }
-              <button type="button" class="btn" (click)="download()"><app-icon name="download" />Télécharger</button>
+              <button type="button" class="btn act" (click)="download()"><app-icon name="download" />Télécharger</button>
               @if (canCopy) {
-                <button type="button" class="btn primary" (click)="copy()"><app-icon name="copy" />Copier</button>
+                <button type="button" class="btn primary act" (click)="copy()"><app-icon name="copy" />Copier</button>
               }
             } @else {
               <button type="submit" class="btn primary">Suivant</button>
@@ -306,6 +306,15 @@ const read = (k: string) => {
     .preview summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; color: var(--accent-text); }
     .preview pre { margin: 0.5rem 0 0; max-height: 40vh; overflow: auto; padding: 0.7rem; border-radius: 8px; background: var(--surface-2); font: 0.75rem/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
     .status { margin: 0; font-size: 0.85rem; color: var(--accent-text); }
+    /* Récapitulatif : partager, télécharger et copier sur une seule ligne, téléphone compris */
+    footer.recap { flex-wrap: nowrap; }
+    @media (max-width: 640px) {
+      footer.recap { gap: 0.4rem; }
+      footer.recap .spacer { display: none; }
+      footer.recap .back-label { display: none; }
+      footer.recap .back { flex: none; padding-inline: 0.6rem; }
+      footer.recap .act { flex: 1 1 0; min-width: 0; justify-content: center; gap: 0.3rem; padding-inline: 0.4rem; font-size: 0.85rem; white-space: nowrap; }
+    }
   `,
 })
 export class PlanWizardComponent {
