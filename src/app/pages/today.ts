@@ -12,6 +12,7 @@ import { addDays, fastestOver, inRange, isoDay, maxBy, parseDay, startOfWeek, su
 import { freshnessState, pmc, yearProjection } from '../core/insights';
 import { healthNow, hrvStatus, readinessFor, rhrStatus } from '../core/health';
 import { clock, day, duration, fixed, km, num, pace } from '../core/format';
+import { dataAge, dayVerdict } from '../core/freshness';
 import { Brief, BriefComponent } from '../ui/brief';
 import { IconComponent } from '../ui/icon';
 import { ConditionsCardComponent } from '../ui/conditions-card';
@@ -118,10 +119,11 @@ const DAY_MS = 86_400_000;
         </section>
       }
 
-      <a class="card vitals" [routerLink]="health() ? '/comprendre/recuperation' : '/comprendre/charge'">
+      <a class="card vitals" [class.stale]="age()?.stale" [routerLink]="health() ? '/comprendre/recuperation' : '/comprendre/charge'">
         <span class="label head">Forme du jour
-          @if (health(); as h) { <span class="muted src">{{ sci.healthLabel() }} · {{ shortDay(h.date) }}</span> }
+          @if (health(); as h) { <span class="muted src">{{ sci.healthLabel() }} · {{ age()?.label ?? shortDay(h.date) }}</span> }
         </span>
+        @if (age()?.stale) { <span class="muted small stale-note">Données de {{ age()!.days }} jours : synchronise pour les valeurs du jour.</span> }
         <div class="grid4">
           @if (readiness(); as r) {
             <div class="vital"><span class="display v"><span [appCountUp]="'' + r.score"></span><small>/100</small></span><span class="muted small">préparation{{ r.estimated ? ' estimée' : '' }}</span></div>
@@ -244,6 +246,9 @@ const DAY_MS = 86_400_000;
     .race-stats { display: flex; gap: 2rem; flex-wrap: wrap; }
     .race-stats > div, .vital { display: grid; gap: 0.25rem; align-content: start; }
 
+    .vitals.stale .grid4 { opacity: 0.55; }
+    .vitals.stale .grid4 .v, .vitals.stale .pill { color: var(--text-muted); }
+    .vitals.stale .pill { background: var(--surface-2); }
     .grid4 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.25rem; }
     .pill { justify-self: start; font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
     .pill[data-tone='good'] { color: var(--good-text); background: color-mix(in srgb, var(--good) 14%, transparent); }
@@ -380,6 +385,13 @@ export class TodayPage {
     const h = this.store.data()?.health, now = this.health();
     return h && now ? readinessFor(h, now.date) : null;
   });
+  /** Âge de la donnée de santé (sans santé : de l'instantané) */
+  protected readonly age = computed(() => {
+    const h = this.health();
+    if (h) return dataAge(h.date, this.today);
+    const g = this.store.data()?.generatedAt;
+    return g ? dataAge(new Date(g), this.today) : null;
+  });
   protected readonly hrvState = computed(() => hrvStatus(this.health()?.hrv));
   protected readonly rhrState = computed(() => rhrStatus(this.health()?.rhr));
   protected readonly pmcNow = computed(() => pmc(this.acts(), this.today).at(-1) ?? null);
@@ -430,10 +442,21 @@ export class TodayPage {
     const rhr = this.rhrState();
     if (rhr && rhr.tone !== 'good') parts.push(`FC de repos ${rhr.label}`);
     let title = 'Ta journée';
-    if (parts.length) {
-      const warn = (hrv && hrv.tone !== 'good' && hrv.tone !== 'neutral') || (rhr && rhr.tone !== 'good') || this.fresh().tone === 'critical';
-      title = warn ? 'Journée à prendre en douceur' : this.fresh().label === 'Frais' ? 'Tu es frais' : 'Rien ne s’oppose à une séance normale';
-      points.push(`${capitalize(parts.join(', '))}. ${warn ? 'Privilégie une sortie facile ou le repos.' : this.fresh().text}`);
+    let stale = false;
+    const v = dayVerdict({
+      age: this.age(),
+      freshLabel: this.fresh().label,
+      freshTone: this.fresh().tone,
+      freshText: this.fresh().text,
+      hrvTone: hrv?.tone,
+      rhrTone: rhr?.tone,
+      readiness: this.readiness()?.score ?? null,
+      parts,
+    });
+    if (v) {
+      title = v.title;
+      stale = v.stale;
+      points.push(v.line);
     }
     const g = this.nextGoal();
     if (g) {
@@ -449,12 +472,8 @@ export class TodayPage {
         (d !== null ? `, ${d >= 0 ? `${km(d)} d'avance` : `${km(-d)} de retard`} sur ${this.year - 1} à la même date` : '') +
         `, fin d'année vers ${km(this.projection().projected)}.`,
     );
-    return { title, points };
+    return { title, points, stale };
   });
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Numéro de semaine ISO 8601 */

@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
 import { AiExportService } from '../../core/ai-export.service';
 import { AiDetail } from '../../core/ai/context';
 import {
@@ -84,7 +84,9 @@ const read = (k: string) => {
   selector: 'app-plan-wizard',
   imports: [IconComponent, GoalFormComponent],
   template: `
-    <app-goal-form #goalForm />
+    @if (prepForm()) {
+      <app-goal-form />
+    }
     <dialog #dlg class="sheet wizard" aria-label="Préparer mon plan" (close)="closed()">
       @if (active()) {
         <form novalidate (submit)="$event.preventDefault(); next()">
@@ -156,7 +158,7 @@ const read = (k: string) => {
                   <p class="muted small">Aucune autre course prévue avant celle-ci.</p>
                 }
                 @if (entries.available()) {
-                  <button type="button" class="btn small add" (click)="goalForm.open(undefined, { parent: e.goal.id })"><app-icon name="plus" />Ajouter une course de préparation</button>
+                  <button type="button" class="btn small add" (click)="addPrep(e.goal.id)"><app-icon name="plus" />Ajouter une course de préparation</button>
                 }
                 @for (c of checks(); track $index) {
                   <p class="alert" [class.warn]="c.level === 'warning'">{{ c.text }}</p>
@@ -416,6 +418,17 @@ export class PlanWizardComponent {
   private readonly data = inject(DataService);
   private readonly today = inject(PeriodService).today;
   private readonly dlg = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  private readonly injector = inject(Injector);
+  /** Formulaire d'objectif « course de préparation » : créé au premier besoin (un seul <dialog> d'objectif dans la page sinon) */
+  protected readonly prepForm = signal(false);
+  private readonly prepFormRef = viewChild(GoalFormComponent);
+
+  protected addPrep(parent: string): void {
+    const ref = this.prepFormRef();
+    if (ref) return ref.open(undefined, { parent });
+    this.prepForm.set(true);
+    afterNextRender(() => this.prepFormRef()?.open(undefined, { parent }), { injector: this.injector });
+  }
 
   protected readonly focusOrder = FOCUS_ORDER;
   protected readonly focusInfo = FOCUS;

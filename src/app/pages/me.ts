@@ -167,8 +167,9 @@ export class MePage {
   protected readonly km = km;
   protected readonly year = this.today.getFullYear();
 
-  protected readonly name = computed(() => this.me.me()?.name?.trim() || 'Moi');
-  protected readonly initial = computed(() => (this.me.me()?.name?.trim()[0] ?? 'M').toUpperCase());
+  private readonly known = computed(() => this.me.me()?.name?.trim() || this.sync.athleteName() || '');
+  protected readonly name = computed(() => this.known() || 'Moi');
+  protected readonly initial = computed(() => (this.known()[0] ?? 'M').toUpperCase());
   protected readonly total = computed(() => this.store.activities().reduce((s, a) => s + a.distanceKm, 0));
   protected readonly yearKm = computed(() =>
     this.store.activities().filter((a) => a.date.startsWith(String(this.year))).reduce((s, a) => s + a.distanceKm, 0),

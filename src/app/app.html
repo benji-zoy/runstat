@@ -27,9 +27,9 @@
       <span class="icon-btn sync spinning" role="status" title="Calcul sur cet appareil…" aria-label="Calcul en cours"><app-icon name="sync" /></span>
     }
     <a class="me" routerLink="/moi" routerLinkActive="active" [queryParams]="tabParams" queryParamsHandling="merge"
-      [class.warn]="!!account.lastError()" [attr.aria-label]="'Moi : profil, souvenirs, réglages' + (account.lastError() ? ' (sauvegarde à vérifier)' : '')">
+      [class.warn]="!!account.lastError()" [attr.aria-label]="(firstName() || 'Moi') + ' : profil, souvenirs, réglages' + (account.lastError() ? ' (sauvegarde à vérifier)' : '')">
       <span class="avatar">{{ initial() }}</span>
-      <span class="me-text"><b>Moi</b><small>{{ meLine() }}</small></span>
+      <span class="me-text"><b>{{ firstName() || 'Moi' }}</b><small>{{ meLine() }}</small></span>
     </a>
   </div>
 </header>
@@ -68,7 +68,7 @@
           (COROS, Strava, santé), connecte-les, puis lance une synchro. Tes données restent dans ton dossier sur le NAS.</p>
       }
       @if (entries.available()) {
-        <button type="button" class="btn primary" (click)="athleteForm.open()">Ouvrir les Réglages</button>
+        <button type="button" class="btn primary" (click)="openForm('athlete')">Ouvrir les Réglages</button>
       }
     </section>
   } @else if (data()) {
@@ -90,9 +90,7 @@
   Distances entre villes à vol d'oiseau · Équivalences approximatives · <a routerLink="/confidentialite">Confidentialité</a>
 </footer>
 
-<app-athlete-form #athleteForm />
-<app-users-form #usersForm />
-<app-account-form #accountForm />
+<ng-container #formHost />
 
 <nav class="bottom" aria-label="Espaces">
   @for (t of tabs; track t.path) {

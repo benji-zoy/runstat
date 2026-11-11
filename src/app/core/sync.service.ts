@@ -106,6 +106,12 @@ export class SyncService {
   private readonly account = inject(AccountService);
   private readonly device = inject(DeviceSyncService);
   private readonly remote = signal<SyncStatus | null>(null);
+  /** Prénom de l'athlète Strava connecté (« Jo, athlète 777 » sur le NAS, prénom seul sur l'appareil), sinon null */
+  readonly athleteName = computed(() => {
+    const raw = this.status()?.stravaAthlete?.split(',')[0]?.trim();
+    return raw && !/^athlète \d+$/i.test(raw) ? raw : null;
+  });
+
   /** État du NAS, ou de l'appareil (présence des jetons, jamais leur contenu) */
   readonly status = computed<SyncStatus | null>(() => {
     if (!LOCAL_MODE) return this.remote();

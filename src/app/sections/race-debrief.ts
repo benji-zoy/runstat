@@ -5,6 +5,7 @@ import { GoalEvaluation } from '../core/goals';
 import { clock, fixed, num, pace } from '../core/format';
 import { parseDay } from '../core/stats';
 import { ChartComponent } from '../ui/chart';
+import { IconComponent } from '../ui/icon';
 import { C, alpha } from '../ui/palette';
 
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -13,7 +14,7 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
 /** Bilan d'un objectif terminé : résultat, déroulé km par km face au plan, analyse et leçons. */
 @Component({
   selector: 'app-race-debrief',
-  imports: [ChartComponent],
+  imports: [ChartComponent, IconComponent],
   template: `
     @let d = debrief();
     @let g = ev().goal;
@@ -27,7 +28,7 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
           </p>
         </div>
         @if (record()) {
-          <span class="badge">🏆 Record</span>
+          <span class="badge"><app-icon name="trophy" /> Record</span>
         }
       </header>
 
@@ -193,7 +194,7 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
               <tbody>
                 @for (k of d.kms; track k.km) {
                   <tr>
-                    <td>{{ k.dist < 900 ? num(d.activity.distanceKm, 2) : k.km }}@if (k.gel) { <span title="Gel">🍌</span>}</td>
+                    <td>{{ k.dist < 900 ? num(d.activity.distanceKm, 2) : k.km }}@if (k.gel) { <span class="gel" title="Gel"><app-icon name="food" /></span>}</td>
                     <td class="num">{{ pace(k.watchPace) }}</td>
                     <td class="num">{{ pace(k.realPace) }}</td>
                     <td class="num" [class.muted]="k.hrDoubtful" [title]="k.hrDoubtful ? 'Décrochage du capteur' : ''">{{ k.hr ?? '–' }}{{ k.hrDoubtful ? ' ?' : '' }}</td>
@@ -218,7 +219,8 @@ const shortFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'shor
     header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
     header h3 { color: var(--text-primary); font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: 800; text-transform: uppercase; font-size: 1.8rem; line-height: 1; }
     header p { margin: 0.2rem 0 0; }
-    .badge { padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; }
+    .gel { display: inline-flex; vertical-align: middle; --icon: 0.95rem; color: var(--accent-text); }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; --icon: 1rem; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; }
     h4 { margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
     h4 small { text-transform: none; letter-spacing: 0; }
     .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }

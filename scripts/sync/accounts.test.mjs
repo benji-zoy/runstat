@@ -315,8 +315,9 @@ test('API : sur le réseau local, un nom de domaine public est refusé (DNS rebi
 
 test('API : /api/me et administration réservée au propriétaire par le tailnet', async () => {
   assert.deepEqual((await json(await api('tailnet', '/api/me', { login: 'bob@exemple.fr' }))).body,
-    { id: 'bob', name: 'Bob', role: 'member', mode: 'hosted', multi: true, admin: false });
+    { id: 'bob', name: 'Bob', role: 'member', mode: 'hosted', multi: true, admin: false, zone: 'tailnet' });
   assert.equal((await json(await api('lan', '/api/me'))).body.admin, false);
+  assert.equal((await json(await api('lan', '/api/me'))).body.zone, 'lan');
   assert.equal((await api('lan', '/api/admin/users')).status, 403);
   assert.equal((await api('tailnet', '/api/admin/users', { login: 'bob@exemple.fr' })).status, 403);
   assert.equal((await api('tailnet', '/api/admin/users', { login: 'bob@exemple.fr', method: 'PUT', body: USERS })).status, 403);
@@ -463,6 +464,45 @@ test('export : zip des données du compte de la requête, sans secrets ni donné
   // Le propriétaire n'exporte que ses propres données
   const mine = await openZip(blobSource(new Blob([await (await api('tailnet', '/api/export', { login: 'alice@exemple.fr' })).arrayBuffer()])));
   assert.ok(!mine.entries.some((e) => e.name.includes('7.fit')));
+});
+
+test('zone lan : export, secrets, connexions et archive refusés ; le tailnet les accepte', async () => {
+  const locked = [
+    ['GET', '/api/export'],
+    ['PUT', '/api/strava/client'],
+    ['PUT', '/api/garmin/key'],
+    ['DELETE', '/api/garmin/key'],
+    ['GET', '/api/strava/connect'],
+    ['GET', '/api/coros/connect'],
+    ['GET', '/api/google/connect'],
+    ['POST', '/api/strava/archive'],
+  ];
+  const call = (zone, method, path) =>
+    fetch(`${base[zone]}${path}`, {
+      method,
+      redirect: 'manual',
+      headers: { 'Tailscale-User-Login': 'alice@exemple.fr', 'X-RunStat': 'sync', 'Content-Type': 'application/json' },
+      body: method === 'PUT' ? '{}' : undefined,
+    });
+  for (const [method, path] of locked) {
+    const res = await call('lan', method, path);
+    assert.equal(res.status, 403, `${method} ${path} en lan`);
+    assert.match((await res.json()).error, /Tailscale/);
+  }
+  // Tailnet : jamais le refus de zone (COROS et l'archive feraient des appels réseau : exclus)
+  for (const [method, path] of locked.filter(([, p]) => p !== '/api/coros/connect' && p !== '/api/strava/archive')) {
+    const res = await call('tailnet', method, path);
+    const text = await res.text();
+    assert.ok(!/réseau local non protégé/.test(text), `${method} ${path} en tailnet`);
+  }
+  // Le reste du site reste ouvert en lan
+  assert.equal((await api('lan', '/api/goals')).status, 200);
+  assert.equal((await api('lan', '/api/sync')).status, 200);
+  // Les callbacks n'écrivent rien sans state valide, quelle que soit la zone
+  for (const path of ['/api/strava/callback', '/api/coros/callback', '/api/google/callback']) {
+    const res = await fetch(`${base.lan}${path}?code=x&state=inventé`, { redirect: 'manual' });
+    assert.ok(res.status === 302 && /refus/.test(res.headers.get('location') ?? ''), path);
+  }
 });
 
 test('suppression : un proche hébergé efface son compte, jamais celui d’un autre ni celui du propriétaire', async () => {

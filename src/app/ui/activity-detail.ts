@@ -10,7 +10,8 @@ import { decodePolyline } from '../core/polyline';
 import { durability } from '../core/durability';
 import { clock, num, pace } from '../core/format';
 import { RouteMapComponent } from './route-map';
-import { C } from './palette';
+import { C, alpha } from './palette';
+import { IconComponent } from './icon';
 import { ConditionsCardComponent } from './conditions-card';
 
 const FOCUS: Record<string, string> = {
@@ -28,7 +29,7 @@ const EFFORTS: [string, string][] = [
 /** Fiche détaillée d'une sortie : métriques, « notables » façon Smashrun, coût des conditions, analyses FIT et tracé. */
 @Component({
   selector: 'app-activity-detail',
-  imports: [RouteMapComponent, ChartComponent, ConditionsCardComponent],
+  imports: [IconComponent, RouteMapComponent, ChartComponent, ConditionsCardComponent],
   template: `
     @let a = activity();
     <div class="tags">
@@ -73,14 +74,14 @@ const EFFORTS: [string, string][] = [
 
         @if (wall()?.wall) {
           <p class="wall">
-            🧱 Mur détecté au <b>{{ wall()!.wallKm }}e km</b> (jusqu'à +{{ num((wall()!.fade - 1) * 100) }} % sur 5 km).
+            <app-icon name="wall" /> Mur détecté au <b>{{ wall()!.wallKm }}e km</b> (jusqu'à +{{ num((wall()!.fade - 1) * 100) }} % sur 5 km).
             Sur la lancée des {{ wall()!.preWallKm }} premiers km : environ <b>{{ clock(wall()!.potential!) }}</b>.
           </p>
         }
 
         @if (dur(); as d) {
           <p class="dur">
-            🔋 Durabilité : efficacité <b>{{ d.efLoss > 0 ? '−' : '+' }}{{ num(Math.abs(d.efLoss), 1) }} %</b> entre le premier et le dernier tiers
+            <app-icon name="battery" /> Durabilité : efficacité <b>{{ d.efLoss > 0 ? '−' : '+' }}{{ num(Math.abs(d.efLoss), 1) }} %</b> entre le premier et le dernier tiers
             @if (d.hrDrift !== null) {
               · dérive <b>{{ d.hrDrift >= 0 ? '+' : '−' }}{{ num(Math.abs(d.hrDrift), 1) }} bpm/h</b> à allure égale
             }
@@ -181,6 +182,11 @@ export class ActivityDetailComponent {
     if (!s || s.length < 3) return null;
     const w = this.wall();
     const avg = s.reduce((t, x) => t + x, 0) / s.length;
+    // Hauteur = vitesse (m/s) : plus rapide = plus haut, barres posées sur l'axe ; les graduations restent des allures
+    const speed = s.map((x) => 1000 / x);
+    const vMin = Math.min(...speed);
+    const vMax = Math.max(...speed);
+    const toPace = (v: number) => pace(1000 / v);
     return {
       type: 'bar',
       data: {
@@ -188,8 +194,8 @@ export class ActivityDetailComponent {
         datasets: [
           {
             label: 'Allure',
-            data: s,
-            backgroundColor: s.map((x, i) => (w?.wall && i + 1 >= w.preWallKm + 1 ? C.bad : x < avg * 0.97 ? C.s1Hover : C.s1)),
+            data: speed,
+            backgroundColor: s.map((x, i) => (w?.wall && i + 1 >= w.preWallKm + 1 ? C.bad : x < avg * 0.97 ? C.accent : alpha(C.accent, 0.6))),
             borderRadius: 3,
             barPercentage: 0.9,
             categoryPercentage: 0.95,
@@ -199,11 +205,11 @@ export class ActivityDetailComponent {
       options: {
         scales: {
           x: { grid: { display: false }, ticks: { autoSkipPadding: 4, maxRotation: 0 } },
-          y: { reverse: true, min: Math.floor(Math.min(...s) * 0.92), max: Math.ceil(Math.max(...s) * 1.04), ticks: { callback: (v) => pace(Number(v)), maxTicksLimit: 4 } },
+          y: { min: vMin * 0.85, max: vMax * 1.05, ticks: { callback: (v) => toPace(Number(v)), maxTicksLimit: 4 } },
         },
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { title: (i) => `Km ${i[0].label}`, label: (c) => ` ${pace(c.parsed.y)} /km` } },
+          tooltip: { callbacks: { title: (i) => `Km ${i[0].label}`, label: (c) => ` ${toPace(c.parsed.y ?? 1)} /km` } },
         },
       },
     };

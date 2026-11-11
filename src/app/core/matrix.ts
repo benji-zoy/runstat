@@ -20,29 +20,29 @@ import { addDays, parseDay } from './stats';
 
 export type BranchId = 'endurance' | 'montee' | 'descente' | 'vitesse' | 'resilience' | 'physio';
 
-export const BRANCHES: { id: BranchId; label: string; icon: string; text: string; absolute: string }[] = [
+export const BRANCHES: { id: BranchId; label: string; text: string; absolute: string }[] = [
   {
-    id: 'endurance', label: 'Endurance', icon: '🛣️', text: 'Vitesse tenue sur 1 à 2 h et durée des plus longues sorties.',
+    id: 'endurance', label: 'Endurance', text: 'Vitesse tenue sur 1 à 2 h et durée des plus longues sorties.',
     absolute: 'Allure tenue 1 h et 2 h face à la vitesse des records du monde sur la même durée.',
   },
   {
-    id: 'montee', label: 'Montée', icon: '⛰️', text: 'D+ avalé en 20 min et en 1 h, et rendement en côte (vitesse ajustée / FC) face au plat.',
+    id: 'montee', label: 'Montée', text: 'D+ avalé en 20 min et en 1 h, et rendement en côte (vitesse ajustée / FC) face au plat.',
     absolute: 'Pas d’étalon fiable : la vitesse ascensionnelle dépend surtout de la pente du terrain (record du kilomètre vertical ≈ 2 080 m/h, mais sur une pente à 50 %).',
   },
   {
-    id: 'descente', label: 'Descente', icon: '🪂', text: 'D− descendu en 20 min et en 1 h, et vitesse en descente face au plat à effort égal (Minetti).',
+    id: 'descente', label: 'Descente', text: 'D− descendu en 20 min et en 1 h, et vitesse en descente face au plat à effort égal (Minetti).',
     absolute: 'Pas d’étalon fiable : la vitesse en descente dépend de la pente et de la technicité du terrain.',
   },
   {
-    id: 'vitesse', label: 'Vitesse', icon: '⚡', text: 'Meilleure allure ajustée à la pente sur 5 min (≈ VMA) et 20 min (≈ seuil).',
+    id: 'vitesse', label: 'Vitesse', text: 'Meilleure allure ajustée à la pente sur 5 min (≈ VMA) et 20 min (≈ seuil).',
     absolute: 'Allure sur 5 et 20 min face à la vitesse des records du monde sur la même durée.',
   },
   {
-    id: 'resilience', label: 'Résilience', icon: '🔋', text: 'Durabilité des sorties ≥ 1 h : perte d’efficacité en fin de sortie, dérive cardiaque, découplage.',
+    id: 'resilience', label: 'Résilience', text: 'Durabilité des sorties ≥ 1 h : perte d’efficacité en fin de sortie, dérive cardiaque, découplage.',
     absolute: 'Pas d’échelle mondiale. Repère (Friel) : découplage < 5 % = bonne endurance aérobie, > 10 % = au-dessus du seuil aérobie.',
   },
   {
-    id: 'physio', label: 'Physiologie', icon: '🫀', text: 'VO₂max estimée par la FC, efficacité aérobie, FC de repos et VFC nocturne.',
+    id: 'physio', label: 'Physiologie', text: 'VO₂max estimée par la FC, efficacité aérobie, FC de repos et VFC nocturne.',
     absolute: 'VO₂max Coros (historique reconstitué par l’estimation FC recalée sur elle) face au VDOT du record du monde du marathon.',
   },
 ];
@@ -130,7 +130,6 @@ export interface MetricScore {
 export interface BranchScore {
   id: BranchId;
   label: string;
-  icon: string;
   text: string;
   score: number | null;
   scoreThen: number | null;

@@ -12,6 +12,8 @@ export interface Me {
   multi: boolean;
   /** Gestion des comptes : propriétaire, par l'adresse Tailscale */
   admin: boolean;
+  /** Zone d'écoute : « lan » = réseau local sans authentification, « tailnet » = adresse Tailscale */
+  zone?: 'lan' | 'tailnet';
 }
 
 /** Compte de l'instance (users.json) : gestion par le propriétaire */
@@ -32,6 +34,8 @@ export class MeService {
   readonly me = signal<Me | null>(null);
   readonly multi = computed(() => this.me()?.multi ?? false);
   readonly admin = computed(() => this.me()?.admin ?? false);
+  /** Secrets, connexions, export et import d'archive refusés par le réseau local d'une instance à plusieurs comptes */
+  readonly lanLocked = computed(() => !!this.me()?.multi && this.me()?.zone === 'lan');
 
   constructor() {
     void this.refresh();

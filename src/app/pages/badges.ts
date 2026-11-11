@@ -1,4 +1,5 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
+import { IconComponent } from '../ui/icon';
 import { DataService } from '../core/data.service';
 import { BADGES, LEVELS, levelFor } from '../core/badges';
 import { milestones } from '../core/insights';
@@ -7,6 +8,7 @@ import { parseDay } from '../core/stats';
 
 @Component({
   selector: 'app-badges',
+  imports: [IconComponent],
   template: `
     @switch (view()) {
       @case ('badges') {
@@ -46,7 +48,7 @@ import { parseDay } from '../core/stats';
       <div class="grid badge-grid">
         @for (b of shown(); track b.id) {
           <div class="card badge" [class.locked]="!b.result.earned">
-            <span class="b-icon">{{ b.icon }}</span>
+            <span class="b-icon"><app-icon [name]="b.icon" /></span>
             <div class="b-body">
               <span class="b-name">
                 {{ b.name }}
@@ -75,7 +77,7 @@ import { parseDay } from '../core/stats';
           @for (m of milestones(); track m.date + m.label) {
             <li>
               <span class="t-date muted">{{ fmt(m.date) }}</span>
-              <span class="t-dot">{{ m.icon }}</span>
+              <span class="t-dot"><app-icon [name]="m.icon" /></span>
               <span class="t-label">{{ m.label }}</span>
             </li>
           }
@@ -109,7 +111,7 @@ import { parseDay } from '../core/stats';
     @media (max-width: 600px) { .timeline li { grid-template-columns: 5.8rem 1.8rem 1fr; } }
     .badge { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0.8rem; align-items: start; }
     .b-icon {
-      width: 3.2rem; height: 3.2rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.6rem;
+      width: 3.2rem; height: 3.2rem; border-radius: 50%; display: grid; place-items: center; --icon: 1.5rem; color: var(--accent-text);
       background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, var(--surface-2)), var(--surface-2)); border: 2px solid var(--accent);
     }
     .locked .b-icon { filter: grayscale(1); opacity: 0.45; border-color: var(--surface-3); background: var(--surface-2); }
@@ -127,7 +129,7 @@ import { parseDay } from '../core/stats';
       border-bottom: 1px solid var(--border);
     }
     .t-date { font-size: 0.82rem; font-variant-numeric: tabular-nums; }
-    .t-dot { font-size: 1.2rem; text-align: center; }
+    .t-dot { display: grid; place-items: center; --icon: 1.15rem; color: var(--accent-text); }
   `,
 })
 export class BadgesPage {

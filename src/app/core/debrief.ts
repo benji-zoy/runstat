@@ -253,7 +253,7 @@ function analysisBlocks(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete): Pl
     const planned = e.plan.watch?.drift;
     paceItems.push(`Montre : ${frNum(a.distanceKm, 2)} km mesurés, ${pct(d.gpsDrift)}${planned ? ` (prévu : ${pct(planned)})` : ''}. Allure montre ${pace(a.durationSec / a.distanceKm)} /km pour ${pace(d.pace)} /km réels.`);
   }
-  blocks.push({ icon: '⏱️', title: 'Allure', items: paceItems });
+  blocks.push({ title: 'Allure', items: paceItems });
 
   // Cardio
   const f = a.fit;
@@ -272,7 +272,7 @@ function analysisBlocks(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete): Pl
     }
     const doubtful = d.kms.filter((k) => k.hrDoubtful);
     if (doubtful.length) items.push(`Capteur : FC aberrante au km ${doubtful.map((k) => k.km).join(', ')} (chute sans ralentissement), exclue de l'analyse.`);
-    blocks.push({ icon: '❤️', title: 'Cardio', items });
+    blocks.push({ title: 'Cardio', items });
   }
 
   // Foulée
@@ -296,7 +296,7 @@ function analysisBlocks(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete): Pl
     if (sd < -0.03 && cd > 0) {
       items.push(`Signature classique de la fatigue musculaire : la foulée raccourcit et la cadence compense. Le moteur cardio tenait, ce sont les jambes (raideur, ressort) qui ont cédé en premier.`);
     }
-    blocks.push({ icon: '🦵', title: 'Foulée', items });
+    blocks.push({ title: 'Foulée', items });
   }
 
   // Ravitaillement
@@ -312,7 +312,7 @@ function analysisBlocks(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete): Pl
     }
     const planGel = e.plan.blocks.find((b) => b.title === 'Ravitaillement')?.items[1];
     if (planGel) items.push(`Le plan prévoyait : ${planGel.charAt(0).toLowerCase()}${planGel.slice(1)}`);
-    blocks.push({ icon: '🍌', title: 'Ravitaillement', items });
+    blocks.push({ title: 'Ravitaillement', items });
   }
 
   // Conditions
@@ -323,7 +323,7 @@ function analysisBlocks(d: RaceDebrief, e: GoalEvaluation, athlete: Athlete): Pl
     if (goal.forecast) items.push(`Prévision de la veille : ${frNum(goal.forecast.temp)} °C, rosée ${frNum(goal.forecast.dew)} °C, vent ${frNum(goal.forecast.wind)} km/h.`);
     const elev = a.elevGain;
     if (elev != null) items.push(`Parcours : ${frNum(elev)} m D+ / ${frNum(a.elevLoss ?? 0)} m D−.`);
-    blocks.push({ icon: '🌦️', title: 'Conditions', items });
+    blocks.push({ title: 'Conditions', items });
   }
   return blocks;
 }

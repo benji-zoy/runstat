@@ -41,6 +41,8 @@ import { LOCAL_MODE } from '../core/runtime';
       <ul>
         <li>Tes données sont <b>en clair</b> dans ton dossier sur le NAS : le propriétaire, administrateur de la machine, peut les lire.</li>
         <li>Tes jetons de connexion (COROS, Strava, Google) et ta clé Garmin y sont gardés, jamais affichés.</li>
+        <li>Par le réseau local de la maison (HTTP, sans identification), l'export de tes données, la connexion des sources et l'import d'archive
+          sont refusés : ils ne se font que par l'adresse Tailscale.</li>
       </ul>
 
       <h2>Services contactés, seulement ceux que tu choisis</h2>

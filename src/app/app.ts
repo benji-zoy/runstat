@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { Component, DestroyRef, ViewContainerRef, Type, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
@@ -11,21 +11,24 @@ import { CAPABILITIES, sourcesOf } from './core/sources';
 import { levelFor } from './core/badges';
 import { TABS, TAB_PARAMS } from './app.routes';
 import { IconComponent } from './ui/icon';
-import { AthleteFormComponent } from './ui/forms/athlete-form';
-import { UsersFormComponent } from './ui/forms/users-form';
-import { AccountFormComponent } from './ui/forms/account-form';
 import { AccountService } from './core/account.service';
 import { MeService } from './core/me.service';
 import { EntriesService } from './core/entries.service';
 import { LocalService } from './core/local.service';
 import { LOCAL_MODE } from './core/runtime';
-import { ShellService } from './core/shell.service';
+import { ShellForm, ShellService } from './core/shell.service';
 import { km } from './core/format';
 import { installSlidingIndicators } from './ui/motion';
 
+const FORM_LOADERS: Record<ShellForm, () => Promise<Type<{ open(): unknown }>>> = {
+  athlete: () => import('./ui/forms/athlete-form').then((m) => m.AthleteFormComponent),
+  users: () => import('./ui/forms/users-form').then((m) => m.UsersFormComponent),
+  account: () => import('./ui/forms/account-form').then((m) => m.AccountFormComponent),
+};
+
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AthleteFormComponent, UsersFormComponent, AccountFormComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -81,9 +84,9 @@ export class App {
 
     // Les pages (Moi) ouvrent les fenêtres de saisie posées une seule fois ici
     const shell = inject(ShellService);
-    shell.register('athlete', () => this.athleteForm().open());
-    shell.register('users', () => void this.usersForm().open());
-    shell.register('account', () => this.accountForm().open());
+    shell.register('athlete', () => void this.openForm('athlete'));
+    shell.register('users', () => void this.openForm('users'));
+    shell.register('account', () => void this.openForm('account'));
 
     // Retour d'une connexion (?strava|coros|google=ok|refus&raison=…) : message bref, puis paramètres retirés de l'adresse
     const router = inject(Router);
@@ -102,12 +105,27 @@ export class App {
       });
   }
 
-  private readonly athleteForm = viewChild.required(AthleteFormComponent);
-  private readonly usersForm = viewChild.required(UsersFormComponent);
-  private readonly accountForm = viewChild.required(AccountFormComponent);
+  private readonly formHost = viewChild.required('formHost', { read: ViewContainerRef });
+  private readonly forms = new Map<ShellForm, Promise<{ open(): unknown }>>();
 
-  /** Avatar « Moi » : initiale du compte, sinon M */
-  protected readonly initial = computed(() => (this.me.me()?.name?.trim()[0] ?? 'M').toUpperCase());
+  /** Fenêtres de saisie chargées à la première ouverture : elles restent hors du bundle initial */
+  protected openForm(name: ShellForm): Promise<unknown> {
+    let form = this.forms.get(name);
+    if (!form) {
+      form = FORM_LOADERS[name]().then((type) => {
+        const ref = this.formHost().createComponent(type);
+        ref.changeDetectorRef.detectChanges();
+        return ref.instance;
+      });
+      this.forms.set(name, form);
+      form.catch(() => this.forms.delete(name));
+    }
+    return form.then((f) => f.open());
+  }
+
+  /** Prénom connu : compte du NAS, sinon athlète Strava connecté ; sans lui, « Moi » */
+  protected readonly firstName = computed(() => this.me.me()?.name?.trim() || this.sync.athleteName() || '');
+  protected readonly initial = computed(() => (this.firstName()[0] ?? 'M').toUpperCase());
   /** Sous le nom (barre latérale) : niveau façon Nike Run Club et distance cumulée */
   protected readonly meLine = computed(() => {
     const total = this.store.activities().reduce((s, a) => s + a.distanceKm, 0);

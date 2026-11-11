@@ -51,7 +51,6 @@ export interface Checkpoint {
 }
 
 export interface PlanBlock {
-  icon: string;
   title: string;
   items: string[];
   /** Les mêmes conseils sans les quantités calculées sur le poids (export sans les données de santé) */
@@ -309,7 +308,7 @@ export function racePlan(p: PlanInput): RacePlan {
       ? `En montée la FC grimpe vite : passe en marche active dès qu'elle dépasse ${bpm(hi)} bpm. C'est la clé pour durer.`
       : `Garde-fou : au-dessus de ${bpm(hi) + 2} bpm avant le km ${Math.round((2 * D) / 3)}, ralentis de 5 s/km. Ne regarde pas la FC avant le 3e km, elle n'est pas encore stabilisée.`,
   );
-  blocks.push({ icon: '❤️', title: 'Cardio', items: cardio });
+  blocks.push({ title: 'Cardio', items: cardio });
 
   // Ravitaillement
   const temp = goal.forecast?.temp ?? null;
@@ -341,7 +340,7 @@ export function racePlan(p: PlanInput): RacePlan {
     food.push(`${wall.name} s'est terminé au mur au km ${wallAnalysis(wall)!.wallKm} : l'énergie est ton point faible, ne saute aucune prise.`);
   }
   food.push('Rien de nouveau le jour J : uniquement des produits déjà testés à l\'entraînement.');
-  blocks.push({ icon: '🍌', title: 'Ravitaillement', items: food });
+  blocks.push({ title: 'Ravitaillement', items: food });
 
   // Derniers jours
   if (p.daysLeft >= 0) {
@@ -371,7 +370,7 @@ export function racePlan(p: PlanInput): RacePlan {
     }
     days.push(`La nuit de J-2 compte plus que celle de la veille (souvent agitée) : couche-toi tôt dès ${dayLabel(addDays(race, -2))}.`);
     days.push(`Prépare tout la veille : dossard, épingles, gels, tenue déjà portée, montre chargée${trail ? ', frontale et batteries de rechange, matériel obligatoire' : ''}.`);
-    blocks.push({ icon: '🍝', title: 'Les derniers jours', items: [...weighed.map(([x]) => x), ...days], withoutWeight: [...weighed.map(([, x]) => x), ...days] });
+    blocks.push({ title: 'Les derniers jours', items: [...weighed.map(([x]) => x), ...days], withoutWeight: [...weighed.map(([, x]) => x), ...days] });
   }
 
   // Échauffement et départ
@@ -387,7 +386,7 @@ export function racePlan(p: PlanInput): RacePlan {
     warm.push(`Sur place vers ${hourLabel(startMin - 60)}. Échauffement de ${hourLabel(startMin - 30)} à ${hourLabel(startMin - 15)} : 10 à 15 min de footing très facile, quelques gammes et 3 ou 4 accélérations progressives de 80 m.`);
     warm.push('Reste au chaud jusqu\'au départ (vieux t-shirt à jeter si frais) et place-toi dans le sas de ton allure cible.');
   }
-  blocks.push({ icon: '🔥', title: 'Échauffement et départ', items: warm });
+  blocks.push({ title: 'Échauffement et départ', items: warm });
 
   // Conditions et tenue
   const cond: string[] = [];
@@ -412,7 +411,7 @@ export function racePlan(p: PlanInput): RacePlan {
   if (trail && night && (month >= 9 || month <= 2)) {
     cond.push('Nuit d\'automne ou d\'hiver : prévois du froid (proche de 0 °C sur les hauteurs) : couches techniques, gants, bonnet, veste imperméable, couverture de survie.');
   }
-  blocks.push({ icon: '🌦️', title: 'Conditions et tenue', items: cond });
+  blocks.push({ title: 'Conditions et tenue', items: cond });
 
   // Leçons des courses de référence
   const lessons: string[] = [];
@@ -445,7 +444,7 @@ export function racePlan(p: PlanInput): RacePlan {
     const wa = D >= 40 ? wallAnalysis(a) : null;
     if (wa?.wall) lessons.push(`Mur au km ${wa.wallKm} : l'allure s'est effondrée de ${Math.round((wa.fade - 1) * 100)} %. Départ plus prudent et ravitaillement dès le 5e km.`);
   }
-  if (lessons.length) blocks.unshift({ icon: '📜', title: 'Leçons de tes courses', items: lessons });
+  if (lessons.length) blocks.unshift({ title: 'Leçons de tes courses', items: lessons });
 
   return { segments, checkpoints, watch, blocks, startMin: trail && goal.startTime ? startMin : null, fromGpx: !!c?.gpx };
 }

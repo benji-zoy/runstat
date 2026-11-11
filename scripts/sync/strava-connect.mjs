@@ -18,7 +18,8 @@ import { validateStravaApp } from '#engine/sync/strava.ts';
 
 export const STATE_TTL_MS = 10 * 60_000;
 /** Demandes en attente gardées au plus (les plus anciennes sont oubliées) */
-const MAX_PENDING = 20;
+const MAX_PENDING = 200; // au total
+const MAX_PER_USER = 20; // par compte : les plus anciens sont jetés
 const LOCAL = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 export const CALLBACK_PATH = '/api/strava/callback';
 const TOKENS = 'strava-tokens.json';
@@ -70,6 +71,10 @@ export class StateStore {
   }
   create(data) {
     for (const [k, v] of this.#pending) if (v.expires <= this.now()) this.#pending.delete(k);
+    if (data?.userId !== undefined) {
+      const mine = [...this.#pending].filter(([, v]) => v.userId === data.userId).map(([k]) => k);
+      for (const k of mine.slice(0, Math.max(0, mine.length - MAX_PER_USER + 1))) this.#pending.delete(k);
+    }
     while (this.#pending.size >= MAX_PENDING) this.#pending.delete(this.#pending.keys().next().value);
     const state = randomBytes(24).toString('base64url');
     this.#pending.set(state, { ...data, expires: this.now() + STATE_TTL_MS });

@@ -1,4 +1,5 @@
 import { Component, DestroyRef, HostListener, computed, effect, inject, signal } from '@angular/core';
+import { IconComponent } from '../ui/icon';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
 import { summarize, parseDay } from '../core/stats';
@@ -15,6 +16,7 @@ const SLIDE_MS = 6000;
 
 @Component({
   selector: 'app-recap',
+  imports: [IconComponent],
   template: `
     <div class="years">
       @for (y of years(); track y) {
@@ -139,7 +141,7 @@ const SLIDE_MS = 6000;
               @if (r.badges.length) {
                 <div class="badges">
                   @for (b of r.badges; track b.id) {
-                    <div class="b"><span class="b-ico">{{ b.icon }}</span><span>{{ b.name }}</span></div>
+                    <div class="b"><span class="b-ico"><app-icon [name]="b.icon" /></span><span>{{ b.name }}</span></div>
                   }
                 </div>
               } @else {

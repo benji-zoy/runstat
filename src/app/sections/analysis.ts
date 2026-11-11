@@ -10,6 +10,7 @@ import {
 } from '../core/science';
 import { addDays, isoDay, monthly, parseDay, startOfWeek, weekly } from '../core/stats';
 import { freshnessState, pmc } from '../core/insights';
+import { acwrReading, dataAge } from '../core/freshness';
 import { clock, day, fixed, num, pace } from '../core/format';
 import { durabilitySummary } from '../core/durability';
 import { ChartComponent } from '../ui/chart';
@@ -636,7 +637,8 @@ export class AnalysisSection {
     const last = this.store.data()?.load?.at(-1);
     if (!last) return null;
     const s = LOAD_STATUS[last.comment ?? ''] ?? { label: last.comment ?? '–', tone: 'neutral' as const };
-    return { ...s, ratio: last.ratio };
+    const age = dataAge(parseDay(last.date), this.today);
+    return { ...s, ratio: last.ratio, asOf: age?.label ?? null, stale: !!age?.stale };
   });
 
   /** Charge par semaine sur 26 semaines, avec la monotonie de Foster en option */
@@ -1030,7 +1032,9 @@ export class AnalysisSection {
   private readonly sumLoad = computed<LabSummary | null>(() => {
     const z = this.zonesTotal();
     const daily = dailyLoads(this.acts(), addDays(this.today, -240), this.today, (a) => a.trainingLoad ?? null);
-    const ratio = acwr(daily).at(-1) ?? 0;
+    const ratios = acwr(daily);
+    const reading = acwrReading(ratios, daily);
+    const ratio = reading?.ratio ?? 0;
     const weeks = this.loadWeeks();
     const last = weeks.at(-2);
     const before = weeks.slice(-6, -2);
@@ -1041,10 +1045,12 @@ export class AnalysisSection {
     if (this.zonesByMonth().length) {
       points.push(`Répartition ${z.model} : ${num(z.pct[0])} % facile, ${num(z.pct[1])} % modéré, ${num(z.pct[2])} % intense ${z.pct[0] >= 75 ? '(proche du 80/20 recommandé).' : '(moins de 75 % en facile : le 80/20 laisserait plus de place à la récupération).'}`);
     }
-    points.push(`Ratio charge aiguë / chronique ${num(ratio, 2)} : ${ratio > 1.5 ? 'hausse brutale, prudence.' : ratio > 1.3 ? 'charge en nette hausse.' : ratio < 0.8 ? 'charge en baisse (affûtage ou repos).' : 'progression maîtrisée.'}`);
+    if (reading?.stale) {
+      points.push(`Aucune charge enregistrée depuis ${reading.idleDays} jours : le ratio aigu / chronique (${num(ratio, 2)}) ne mesure plus que cet arrêt, il valait ${num(reading.atLastData, 2)} à ta dernière sortie. Synchronise pour le mettre à jour.`);
+    } else points.push(`Ratio charge aiguë / chronique ${num(ratio, 2)} : ${ratio > 1.5 ? 'hausse brutale, prudence.' : ratio > 1.3 ? 'charge en nette hausse.' : ratio < 0.8 ? 'charge en baisse (affûtage ou repos).' : 'progression maîtrisée.'}`);
     if (last && mean) points.push(`Semaine dernière : charge ${num(last.load)} (${last.load >= mean ? '+' : '−'}${num(Math.abs(last.load / mean - 1) * 100)} % par rapport aux 4 précédentes), monotonie ${num(last.monotony, 2)}${last.monotony > 1.5 ? ' : alterne davantage jours durs et faciles.' : '.'}`);
     return {
-      title: ratio > 1.5 ? 'Charge en forte hausse' : ratio > 1.3 ? 'Charge en hausse' : ratio < 0.8 ? 'Charge en baisse' : 'Charge maîtrisée',
+      title: reading?.stale ? `Pas de charge depuis ${reading.idleDays} jours` : ratio > 1.5 ? 'Charge en forte hausse' : ratio > 1.3 ? 'Charge en hausse' : ratio < 0.8 ? 'Charge en baisse' : 'Charge maîtrisée',
       points,
     };
   });
