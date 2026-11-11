@@ -5,7 +5,7 @@ import { ScienceService } from './science.service';
 import { Activity } from './models';
 import { GoalEvaluation } from './goals';
 import { AiInput, AiOptions } from './ai/context';
-import { AiDoc, AiExportKind, PlanConstraints, debriefExport, goalExport, planExport, profileExport, runExport } from './ai/exports';
+import { AiDoc, AiExportKind, PlanRequest, debriefExport, goalExport, planExport, profileExport, runExport } from './ai/exports';
 
 /** Ce dont on veut discuter : une sortie, un objectif (à venir ou passé) ou le profil */
 export type AiSubject = { run: Activity } | { goal: GoalEvaluation } | { profile: true };
@@ -47,16 +47,21 @@ export class AiExportService {
     if ('profile' in subject) return ['profile'];
     const e = subject.goal;
     if (e.daysLeft < 0 || e.result) return this.sci.debriefs().has(e.goal.id) ? ['debrief'] : [];
-    return ['goal', 'plan'];
+    // Le plan d'entraînement a son propre assistant (ui/forms/plan-wizard.ts)
+    return ['goal'];
   }
 
-  build(subject: AiSubject, kind: AiExportKind, opts: AiOptions, constraints: PlanConstraints): AiDoc | null {
+  /** Export « Plan d'entraînement » à partir des choix de l'assistant */
+  buildPlan(e: GoalEvaluation, opts: AiOptions, request: PlanRequest): AiDoc {
+    return planExport(e, this.input(), { ...opts, health: opts.health && this.hasHealth() }, request);
+  }
+
+  build(subject: AiSubject, kind: AiExportKind, opts: AiOptions): AiDoc | null {
     const input = this.input();
     const o = { ...opts, health: opts.health && this.hasHealth() };
     if ('run' in subject) return runExport(subject.run, input, o, this.sci.conditions(subject.run));
     if ('profile' in subject) return profileExport(input, o, this.sci.matrix(), this.sci.goals());
     const e = subject.goal;
-    if (kind === 'plan') return planExport(e, input, o, constraints);
     if (kind === 'debrief') {
       const d = this.sci.debriefs().get(e.goal.id);
       return d ? debriefExport(e, d, input, o, this.sci.conditions(d.activity)) : null;

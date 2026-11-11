@@ -1,4 +1,4 @@
-import { Component, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DataService } from '../../core/data.service';
@@ -103,6 +103,18 @@ export function goalId(name: string, date: string, taken: string[]): string {
           </label>
         }
 
+        @if (mains().length) {
+          <label class="field wide">Course de préparation pour
+            <select formControlName="parent">
+              <option value="">Aucune : objectif principal</option>
+              @for (m of mains(); track m.id) {
+                <option [value]="m.id">{{ m.name }} ({{ m.date }})</option>
+              }
+            </select>
+            <span class="hint">Un objectif secondaire est intégré au plan d'entraînement de l'objectif principal.</span>
+          </label>
+        }
+
         <details class="field wide" [open]="form.controls.lat.value !== null">
           <summary>Lieu du départ (prévision météo)</summary>
           <div class="fields">
@@ -149,10 +161,29 @@ export class GoalFormComponent {
     stretch: '',
     lat: this.fb.control<number | null>(null),
     lon: this.fb.control<number | null>(null),
+    parent: '',
+  });
+  /** Après l'enregistrement d'un nouvel objectif : ouvrir sa fiche (faux depuis l'assistant de plan) */
+  private navigate = true;
+  private readonly date = signal('');
+
+  /** Objectifs principaux possibles : ni secondaires, ni celui-ci, après la date choisie */
+  protected readonly mains = computed(() => {
+    const me = this.editing();
+    const date = this.date();
+    const goals = this.store.data()?.goals ?? [];
+    const hasChildren = me && goals.some((g) => g.parent === me.id);
+    if (hasChildren) return [];
+    return goals.filter((g) => !g.parent && g.id !== me?.id && (!date || g.date > date)).sort((a, b) => a.date.localeCompare(b.date));
   });
 
-  /** Sans argument : nouvel objectif */
-  open(goal?: Goal): void {
+  constructor() {
+    this.form.controls.date.valueChanges.subscribe((d) => this.date.set(d));
+  }
+
+  /** Sans argument : nouvel objectif ; `parent` : nouvel objectif secondaire de cet objectif (sans quitter la page) */
+  open(goal?: Goal, { parent }: { parent?: string } = {}): void {
+    this.navigate = !parent;
     this.editing.set(goal ?? null);
     this.errors.set([]);
     this.course.set(goal?.course ?? null);
@@ -170,7 +201,9 @@ export class GoalFormComponent {
       stretch: goal?.stretchSec ? clock(goal.stretchSec) : '',
       lat: goal?.lat ?? null,
       lon: goal?.lon ?? null,
+      parent: goal?.parent ?? parent ?? '',
     });
+    this.date.set(goal?.date ?? '');
     this.dialog().open();
   }
 
@@ -216,6 +249,8 @@ export class GoalFormComponent {
     if (stretch === null) errors.push('Chrono ambitieux illisible');
     if (target && stretch && stretch >= target) errors.push('Le chrono ambitieux doit être plus rapide que le chrono visé');
     if ((v.lat === null) !== (v.lon === null)) errors.push('Lieu : indique la latitude et la longitude');
+    const main = v.parent ? (this.store.data()?.goals ?? []).find((g) => g.id === v.parent) : null;
+    if (main && v.date && v.date >= main.date) errors.push(`Une course de préparation doit avoir lieu avant ${main.name}`);
     if (errors.length) return this.errors.set(errors);
 
     const goals = this.store.data()?.goals ?? [];
@@ -235,6 +270,7 @@ export class GoalFormComponent {
       lon: opt(v.lon),
       debrief: old?.debrief,
       course: this.course() ?? undefined,
+      parent: v.parent || undefined,
     };
     await this.write(old ? goals.map((g) => (g.id === old.id ? goal : g)) : [...goals, goal], old ? null : goal.id);
   }
@@ -242,7 +278,9 @@ export class GoalFormComponent {
   protected async remove(): Promise<void> {
     const old = this.editing();
     if (!old || !confirm(`Supprimer l’objectif « ${old.name} » ?`)) return;
-    await this.write((this.store.data()?.goals ?? []).filter((g) => g.id !== old.id), null);
+    // Ses objectifs secondaires redeviennent des objectifs principaux
+    const rest = (this.store.data()?.goals ?? []).filter((g) => g.id !== old.id).map(({ parent, ...g }) => (parent && parent !== old.id ? { ...g, parent } : g));
+    await this.write(rest, null);
     if (this.router.url.startsWith(`/courses/${old.id}`)) void this.router.navigate(['/courses'], { replaceUrl: true });
   }
 
@@ -251,7 +289,7 @@ export class GoalFormComponent {
       await this.entries.saveGoals(goals);
       this.dialog().close();
       // Nouvel objectif : ouvrir sa fiche
-      if (show) void this.router.navigate(['/courses', show]);
+      if (show && this.navigate) void this.router.navigate(['/courses', show]);
     } catch (e) {
       this.errors.set(errorList(e));
     }

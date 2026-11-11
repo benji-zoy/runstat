@@ -1,9 +1,9 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { AiExportService, AiSubject, KIND_LABELS } from '../../core/ai-export.service';
 import { AiDetail } from '../../core/ai/context';
-import { AiExportKind, PlanConstraints } from '../../core/ai/exports';
-import { WEEKDAYS } from '../../core/insights';
+import { AiExportKind } from '../../core/ai/exports';
 import { IconComponent } from '../icon';
+import { canCopy, canShare, copyDoc, downloadDoc, shareDoc } from './md-delivery';
 
 const HEALTH_KEY = 'runstat-ai-sante';
 const DETAIL_KEY = 'runstat-ai-detail';
@@ -49,38 +49,6 @@ function remember(key: string, value: string): void {
                 <button type="button" [class.active]="kind() === k" [attr.aria-pressed]="kind() === k" (click)="kind.set(k)">{{ labels[k] }}</button>
               }
             </div>
-          }
-
-          @if (kind() === 'plan') {
-            <fieldset class="fields constraints">
-              <legend>Tes contraintes</legend>
-              <div class="field wide">
-                Jours où tu peux courir
-                <div class="chips" role="group" aria-label="Jours où tu peux courir">
-                  @for (d of weekdays; track $index) {
-                    <button type="button" class="chip" [class.active]="days().includes($index)" [attr.aria-pressed]="days().includes($index)"
-                      (click)="toggleDay($index)">{{ d.slice(0, 3) }}</button>
-                  }
-                </div>
-                <span class="hint">Aucun choisi : indifférent.</span>
-              </div>
-              <label class="field">
-                Séances par semaine
-                <input type="number" inputmode="numeric" min="1" max="14" [value]="sessions() ?? ''" (input)="sessions.set(numberOf($event))" />
-              </label>
-              <label class="field">
-                Volume maximal (km/sem)
-                <input type="number" inputmode="numeric" min="1" max="400" [value]="maxKm() ?? ''" (input)="maxKm.set(numberOf($event))" />
-              </label>
-              <label class="field wide">
-                Blessures, gênes
-                <textarea rows="2" maxlength="500" placeholder="Ex. tendon d'Achille sensible depuis septembre" [value]="injuries()" (input)="injuries.set(textOf($event))"></textarea>
-              </label>
-              <label class="field wide">
-                Autres contraintes
-                <textarea rows="2" maxlength="500" placeholder="Ex. club le mardi soir, vélo le week-end, vacances du 20 au 27" [value]="notes()" (input)="notes.set(textOf($event))"></textarea>
-              </label>
-            </fieldset>
           }
 
           <label class="field">
@@ -135,8 +103,6 @@ function remember(key: string, value: string): void {
   `,
   styles: `
     .intro { margin: 0; font-size: 0.88rem; line-height: 1.45; }
-    .constraints { margin: 0; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-radius: var(--radius); }
-    .constraints legend { padding: 0 0.3rem; font-weight: 700; font-size: 0.85rem; }
     .options { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem 1.5rem; }
     .check { display: flex; align-items: center; gap: 0.55rem; min-height: 44px; font-size: 0.9rem; cursor: pointer; }
     .check input { width: 1.15rem; height: 1.15rem; accent-color: var(--accent-fill); }
@@ -154,9 +120,8 @@ export class AiExportDialogComponent {
   protected readonly ai = inject(AiExportService);
   private readonly dlg = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
   protected readonly labels = KIND_LABELS;
-  protected readonly weekdays = WEEKDAYS;
-  protected readonly canCopy = Boolean(navigator.clipboard) && isSecureContext;
-  protected readonly canShare = typeof navigator.share === 'function';
+  protected readonly canCopy = canCopy();
+  protected readonly canShare = canShare();
 
   private readonly subject = signal<AiSubject | null>(null);
   protected readonly kinds = computed(() => (this.subject() ? this.ai.kinds(this.subject()!) : []));
@@ -164,27 +129,14 @@ export class AiExportDialogComponent {
   protected readonly detail = signal<AiDetail>(remembered(DETAIL_KEY) === 'full' ? 'full' : 'summary');
   protected readonly health = signal(remembered(HEALTH_KEY) !== '0');
   protected readonly question = signal('');
-  protected readonly days = signal<number[]>([]);
-  protected readonly sessions = signal<number | null>(null);
-  protected readonly maxKm = signal<number | null>(null);
-  protected readonly injuries = signal('');
-  protected readonly notes = signal('');
   protected readonly copied = signal(false);
   protected readonly status = signal<string | null>(null);
-
-  private readonly constraints = computed<PlanConstraints>(() => ({
-    days: this.days(),
-    sessionsPerWeek: this.sessions(),
-    maxKmPerWeek: this.maxKm(),
-    injuries: this.injuries(),
-    notes: this.notes(),
-  }));
 
   /** Texte régénéré à chaque réglage (calculs déjà faits pour l'interface : rapide) */
   protected readonly doc = computed(() => {
     const s = this.subject();
     if (!s || !this.kinds().includes(this.kind())) return null;
-    return this.ai.build(s, this.kind(), { detail: this.detail(), health: this.health(), question: this.question() }, this.constraints());
+    return this.ai.build(s, this.kind(), { detail: this.detail(), health: this.health(), question: this.question() });
   });
 
   protected readonly placeholder = computed(() => ({
@@ -226,15 +178,6 @@ export class AiExportDialogComponent {
     remember(HEALTH_KEY, on ? '1' : '0');
   }
 
-  protected toggleDay(i: number): void {
-    this.days.update((ds) => (ds.includes(i) ? ds.filter((d) => d !== i) : [...ds, i].sort()));
-  }
-
-  protected numberOf(e: Event): number | null {
-    const v = Number((e.target as HTMLInputElement).value);
-    return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
-  }
-
   protected textOf(e: Event): string {
     return (e.target as HTMLTextAreaElement).value;
   }
@@ -245,51 +188,23 @@ export class AiExportDialogComponent {
   protected async copy(): Promise<void> {
     const d = this.doc();
     if (!d || !this.canCopy) return;
-    try {
-      await navigator.clipboard.writeText(d.markdown);
+    const msg = await copyDoc(d);
+    this.status.set(msg);
+    if (msg.startsWith('Copié')) {
       this.copied.set(true);
-      this.status.set('Copié : colle-le dans une nouvelle conversation avec l\'IA.');
       setTimeout(() => this.copied.set(false), 2500);
-    } catch {
-      this.status.set('Copie impossible : utilise « Télécharger ».');
     }
   }
 
   protected download(): void {
     const d = this.doc();
-    if (!d) return;
-    const url = URL.createObjectURL(new Blob([d.markdown], { type: 'text/markdown;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = d.filename;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    this.status.set(`Fichier ${d.filename} téléchargé : joins-le à ta conversation avec l'IA.`);
+    if (d) this.status.set(downloadDoc(d));
   }
 
-  /**
-   * Feuille de partage du téléphone, en un seul appel (un refus consomme le geste de l'utilisateur) : le texte en fichier
-   * .txt, sinon le texte brut. Pas de .md : Chrome sur Android l'annonce partageable (`canShare`) puis le refuse
-   * (« NotAllowedError: Permission denied »), seules certaines extensions passent, dont .txt.
-   */
   protected async share(): Promise<void> {
     const d = this.doc();
     if (!d) return;
-    const txt = new File([d.markdown], d.filename.replace(/\.md$/, '.txt'), { type: 'text/plain' });
-    let files = false;
-    try {
-      files = navigator.canShare?.({ files: [txt] }) ?? false;
-    } catch {
-      files = false;
-    }
-    const data: ShareData = files ? { files: [txt] } : { text: d.markdown };
-    try {
-      await navigator.share(data);
-      this.status.set(data.files ? `Fichier ${data.files[0].name} partagé.` : 'Texte partagé.');
-    } catch (e) {
-      const err = e as Error;
-      if (err?.name === 'AbortError') return;
-      this.status.set(`Partage refusé par le téléphone (${err?.name ?? 'erreur'}${err?.message ? ` : ${err.message}` : ''}) : utilise « Copier » ou « Télécharger ».`);
-    }
+    const msg = await shareDoc(d);
+    if (msg) this.status.set(msg);
   }
 }

@@ -5,7 +5,8 @@ import { SessionType, bestEfforts, classifyAll, criticalSpeed, personalExponentF
 import { GoalEvaluation, evaluateGoal, goalContext, goalResult } from './goals';
 import { RaceDebrief, raceDebrief } from './debrief';
 import { runnerMatrix } from './matrix';
-import { Activity, Athlete } from './models';
+import { Activity, Athlete, Goal, TrainingPlan } from './models';
+import { goalPlanned, loadRates, upcomingPlanned } from './plan';
 import { ConditionsReport, conditionsCost, personalCoefficients } from './conditions';
 import { CAPABILITIES, HEALTH_LABELS, sourcesOf } from './sources';
 
@@ -62,14 +63,31 @@ export class ScienceService {
     return conditionsCost(a, this.athlete(), this.conditionsCoef());
   }
 
+  /** Charge par minute de tes séances récentes : charge estimée des séances du plan importé */
+  readonly loadRates = computed(() => loadRates(this.store.activities(), this.types(), this.today));
+
+  /** Séances prévues à venir (calendrier COROS prioritaire, plans importés), renfo compris */
+  readonly upcomingPlanned = computed(() => {
+    const d = this.store.data();
+    return upcomingPlanned(d?.goals ?? [], d?.planned, this.loadRates(), this.today);
+  });
+
+  /** Évaluation d'un objectif ; `plan` remplace le plan importé (aperçu d'un import avant de l'enregistrer) */
+  evaluate(g: Goal, plan?: TrainingPlan | null): GoalEvaluation | null {
+    const d = this.store.data();
+    if (!d) return null;
+    const acts = this.store.activities();
+    const goals = d.goals ?? [];
+    const goal = plan === undefined ? g : { ...g, plan: plan ?? undefined };
+    const planned = goalPlanned(goal, goals.map((x) => (x.id === g.id ? goal : x)), d.planned, this.loadRates(), this.today);
+    return evaluateGoal(goal, goalContext(goal, acts, this.types(), this.athlete(), this.today, d.fitness?.predictions ?? {}, d.health, planned), this.today, acts);
+  }
+
   /** Objectifs évalués : à venir (du plus proche au plus lointain), puis passés (du plus récent) */
   readonly goals = computed<GoalEvaluation[]>(() => {
     const d = this.store.data();
     if (!d?.goals?.length) return [];
-    const acts = this.store.activities();
-    const evals = d.goals
-      .map((g) => evaluateGoal(g, goalContext(g, acts, this.types(), this.athlete(), this.today, d.fitness?.predictions ?? {}, d.health, d.planned), this.today, acts))
-      .filter((e): e is GoalEvaluation => e !== null);
+    const evals = d.goals.map((g) => this.evaluate(g)).filter((e): e is GoalEvaluation => e !== null);
     const upcoming = evals.filter((e) => e.daysLeft >= 0).sort((a, b) => a.daysLeft - b.daysLeft);
     const past = evals.filter((e) => e.daysLeft < 0).sort((a, b) => b.daysLeft - a.daysLeft);
     return [...upcoming, ...past];

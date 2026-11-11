@@ -189,6 +189,28 @@ test('API : chacun lit son instantané, jamais celui d’un autre', async () => 
   assert.equal((await api('tailnet', '/api/data/coros.json', { login: 'bob@exemple.fr', headers: { 'If-None-Match': etag } })).status, 304);
 });
 
+test('API : plan importé de B (écriture cloisonnée, suppression, envoi COROS en file)', async () => {
+  const plan = { importedAt: '2026-11-11T08:00:00.000Z', sessions: [{ date: '2026-11-17', kind: 'easy', name: 'Footing', durationMin: 45 }] };
+  const put = await json(await api('tailnet', '/api/plans/semi-b', { login: 'bob@exemple.fr', method: 'PUT', body: plan }));
+  assert.equal(put.status, 200);
+  assert.equal(put.body.saved.goalId, 'semi-b');
+  assert.equal(JSON.parse(readFileSync(raw('bob', 'plans/semi-b.json'), 'utf8')).sessions[0].name, 'Footing');
+  assert.equal(existsSync(raw('alice', 'plans/semi-b.json')), false);
+  assert.equal((await json(await api('tailnet', '/api/plans/semi-b', { login: 'alice@exemple.fr' }))).body, null);
+  assert.equal((await api('tailnet', '/api/plans/Semi B', { login: 'bob@exemple.fr', method: 'PUT', body: plan })).status, 400);
+  assert.equal((await api('tailnet', '/api/plans/semi-b', { login: 'bob@exemple.fr', method: 'PUT', body: { ...plan, extra: 1 } })).status, 400);
+  // Envoi COROS : seulement s'il y a un plan, en file pour le compte de la requête
+  assert.equal((await api('tailnet', '/api/plans/autre/coros', { login: 'bob@exemple.fr', method: 'POST' })).status, 404);
+  await idle();
+  calls = [];
+  assert.equal((await api('tailnet', '/api/plans/semi-b/coros', { login: 'bob@exemple.fr', method: 'POST' })).status, 202);
+  await idle();
+  assert.ok(calls.some((c) => c.user === 'bob' && c.kind === 'coros-plan' && c.args.join(' ') === '--coros-plan semi-b'));
+  assert.equal((await api('tailnet', '/api/plans/semi-b', { login: 'bob@exemple.fr', method: 'DELETE' })).status, 200);
+  assert.equal(existsSync(raw('bob', 'plans/semi-b.json')), false);
+  assert.equal((await api('tailnet', '/api/plans/semi-b', { login: 'bob@exemple.fr', method: 'DELETE' })).status, 404);
+});
+
 test('API : la saisie de B n’écrit que chez B, et sa reconstruction est la sienne', async () => {
   const goals = [{ id: 'semi-b', name: 'Semi', date: '2027-04-04', distanceKm: 21.0975, kind: 'road' }];
   const put = await api('tailnet', '/api/goals', { login: 'bob@exemple.fr', method: 'PUT', body: goals });

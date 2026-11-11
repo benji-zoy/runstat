@@ -23,16 +23,43 @@ import {
 
 export type AiExportKind = 'run' | 'goal' | 'plan' | 'debrief' | 'profile';
 
-export interface PlanConstraints {
+export type PlanMode = 'normal' | 'ambitious';
+export type StrengthFocus = 'upper' | 'lower' | 'full';
+export const STRENGTH_LABELS: Record<StrengthFocus, string> = { upper: 'haut du corps', lower: 'bas du corps', full: 'tout le corps' };
+
+/** Choix de l'assistant « Préparer mon plan » (ui/forms/plan-wizard.ts) */
+export interface PlanRequest {
+  /** Volume visé au plus fort du plan (km/semaine) ; max null = « et plus » */
+  volume: { min: number; max: number | null } | null;
+  /** Séances de course par semaine : un nombre, ou deux qui se suivent */
+  sessions: { min: number; max: number } | null;
   /** Jours où courir (0 = lundi … 6 = dimanche) ; vide = indifférent */
   days: number[];
-  sessionsPerWeek?: number | null;
-  maxKmPerWeek?: number | null;
-  /** Blessures, gênes, antécédents */
+  /** Jours possibles pour la sortie longue */
+  longDays: number[];
+  mode: PlanMode;
+  /** Renforcement : un jour et une zone du corps par séance ; null = pas de renfo */
+  strength: { day: number; focus: StrengthFocus }[] | null;
+  /** Vision du plan, contraintes d'agenda */
+  vision?: string;
+  /** Gênes, blessures actuelles ou récentes */
   injuries?: string;
-  /** Séances imposées (club, autres sports), contraintes d'agenda */
-  notes?: string;
+  /** Objectifs secondaires inclus dans le plan */
+  secondaries: GoalEvaluation[];
+  /** Alertes de RunStat sur ces objectifs (core/plan-checks.ts) */
+  checks: { level: 'warning' | 'info'; text: string }[];
 }
+
+/** Bloc à rendre par l'IA, relu par l'import (src/engine/plan/plan.ts) : à garder en phase avec parsePlanMarkdown */
+export const PLAN_FORMAT = [
+  '```runstat-plan',
+  'date | type | nom | durée | distance | étapes | phase',
+  '2026-11-17 | facile | Footing | 45 min | 8 km | 45\' Z2 | Foncier',
+  '2026-11-19 | qualité | Fractionné 6 × 1000 m | 65 min | 11 km | 15\' Z1 + 6×(1000 m @ 4:10-4:15 / 2\' Z1) + 10\' Z1 | Foncier',
+  '2026-11-20 | renfo | Renfo bas du corps | 30 min | - | - | Foncier',
+  '2026-11-23 | longue | Sortie longue | 1 h 40 | 18 km | 1h40 @ FC 135-145 | Foncier',
+  '```',
+].join('\n');
 
 export interface AiDoc {
   title: string;
@@ -407,14 +434,35 @@ export function goalExport(e: GoalEvaluation, input: AiInput, opts: AiOptions): 
 // Plan d'entraînement vers un objectif
 // ---------------------------------------------------------------------------
 
-function constraintsSection(doc: MdDoc, c: PlanConstraints): void {
-  doc.h(2, 'Mes contraintes');
+const days = (ds: number[]) => [...ds].sort().map((d) => WEEKDAYS[d].toLowerCase()).join(', ');
+
+function requestSection(doc: MdDoc, main: GoalEvaluation, r: PlanRequest): void {
+  if (r.secondaries.length) {
+    doc.h(2, 'Objectifs secondaires à intégrer au plan');
+    doc.table(
+      ['Date', 'Épreuve', 'Distance', 'Dénivelé', 'Chrono visé', 'Chrono probable', 'Probabilité', 'Avant l\'objectif principal'],
+      r.secondaries.map((s) => [
+        s.goal.date, inline(s.goal.name), `${n(s.goal.distanceKm, 1)} km`, s.goal.elevGain ? `${n(s.goal.elevGain)} m D+` : null,
+        s.goal.targetSec ? clock(s.goal.targetSec) : 'finir', clock(s.predicted), s.probability !== null ? `${n(s.probability * 100)} %` : null,
+        `${n((parseDay(main.goal.date).getTime() - parseDay(s.goal.date).getTime()) / 604_800_000, 1)} semaines`,
+      ]),
+    );
+  }
+  if (r.checks.length) {
+    doc.h(3, 'Alertes de RunStat sur ces objectifs');
+    doc.list(r.checks.map((c) => `${c.level === 'warning' ? '⚠️ ' : ''}${c.text}`));
+  }
+  doc.h(2, 'Mes choix pour le plan');
+  const sessions = r.sessions ? (r.sessions.min === r.sessions.max ? String(r.sessions.min) : `${r.sessions.min} ou ${r.sessions.max} selon la semaine et la phase`) : null;
   doc.facts([
-    ['Jours où je peux courir', c.days.length ? [...c.days].sort().map((d) => WEEKDAYS[d].toLowerCase()).join(', ') : 'indifférent'],
-    ['Séances par semaine', c.sessionsPerWeek ? String(c.sessionsPerWeek) : null],
-    ['Volume maximal', c.maxKmPerWeek ? `${c.maxKmPerWeek} km/semaine` : null],
-    ['Blessures, gênes', c.injuries?.trim() ? inline(c.injuries) : 'aucune signalée'],
-    ['Autres contraintes', c.notes?.trim() ? inline(c.notes) : null],
+    ['Volume au plus fort du plan', r.volume ? (r.volume.max ? `${r.volume.min} à ${r.volume.max} km/semaine` : `${r.volume.min} km/semaine et plus`) : null],
+    ['Séances de course par semaine', sessions],
+    ['Jours où je peux courir', r.days.length ? days(r.days) : 'indifférent'],
+    ['Jours possibles pour la sortie longue', r.longDays.length ? days(r.longDays) : null],
+    ['Mode', r.mode === 'ambitious' ? 'ambitieux (plus de séances de qualité et des blocs un peu plus durs, tout en restant raisonnable)' : 'normal'],
+    ['Renforcement', r.strength?.length ? r.strength.map((x) => `${WEEKDAYS[x.day].toLowerCase()} (${STRENGTH_LABELS[x.focus]})`).join(', ') : 'non'],
+    ['Ma vision du plan, mes contraintes', r.vision?.trim() ? inline(r.vision) : null],
+    ['Gênes, blessures actuelles ou récentes', r.injuries?.trim() ? inline(r.injuries) : 'aucune signalée'],
   ]);
 }
 
@@ -428,13 +476,13 @@ function habitsLine(input: AiInput, ref: Date): string | null {
   return `Jours de sortie sur les 12 dernières semaines : ${days.join(', ')}.`;
 }
 
-export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, c: PlanConstraints): AiDoc {
+export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, r: PlanRequest): AiDoc {
   const doc = new MdDoc();
   const g = e.goal;
   doc.h(2, 'L\'objectif');
   goalFacts(doc, g, e);
   evaluationSection(doc, e, opts, opts.detail === 'full');
-  constraintsSection(doc, c);
+  requestSection(doc, e, r);
   athleteSection(doc, input, opts);
   levelSection(doc, input, opts, input.today, true);
   trainingSection(doc, input, { ...opts, detail: 'full' }, input.today);
@@ -445,12 +493,25 @@ export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, c
   if (peak?.km) doc.p(`Plus grosse semaine des 12 derniers mois : ${n(peak.km, 1)} km (semaine du ${isoDay(peak.start)}).`);
   healthSection(doc, input, opts, input.today);
   const weeksLeft = Math.max(1, Math.ceil(e.daysLeft / 7));
-  return finish(doc, `Plan d'entraînement : ${inline(g.name)} (${g.date})`, `plan-${slug(g.name)}`, input, [
-    `Propose-moi un plan d'entraînement de ${weeksLeft} semaine${weeksLeft > 1 ? 's' : ''}, d'aujourd'hui (${isoToday(input.today)}) jusqu'à la course (${g.date}), qui part de mon volume actuel et respecte mes contraintes.`,
+  const start = isoDay(new Date(input.today.getFullYear(), input.today.getMonth(), input.today.getDate() + 1));
+  const prompt = [
+    `Propose-moi un plan d'entraînement de ${weeksLeft} semaine${weeksLeft > 1 ? 's' : ''}, du ${start} jusqu'à la course (${g.date}), qui part de mon volume actuel et respecte mes choix.`,
     'Explique d\'abord en quelques lignes la logique du plan (phases, progression du volume, séances clés, affûtage), puis donne un tableau par semaine : jour, séance, durée ou distance, allure ou FC cible, but de la séance.',
-    'Utilise mes allures d\'entraînement et mes zones de FC ; augmente le volume prudemment (pas plus de 10 % par semaine en général) et prévois une semaine plus légère toutes les 3 ou 4 semaines.',
+    'Utilise mes allures d\'entraînement et mes seuils de FC ; augmente le volume prudemment (pas plus de 10 % par semaine en général) et prévois une semaine plus légère toutes les 3 ou 4 semaines.',
+    r.mode === 'ambitious'
+      ? 'Mode ambitieux : jusqu\'à deux séances de qualité par semaine en période de développement, des blocs spécifiques un peu plus longs ; garde au moins un jour facile entre deux séances dures et ne dépasse pas mes choix de volume.'
+      : 'Mode normal : une séance de qualité par semaine, deux au plus en période de développement.',
+  ];
+  if (r.secondaries.length) prompt.push('Intègre les objectifs secondaires (allègement avant, récupération après) et dis-moi franchement s\'ils te semblent trop durs, trop rapprochés ou incohérents avec la préparation, en t\'appuyant sur les alertes de RunStat ; propose comment les courir (à fond, en séance, ou à éviter).');
+  if (r.strength?.length) prompt.push('Place le renforcement aux jours indiqués, avec 4 à 6 exercices adaptés au coureur pour chaque zone du corps, et loin des séances de qualité les plus dures quand c\'est possible.');
+  prompt.push(
     'Indique les séances qui me diront si l\'objectif reste réaliste, et ce qu\'il faudrait ajuster si je rate une semaine.',
-  ], opts);
+    'Termine OBLIGATOIREMENT par le plan complet dans un bloc de code `runstat-plan`, une ligne par séance (pas de ligne pour les jours de repos), colonnes séparées par « | » dans cet ordre : date (AAAA-MM-JJ) | type (facile, qualité, longue, course, renfo, autre) | nom court | durée (« 45 min », « 1 h 40 ») | distance (« 11 km » ou « - ») | étapes | phase. Étapes : morceaux reliés par « + », chacun une durée (« 15\' ») ou une distance (« 1000 m », « 3 km ») suivie de l\'intensité : zone Z1 à Z5 de la montre, allure « @ 4:10-4:15 » (min/km) ou FC « @ FC 140-150 » ; les répétitions s\'écrivent « 6×(1000 m @ 4:10-4:15 / 2\' Z1) ». Mets les objectifs secondaires et la course en type « course ». Ce bloc sera relu par RunStat (indice de confiance, séance du jour, envoi dans la montre) : respecte exactement ce format, par exemple :',
+  );
+  const out = finish(doc, `Plan d'entraînement : ${inline(g.name)} (${g.date})`, `plan-${slug(g.name)}`, input, prompt, opts);
+  const markdown = out.markdown.replace('### Ma question', `${PLAN_FORMAT}\n\n### Ma question`);
+  const withFormat = markdown.includes(PLAN_FORMAT) ? markdown : markdown.trimEnd() + '\n\n' + PLAN_FORMAT + '\n';
+  return { ...out, markdown: withFormat, tokens: Math.round(withFormat.length / 3.5) };
 }
 
 // ---------------------------------------------------------------------------

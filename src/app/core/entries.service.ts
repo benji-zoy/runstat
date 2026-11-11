@@ -5,7 +5,7 @@ import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
 import { SyncService } from './sync.service';
 import { DeviceSyncService } from './device-sync.service';
-import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult } from './models';
+import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult, TrainingPlan } from './models';
 
 export { EntryError } from './entry-error';
 
@@ -29,14 +29,16 @@ export class EntriesService {
 
   /** Remplace toute la liste des objectifs (ajout, modification, suppression, bilan) */
   async saveGoals(goals: Goal[]): Promise<void> {
-    const body = goals.map(({ forecast, ...g }) => g);
+    // Prévision et plan : ajoutés par la reconstruction, enregistrés ailleurs
+    const body = goals.map(({ forecast, plan, ...g }) => g);
     const saved = (await this.send('PUT', 'goals', body)).saved as Goal[];
     this.patch((d) => {
       // La prévision météo est recalculée par la reconstruction ; gardée en attendant si le départ n'a pas bougé
       const old = new Map((d.goals ?? []).map((g) => [g.id, g]));
       const goals = saved.map((g) => {
         const o = old.get(g.id);
-        return o?.forecast && o.date === g.date && o.startTime === g.startTime ? { ...g, forecast: o.forecast } : g;
+        const kept = o?.plan ? { ...g, plan: o.plan } : g;
+        return o?.forecast && o.date === g.date && o.startTime === g.startTime ? { ...kept, forecast: o.forecast } : kept;
       });
       return { ...d, goals };
     });
@@ -117,6 +119,50 @@ export class EntriesService {
   async deleteResult(activityId: string, replaces?: string): Promise<void> {
     await this.send('DELETE', `results/${activityId}${query(replaces)}`);
     this.patchActivity(activityId, ({ result, ...a }) => a);
+  }
+
+  /** Plan d'entraînement importé d'un objectif (remplace le précédent : la fusion est faite avant, par mergePlan) */
+  async savePlan(plan: TrainingPlan): Promise<void> {
+    const saved = (await this.send('PUT', `plans/${plan.goalId}`, plan)).saved as TrainingPlan;
+    this.patch((d) => ({ ...d, goals: (d.goals ?? []).map((g) => (g.id === plan.goalId ? { ...g, plan: saved } : g)) }));
+  }
+
+  async deletePlan(goalId: string): Promise<void> {
+    await this.send('DELETE', `plans/${goalId}`);
+    this.patch((d) => ({ ...d, goals: (d.goals ?? []).map(({ plan, ...g }) => (g.id === goalId ? g : { ...g, ...(plan ? { plan } : {}) })) }));
+  }
+
+  /** Envoi du plan dans le calendrier COROS : sur l'appareil tout de suite, sur le NAS en file (résultat au rechargement) */
+  async sendPlanToCoros(goalId: string): Promise<string> {
+    this.saving.set(true);
+    try {
+      if (LOCAL_MODE) {
+        const msg = await this.device.pushPlan(goalId);
+        await this.local.rebuild();
+        await this.store.reload();
+        return msg;
+      }
+      const stamp = () => {
+        const c = this.store.data()?.goals?.find((g) => g.id === goalId)?.plan?.coros;
+        return `${c?.sentAt ?? ''}|${c?.errorAt ?? ''}`;
+      };
+      const before = stamp();
+      let res: Response;
+      try {
+        res = await fetch(`api/plans/${goalId}/coros`, { method: 'POST', headers: { 'X-RunStat': 'sync' } });
+      } catch {
+        throw new EntryError(['Service de synchro injoignable']);
+      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new EntryError([json.error ?? `HTTP ${res.status}`]);
+      await this.sync.follow();
+      if (stamp() === before) return 'Envoi demandé : le résultat s’affichera ici dès que le NAS l’aura fait.';
+      const plan = this.store.data()?.goals?.find((g) => g.id === goalId)?.plan;
+      if (plan?.coros?.errorAt && (!plan.coros.sentAt || plan.coros.errorAt > plan.coros.sentAt)) throw new EntryError([`COROS : ${plan.coros.error}`]);
+      return plan?.coros?.sentAt ? `Plan envoyé dans COROS : ${plan.coros.sessions} séances sur ${plan.coros.weeks} semaines.` : 'Envoi demandé.';
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   private async send(method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<{ saved: unknown }> {

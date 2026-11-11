@@ -1,3 +1,6 @@
+import type { TrainingPlan, PlanKind } from '../../engine/plan/plan';
+export type { TrainingPlan, PlanSession, PlanKind } from '../../engine/plan/plan';
+
 export type RunKind = 'road' | 'indoor' | 'trail' | 'track' | 'other';
 
 export type ActivitySource = 'coros' | 'strava' | 'garmin';
@@ -210,6 +213,10 @@ export interface Goal {
   debrief?: GoalDebriefNotes;
   /** Profil du tracé GPX importé (core/course.ts) */
   course?: GoalCourse;
+  /** Objectif secondaire : identifiant de l'objectif principal qu'il prépare */
+  parent?: string;
+  /** Plan d'entraînement importé (data-raw/plans/<id>.json, recopié par la reconstruction) */
+  plan?: TrainingPlan;
 }
 
 /** Profil compact d'un tracé : altitude (m) tous les `stepKm` depuis le départ, points de passage nommés */
@@ -250,10 +257,16 @@ export interface PlannedSession {
   /** Charge estimée, même échelle que trainingLoad */
   load: number | null;
   fromPlan?: boolean;
+  /** Séance du plan importé (absent : calendrier COROS) */
+  imported?: boolean;
+  kind?: PlanKind;
+  steps?: string;
+  phase?: string;
 }
 
 export interface PlannedCalendar {
-  source: 'coros';
+  /** coros : calendrier de la montre (éventuellement complété par le plan importé) ; import : plan importé seul */
+  source: 'coros' | 'import';
   fetchedAt: string;
   /** Fenêtre demandée : un jour sans séance dedans est un jour de repos */
   from: string;

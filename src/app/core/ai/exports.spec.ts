@@ -8,7 +8,8 @@ import { conditionsCost, personalCoefficients } from '../conditions';
 import { CAPABILITIES } from '../sources';
 import { parseDay } from '../stats';
 import { AiInput, AiOptions, age, trainingPaces } from './context';
-import { debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
+import { PlanRequest, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
+import { parsePlanMarkdown, parseSteps } from '../../../engine/plan/plan';
 
 const data = snapshot as unknown as CorosData;
 const today = parseDay('2026-03-11');
@@ -110,15 +111,42 @@ describe('export pour une IA', () => {
     expect(md).toContain('7 à 10 g par kg et par jour');
   });
 
-  it('prépare un plan avec les contraintes et les allures d\'entraînement', () => {
+  it('prépare un plan avec les choix de l\'assistant et le format de retour', () => {
     const e = evaluate(data.goals!.find((g) => g.id === 'trail-test')!);
-    const md = planExport(e, input, summary, { days: [1, 3, 5], sessionsPerWeek: 3, maxKmPerWeek: 50, injuries: 'tendon d\'Achille\nsensible', notes: '' }).markdown;
-    expect(md).toContain('## Mes contraintes');
-    expect(md).toContain('Jours où je peux courir : mardi, jeudi, samedi');
-    expect(md).toContain('Volume maximal : 50 km/semaine');
+    const prep = evaluate({ id: 'prep', name: '10 km de Testville', date: '2026-04-05', distanceKm: 10, targetSec: 2400, kind: 'road' });
+    const request: PlanRequest = {
+      volume: { min: 40, max: 60 },
+      sessions: { min: 3, max: 4 },
+      days: [1, 3, 5, 6],
+      longDays: [5, 6],
+      mode: 'ambitious',
+      strength: [{ day: 0, focus: 'lower' }],
+      vision: 'club le mardi',
+      injuries: 'tendon d\'Achille\nsensible',
+      secondaries: [prep],
+      checks: [{ level: 'warning', text: 'Trop proche' }],
+    };
+    const md = planExport(e, input, summary, request).markdown;
+    expect(md).toContain('## Mes choix pour le plan');
+    expect(md).toContain('Volume au plus fort du plan : 40 à 60 km/semaine');
+    expect(md).toContain('Séances de course par semaine : 3 ou 4 selon la semaine et la phase');
+    expect(md).toContain('Jours où je peux courir : mardi, jeudi, samedi, dimanche');
+    expect(md).toContain('Jours possibles pour la sortie longue : samedi, dimanche');
+    expect(md).toContain('Renforcement : lundi (bas du corps)');
+    expect(md).toContain('Mode ambitieux');
     // Un retour à la ligne saisi ne casse pas la liste
-    expect(md).toContain('Blessures, gênes : tendon d\'Achille sensible');
+    expect(md).toContain('Gênes, blessures actuelles ou récentes : tendon d\'Achille sensible');
+    expect(md).toContain('## Objectifs secondaires à intégrer au plan');
+    expect(md).toContain('10 km de Testville');
+    expect(md).toContain('⚠️ Trop proche');
     expect(md).toContain('Propose-moi un plan d\'entraînement de 10 semaines');
+    // Le format demandé à l'IA est celui que relit l'import
+    expect(md).toContain('```runstat-plan');
+    const parsed = parsePlanMarkdown(md);
+    expect(parsed.fenced).toBe(true);
+    expect(parsed.sessions.map((s) => s.kind)).toEqual(['easy', 'quality', 'strength', 'long']);
+    expect(parsed.ignored).toEqual([]);
+    for (const s of parsed.sessions.filter((x) => x.steps)) expect(parseSteps(s.steps!)).not.toBeNull();
     expectPrivate(md);
   });
 

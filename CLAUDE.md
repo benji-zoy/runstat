@@ -18,7 +18,8 @@ de travailler sur les données. Les objectifs, bilans, classements et réglages 
 `athlete.json` → `build-fit --force` (empreinte `athleteFit` dans l'état ; poids, taille, `raceWeights` ne recalculent pas les FIT). État : `data-raw/sync-state.json` (dernier succès,
 dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/<type>/`. Logs : Container Manager.
 - Clients et synchro dans le moteur (`src/engine/sync/`, les mêmes que sur l'appareil, voir Appli publique) : `coros.ts` (MCP HTTP sans
-  session, **liste blanche `READ_TOOLS`**, aucun outil d'écriture), `strava.ts` (GET sur `READ_PATHS`), `garmin.ts` (Personal API,
+  session, **liste blanche `READ_TOOLS`** pour `callTool` ; seules écritures : `WRITE_TOOLS` = `createTrainingPlan`, `updateTrainingPlan`
+  par `callWriteTool`, sans nouvel essai, et seulement pour « Envoyer dans COROS » d'un plan importé, voir Plan d'entraînement), `strava.ts` (GET sur `READ_PATHS`), `garmin.ts` (Personal API,
   GET sur `READ_PATHS` + `READ_PARAMS`), `google.ts` (API v4 ; filtres en
   snake_case `daily_resting_heart_rate.date`, contrairement à la doc ; jeton par un point injecté), `run-sources.ts` (`sourceSync` : une
   synchro par source, `syncOne` pour « Affiner »), `http.ts` (`fetchRetry`, `ReauthRequired`, `RateLimited`, magasin de jetons `TokenStore`
@@ -406,11 +407,43 @@ recalée sur le chrono visé et sur le probable ; tronçons entre les points de 
 Une course n'est « référence » que si elle est classée `race` (`RACE_NAME` dans `science.ts` : nom d'épreuve ou millésime ;
 la sortie d'un objectif passé l'est toujours, quel que soit son nom).
 
+## Plan d'entraînement (`src/engine/plan/`, `core/plan.ts`, `core/plan-checks.ts`, `ui/forms/plan-wizard.ts`, `ui/forms/plan-import.ts`, `sections/training-plan.ts`)
+
+Partie Préparation de la fiche d'un objectif à venir. « Préparer mon plan avec une IA » : assistant en six écrans (courses de
+préparation, volume au plus fort par tranches de 20 km, séances par semaine : un nombre ou deux qui se suivent + jours possibles + un
+ou deux jours de sortie longue, le week-end par défaut, mode normal / ambitieux, renfo par jour et zone du corps, récapitulatif avec
+vision, gênes et blessures), conseils de `core/plan.ts` (`recommendedVolume` = repère de l'indice borné à +10 %/semaine,
+`recommendedSessions`, ambitieux conseillé sous 50 % de chances), choix gardés par objectif dans `localStorage` (`runstat-plan-<id>`),
+puis `planExport` (`PlanRequest`). L'export impose à l'IA un bloc final ```` ```runstat-plan ```` (`PLAN_FORMAT`, une ligne par séance :
+`date | type | nom | durée | distance | étapes | phase` ; étapes « 15' Z1 + 6×(1000 m @ 4:10-4:15 / 2' Z1) + 10' Z1 », FC « @ FC 140-150 ») :
+**à garder en phase avec `parsePlanMarkdown`** (le test d'export relit son propre exemple).
+- Objectifs secondaires : `parent` de l'objectif (= id de l'objectif principal, avant lui, pas de chaîne), cochés dans l'assistant
+  ou choisis dans le formulaire d'objectif ; supprimer l'objectif principal les détache. Alertes `secondaryChecks` (pendant l'affûtage,
+  récupération ≈ `recoveryDays` qui mord sur la préparation, trop rapprochés, aussi longs que l'objectif, chrono < 25 %, plus de deux
+  courses ≥ 21 km en 12 semaines), affichées dans l'assistant et écrites dans l'export.
+- Import : fichier .md / .txt ou texte collé, lu sur l'appareil, aperçu (séances, lignes ignorées, effet sur l'indice par
+  `ScienceService.evaluate(goal, plan)`), `mergePlan` (les jours couverts par le nouveau plan remplacent l'ancien, le reste est gardé),
+  `data-raw/plans/<goalId>.json` (`validatePlan`, 400 séances au plus ; `PUT|DELETE /api/plans/<id>` ou zone raw en local-first),
+  recopié dans `plan` de l'objectif par `buildSnapshot`. Un objectif secondaire suit le plan de son objectif principal (`planOf`).
+- Indice et séance du jour : `mergeCalendars` — **le calendrier COROS est prioritaire semaine par semaine** (une semaine qui a une
+  séance COROS ne prend que COROS), le plan importé complète les autres ; charge estimée par `loadRates` (charge par minute de tes
+  séances des 120 derniers jours, facile / qualité / course) ; le renfo ne compte pas dans l'indice. Aujourd'hui › « Séance du jour »
+  (`ScienceService.upcomingPlanned`) : séance prévue, ou résumé de la sortie déjà faite, et celle de demain.
+- « Envoyer dans COROS » (avec confirmation) : `pushPlanToCoros` (`coros-plan.ts`) → plan COROS « RunStat · <course> », semaines
+  naturelles, 4 à 16, début dans les 14 jours, séances de course seulement (`corosSections` : étapes lues, sinon une section sur la
+  durée ou la distance, zone selon la nature ; phases d'après la colonne phase). Renvoi : `updateTrainingPlan` du plan en cours de même
+  nom, chaque jour d'aujourd'hui à la fin réécrit (repos pour effacer) ; un plan RunStat « non commencé » bloque (à supprimer dans
+  l'appli COROS). NAS : tâche `coros-plan` de la file (`run.mjs --coros-plan <id>`, jamais en parallèle d'une synchro : un seul
+  détenteur du refresh token), appareil : `DeviceSyncService.pushPlan` sous le verrou des synchros. Réussite ou erreur gardées dans
+  `plan.coros`. Les séances envoyées reviennent par le calendrier COROS à la synchro suivante.
+- Tests : `src/engine/plan/plan.spec.ts`, `core/plan.spec.ts`, `core/ai/exports.spec.ts` (aller-retour du format), `accounts.test.mjs`
+  (routes du NAS).
+
 ## Discuter avec une IA (`src/app/core/ai/`, `core/ai-export.service.ts`, `ui/forms/ai-export-dialog.ts`)
 
 Export Markdown à donner à n'importe quel assistant (aucun appel à une IA, aucun envoi : copier, télécharger `.md`, partager par la
 feuille du téléphone : fichier `.txt`, car Chrome sur Android refuse les `.md` après les avoir annoncés partageables, sinon texte). Cinq points d'entrée : sortie (`/sortie/:id`), objectif à venir et plan
-d'entraînement (`/courses/:id`, contraintes : jours, séances, volume max, blessures, autres), bilan d'une course passée (avec un
+d'entraînement (`/courses/:id`, assistant à part, voir Plan d'entraînement), bilan d'une course passée (avec un
 `RaceDebrief`), profil (Moi). Fenêtre : question facultative, détail résumé / complet (≈ 3-8 k / 6-20 k jetons), santé cochée par défaut
 (réglage et détail mémorisés dans `localStorage`, `runstat-ai-sante`, `runstat-ai-detail`), aperçu et taille estimée.
 - Fonctions pures (`md.ts` assembleur, `glossary.ts`, `context.ts` parties communes, `exports.ts`), sans Angular : réutilisables par un
@@ -482,7 +515,7 @@ de l'athlète (son nom, jamais écrit dans le dépôt), écrire le fichier, puis
 
 Quatre espaces (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) et l'avatar « Moi » ; barre latérale sur ordinateur (≥ 1024 px),
 barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `app.scss`) :
-- **Aujourd'hui** (`pages/today.ts`) : en bref, prochaine course, forme du jour (santé + fraîcheur), année en cours, dernières sorties, 3 moments forts.
+- **Aujourd'hui** (`pages/today.ts`) : en bref, séance du jour (calendrier COROS ou plan importé ; une fois faite, résumé de la sortie, et demain), prochaine course, forme du jour (santé + fraîcheur), année en cours, dernières sorties, 3 moments forts.
 - **Journal** (`pages/journal.ts`) : Sorties (`pages/activities.ts`, cartes sur téléphone), Volume (`sections/volume.ts` : période, cumul, hebdo,
   calendrier, régularité). Fiche d'une sortie à sa propre adresse : `/sortie/:id` (`pages/run.ts`).
 - **Courses** (`pages/goals.ts`) : petites cartes À venir et Passées, courbe des chronos estimés (`sections/prediction-history.ts` : 5 km →

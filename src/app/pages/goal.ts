@@ -16,6 +16,7 @@ import { DebriefFormComponent } from '../ui/forms/debrief-form';
 import { IconComponent } from '../ui/icon';
 import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 import { MotionService } from '../ui/motion';
+import { TrainingPlanComponent } from '../sections/training-plan';
 
 type Part = GoalPart | 'confiance' | 'bilan';
 
@@ -36,7 +37,7 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
  */
 @Component({
   selector: 'app-goal',
-  imports: [RouterLink, GoalCardComponent, RaceDebriefComponent, ConfidenceHistoryComponent, GoalFormComponent, DebriefFormComponent, IconComponent, AiExportDialogComponent],
+  imports: [RouterLink, GoalCardComponent, RaceDebriefComponent, ConfidenceHistoryComponent, GoalFormComponent, DebriefFormComponent, IconComponent, AiExportDialogComponent, TrainingPlanComponent],
   template: `
     <a class="back" routerLink="/courses"><app-icon name="back" />Courses</a>
     <app-goal-form #goalForm />
@@ -65,7 +66,7 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
       <div class="row-actions">
         @if (!archived()) {
           <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'goal')"><app-icon name="chat" />En discuter avec une IA</button>
-          <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'plan')"><app-icon name="list" />Plan d'entraînement avec une IA</button>
+          <button type="button" class="btn small" (click)="open('preparation')"><app-icon name="list" />Plan d'entraînement</button>
         } @else if (debrief()) {
           <button type="button" class="btn small" (click)="aiDialog.open({ goal: e }, 'debrief')"><app-icon name="chat" />Bilan avec une IA</button>
         }
@@ -105,7 +106,12 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
             }
           }
           @case ('confiance') { <app-confidence-history [ev]="e" /> }
-          @default { <app-goal-card [ev]="e" [part]="cardPart()" /> }
+          @default {
+            @if (part() === 'preparation' && !archived()) {
+              <app-training-plan [ev]="e" />
+            }
+            <app-goal-card [ev]="e" [part]="cardPart()" />
+          }
         }
       </section>
     } @else {
@@ -211,7 +217,9 @@ export class GoalPage {
       id: 'preparation',
       title: 'Préparation',
       value: `${Math.round(e.readinessScore * 100)}/100`,
-      note: weakest && weakest.score < 0.95 ? `à travailler : ${weakest.label.toLowerCase()}` : 'fondations en place',
+      note: g.plan?.sessions.length
+        ? `plan importé, ${g.plan.sessions.length} séances`
+        : weakest && weakest.score < 0.95 ? `à travailler : ${weakest.label.toLowerCase()}` : 'fondations en place',
     });
     if (e.raceRefs.length) {
       out.push({

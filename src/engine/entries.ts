@@ -2,6 +2,7 @@
 // (scripts/sync/entries.mjs, qui écrit dans data-raw/) et l'appli en mode local-first (core/local-backend.ts).
 // Seuls les champs connus sont gardés, jamais de nom d'un autre coureur.
 import { ACTIVITY_ID, ACTIVITY_SOURCES, HEALTH_SOURCES } from './sources.ts';
+import { PLAN_KINDS, PLAN_MAX_SESSIONS, type TrainingPlan } from './plan/plan.ts';
 
 export class InvalidEntry extends Error {
   errors: string[];
@@ -13,7 +14,7 @@ export class InvalidEntry extends Error {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const GOAL_ID = /^[a-z0-9][a-z0-9-]{0,60}$/;
+export const GOAL_ID = /^[a-z0-9][a-z0-9-]{0,60}$/;
 /** Fichier de classement rattaché par la date et la distance (data-raw/results/date-AAAA-MM-JJ-<km>.json) */
 export const DATE_RESULT = /^date-\d{4}-\d{2}-\d{2}-\d+\.json$/;
 
@@ -123,7 +124,7 @@ function validateCourse(obj: unknown, prefix: string, errors: string[]) {
 /** Un objectif (data-raw/goals.json) */
 export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
   const r = reader(obj, prefix, errors);
-  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief', 'course']);
+  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief', 'course', 'parent']);
   const date = r.str('date', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
   if (date && !isRealDate(date)) errors.push(`${prefix}date : date inexistante`);
   const goal = clean({
@@ -141,6 +142,8 @@ export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
     lon: r.num('lon', { min: -180, max: 180 }),
     debrief: r.has('debrief') ? validateDebrief(r.raw('debrief'), `${prefix}debrief.`, errors) : undefined,
     course: r.has('course') ? validateCourse(r.raw('course'), `${prefix}course.`, errors) : undefined,
+    // Objectif secondaire : identifiant de l'objectif principal qu'il prépare
+    parent: r.str('parent', { pattern: GOAL_ID, msg: 'identifiant d’objectif attendu' }),
   });
   if (goal.stretchSec != null && goal.targetSec == null) errors.push(`${prefix}stretchSec : chrono visé manquant`);
   if (goal.stretchSec != null && goal.targetSec != null && goal.stretchSec >= goal.targetSec)
@@ -158,6 +161,14 @@ export function validateGoals(list: unknown) {
   const ids = goals.map((g) => g.id).filter(Boolean);
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup) errors.push(`identifiant en double : ${dup}`);
+  const byId = new Map(goals.map((g) => [g.id, g]));
+  goals.forEach((g, i) => {
+    if (!g.parent) return;
+    const main = byId.get(g.parent);
+    if (!main || main.id === g.id) errors.push(`objectif ${i + 1} · parent : objectif principal introuvable`);
+    else if (main.parent) errors.push(`objectif ${i + 1} · parent : l’objectif principal est lui-même secondaire`);
+    else if (g.date && main.date && g.date >= main.date) errors.push(`objectif ${i + 1} · parent : doit avoir lieu avant l’objectif principal`);
+  });
   if (errors.length) throw new InvalidEntry(errors);
   return goals;
 }
@@ -252,4 +263,53 @@ export function validateResult(activityId: string, obj: unknown, today = new Dat
   if (res.sexCount != null && res.finishers != null && res.sexCount > res.finishers) errors.push('sexCount : plus grand que finishers');
   if (errors.length) throw new InvalidEntry(errors);
   return res;
+}
+
+/** Plan d'entraînement importé (data-raw/plans/<goalId>.json) */
+export function validatePlan(goalId: string, obj: unknown): TrainingPlan {
+  const errors: string[] = [];
+  if (!GOAL_ID.test(goalId)) throw new InvalidEntry(['identifiant d’objectif invalide']);
+  const r = reader(obj, '', errors);
+  r.unknown(['goalId', 'importedAt', 'sessions', 'coros']);
+  if (r.raw('goalId') != null && r.raw('goalId') !== goalId) errors.push('goalId : ne correspond pas à l’adresse');
+  const importedAt = r.str('importedAt', { required: true, max: 40, pattern: /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, msg: 'date ISO attendue' });
+  const list = r.raw('sessions');
+  const sessions: any[] = [];
+  if (!Array.isArray(list) || list.length > PLAN_MAX_SESSIONS) errors.push(`sessions : ${PLAN_MAX_SESSIONS} séances au plus`);
+  else
+    list.forEach((s, i) => {
+      const p = `séance ${i + 1} · `;
+      const sr = reader(s, p, errors);
+      sr.unknown(['date', 'kind', 'name', 'durationMin', 'distanceKm', 'steps', 'phase']);
+      const date = sr.str('date', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
+      if (date && !isRealDate(date)) errors.push(`${p}date : date inexistante`);
+      sessions.push(
+        clean({
+          date,
+          kind: sr.oneOf('kind', PLAN_KINDS, { required: true }),
+          name: sr.str('name', { required: true, max: 100 }),
+          durationMin: sr.num('durationMin', { min: 1, max: 72 * 60, int: true }),
+          distanceKm: sr.num('distanceKm', { min: 0.1, max: 500 }),
+          steps: sr.str('steps', { max: 300 }),
+          phase: sr.str('phase', { max: 40 }),
+        }),
+      );
+    });
+  let coros: any;
+  if (r.has('coros')) {
+    const cr = reader(r.raw('coros'), 'coros.', errors);
+    cr.unknown(['sentAt', 'start', 'weeks', 'sessions', 'until', 'error', 'errorAt']);
+    coros = clean({
+      sentAt: cr.str('sentAt', { max: 40 }),
+      start: cr.str('start', { pattern: DATE }),
+      weeks: cr.num('weeks', { min: 1, max: 16, int: true }),
+      sessions: cr.num('sessions', { min: 0, max: PLAN_MAX_SESSIONS, int: true }),
+      until: cr.str('until', { pattern: DATE }),
+      error: cr.str('error', { max: 500 }),
+      errorAt: cr.str('errorAt', { max: 40 }),
+    });
+  }
+  if (errors.length) throw new InvalidEntry(errors);
+  sessions.sort((a, b) => a.date.localeCompare(b.date));
+  return clean({ goalId, importedAt, sessions, coros });
 }

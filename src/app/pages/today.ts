@@ -3,8 +3,9 @@ import { RouterLink } from '@angular/router';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
 import { ScienceService } from '../core/science.service';
-import { Activity } from '../core/models';
-import { addDays, fastestOver, inRange, maxBy, parseDay, startOfWeek, summarize, weekly } from '../core/stats';
+import { Activity, PlannedSession } from '../core/models';
+import { PLAN_KIND_LABELS } from '../core/plan';
+import { addDays, fastestOver, inRange, isoDay, maxBy, parseDay, startOfWeek, summarize, weekly } from '../core/stats';
 import { freshnessState, pmc, yearProjection } from '../core/insights';
 import { healthNow, hrvStatus, readinessFor, rhrStatus } from '../core/health';
 import { clock, day, duration, fixed, km, num, pace } from '../core/format';
@@ -29,6 +30,38 @@ const DAY_MS = 86_400_000;
     </header>
 
     <app-brief [brief]="brief()" />
+
+    @if (agenda(); as ag) {
+      <section class="card session" [class.done]="ag.done.length > 0">
+        <span class="label head">{{ ag.done.length ? 'Faite aujourd’hui' : 'Séance du jour' }}
+          @if (planLink(); as link) { <a class="go" [routerLink]="link" [queryParams]="{ partie: 'preparation' }">Mon plan <app-icon name="arrow" /></a> }
+        </span>
+        @if (ag.done.length) {
+          @for (a of ag.done; track a.id) {
+            <a class="today-run" [routerLink]="['/sortie', a.id]">
+              <app-icon name="check" />
+              <b>{{ a.name || 'Sortie' }}</b>
+              <span class="muted">{{ num(a.distanceKm, 1) }} km · {{ clock(a.durationSec) }} · {{ pace(a.durationSec / a.distanceKm) }} /km{{ a.avgHr ? ' · ' + a.avgHr + ' bpm' : '' }}</span>
+            </a>
+          }
+          @if (ag.today.length) {
+            <span class="muted small">Prévu : {{ names(ag.today) }}</span>
+          }
+        } @else if (ag.today.length) {
+          @for (s of ag.today; track $index) {
+            <div class="planned">
+              <span class="kind" [attr.data-kind]="s.kind">{{ kindLabel(s) }}</span>
+              <b class="p-name">{{ s.name }}</b>
+              <span class="muted">{{ sessionLine(s) }}</span>
+              @if (s.steps) { <code class="steps">{{ s.steps }}</code> }
+            </div>
+          }
+        } @else {
+          <p class="rest">Repos prévu aujourd'hui.</p>
+        }
+        <span class="tomorrow muted small">Demain : {{ ag.tomorrow.length ? names(ag.tomorrow) + (sessionLine(ag.tomorrow[0]) ? ' (' + sessionLine(ag.tomorrow[0]) + ')' : '') : 'repos' }}</span>
+      </section>
+    }
 
     <div class="row">
       @if (nextGoal(); as e) {
@@ -163,6 +196,17 @@ const DAY_MS = 86_400_000;
     .v small { font-family: var(--font-body); font-size: 0.4em; font-weight: 600; color: var(--text-secondary); margin-left: 0.1em; }
     .small { font-size: 0.8rem; }
 
+    .session { margin-top: 1rem; gap: 0.55rem; }
+    .today-run { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; color: inherit; text-decoration: none; font-size: 1rem; }
+    .today-run app-icon { color: var(--good-text); align-self: center; }
+    .planned { display: grid; gap: 0.2rem; }
+    .p-name { font-size: 1.15rem; }
+    .kind { justify-self: start; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
+    .kind[data-kind='quality'], .kind[data-kind='race'] { color: var(--accent-text); }
+    .steps { font: 0.78rem/1.4 var(--font-mono); color: var(--text-secondary); overflow-wrap: anywhere; }
+    .rest { margin: 0; font-weight: 600; }
+    .tomorrow { border-top: 1px solid var(--border); padding-top: 0.5rem; }
+
     .race-id { display: flex; align-items: center; gap: 1rem; }
     .days { font-size: 2.8rem; color: var(--accent); }
     .race-id > div { display: grid; gap: 0.15rem; min-width: 0; }
@@ -258,6 +302,30 @@ export class TodayPage {
     const when = ago === 0 ? "aujourd'hui" : ago === 1 ? 'hier' : `il y a ${ago} jours`;
     return `Semaine ${wk} · dernière sortie ${when} : ${last.name || 'sortie'}, ${km(last.distanceKm)}`;
   });
+
+  // Séance du jour : calendrier COROS prioritaire, sinon plan importé ; une fois faite, résumé de la sortie
+  protected readonly agenda = computed(() => {
+    const planned = this.sci.upcomingPlanned();
+    const today = isoDay(this.today);
+    const tomorrow = isoDay(addDays(this.today, 1));
+    const done = this.acts().filter((a) => a.date === today);
+    // La course d'abord, le renfo ensuite
+    const order = (list: PlannedSession[]) => [...list].sort((a, b) => Number(a.kind === 'strength') - Number(b.kind === 'strength'));
+    const todays = order(planned.filter((s) => s.date === today));
+    const next = order(planned.filter((s) => s.date === tomorrow));
+    // Rien de prévu nulle part : pas de carte (sauf une sortie faite alors qu'un plan existe)
+    if (!planned.length) return null;
+    return { done, today: todays, tomorrow: next };
+  });
+  /** Fiche de l'objectif dont le plan est suivi */
+  protected readonly planLink = computed(() => {
+    const e = this.sci.upcomingGoals().find((x) => x.goal.plan?.sessions.length);
+    return e ? ['/courses', e.goal.id] : null;
+  });
+  protected names = (list: PlannedSession[]) => list.map((s) => s.name).join(' + ');
+  protected kindLabel = (s: PlannedSession) => (s.kind ? PLAN_KIND_LABELS[s.kind] : 'Calendrier COROS');
+  protected sessionLine = (s: PlannedSession) =>
+    [s.durationSec ? duration(s.durationSec) : null, s.distanceKm ? `${num(s.distanceKm, 1)} km` : null, s.phase ?? null].filter(Boolean).join(' · ');
 
   // Prochaine course
   protected readonly nextGoal = computed(() => this.sci.upcomingGoals()[0] ?? null);

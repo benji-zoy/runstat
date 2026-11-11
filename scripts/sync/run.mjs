@@ -10,6 +10,7 @@
 //   node scripts/sync/run.mjs --refit [jours]   (retélécharge les FIT / tracés des 14 derniers jours, écrase les anciens, puis build-fit + build-data)
 //   node scripts/sync/run.mjs --rebuild         (sans les sources : reconstruction après une saisie depuis le site)
 //   node scripts/sync/run.mjs --import-strava <zip>  (archive Strava envoyée depuis le site, supprimée après import)
+//   node scripts/sync/run.mjs --coros-plan <goalId>  (envoi du plan importé dans le calendrier COROS, puis build-data)
 // Réponses brutes : data-raw/raw/<source>/<type>/… ; état : data-raw/sync-state.json.
 import { existsSync, readFileSync, writeFileSync, statSync, unlinkSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -25,6 +26,8 @@ import { rawDir } from '../paths.mjs';
 import { NodeStore } from '../node-storage.mjs';
 import { importStravaArchive } from './strava-archive.mjs';
 import { ACTIVITY_ID, readSources } from './sources.mjs';
+import { GOAL_ID, validatePlan, writeJsonAtomic } from './entries.mjs';
+import { pushPlanToCoros } from '#engine/plan/coros-plan.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 // Données de l'utilisateur du run (RUNSTAT_RAW posé par server.mjs, sinon data-raw/ du dépôt)
@@ -36,6 +39,11 @@ const refit = args.includes('--refit');
 const refitDays = refit && /^\d+$/.test(args[args.indexOf('--refit') + 1] ?? '') ? Math.min(Number(args[args.indexOf('--refit') + 1]), 60) : 14;
 const rebuildOnly = args.includes('--rebuild');
 const archive = args.includes('--import-strava') ? args[args.indexOf('--import-strava') + 1] : null;
+const corosPlan = args.includes('--coros-plan') ? args[args.indexOf('--coros-plan') + 1] : null;
+if (corosPlan !== null && !GOAL_ID.test(corosPlan ?? '')) {
+  console.error('Usage : --coros-plan <identifiant d’objectif>');
+  process.exit(1);
+}
 if (fitOnly !== null && !ACTIVITY_ID.test(fitOnly ?? '')) {
   console.error('Usage : --fit <labelId COROS | strava:<id> | garmin:<id>>');
   process.exit(1);
@@ -92,12 +100,32 @@ try {
       rmSync(archive, { force: true });
     }
     await sync.saveState();
+  } else if (corosPlan) {
+    // Seule écriture vers COROS, à la demande : réussite ou erreur gardées dans le plan (affichées sur la fiche de l'objectif)
+    const file = join(raw, 'plans', `${corosPlan}.json`);
+    const plan = readJson(file, null);
+    const goal = readJson(join(raw, 'goals.json'), []).find((g) => g.id === corosPlan);
+    if (plan && goal) {
+      log(`Envoi du plan « ${goal.name} » dans COROS…`);
+      try {
+        const coros = await pushPlanToCoros(clients.coros, plan, goal.name, new Date().toLocaleDateString('sv-SE'));
+        plan.coros = coros;
+        log(`Plan COROS : ${coros.sessions} séances sur ${coros.weeks} semaines`);
+      } catch (e) {
+        plan.coros = { ...(plan.coros ?? {}), error: e.message.slice(0, 500), errorAt: new Date().toISOString() };
+        log(`Plan COROS : ÉCHEC — ${e.message}`);
+      }
+      writeJsonAtomic(file, validatePlan(corosPlan, plan));
+    }
+    step('build-data.mjs');
   } else if (rebuildOnly) {
     log('Reconstruction après une saisie…');
   } else {
     await sync.syncAll();
   }
-  if ((fitOnly || refit) && !state.lastFitError) {
+  if (corosPlan) {
+    // déjà reconstruit
+  } else if ((fitOnly || refit) && !state.lastFitError) {
     try {
       step('build-fit.mjs');
       step('build-data.mjs');
