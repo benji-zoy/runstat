@@ -103,8 +103,11 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           <div class="field wide">Connexion COROS
             <span class="hint">{{ corosConnection() }}</span>
             <div class="upload">
-              <a class="btn primary" [attr.href]="local ? '#' : connectUrl('coros')" (click)="go($event, 'coros')">{{ sync.status()?.corosConnected ? 'Reconnecter COROS' : 'Connecter COROS' }}</a>
+              <a class="btn primary" [class.disabled]="lanLocked()" [attr.aria-disabled]="lanLocked() || null" [attr.href]="local ? '#' : connectUrl('coros')" (click)="go($event, 'coros')">{{ sync.status()?.corosConnected ? 'Reconnecter COROS' : 'Connecter COROS' }}</a>
             </div>
+            @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+            }
             <span class="hint">COROS te demande d’autoriser RunStat à lire tes activités et ta santé ; tu reviens ensuite ici.
               Une seule connexion à la fois : le jeton COROS change à chaque renouvellement.</span>
           </div>
@@ -114,8 +117,11 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             <span class="hint">{{ googleConnection() }}</span>
             @if (sync.status()?.googleClient) {
               <div class="upload">
-                <a class="btn primary" [attr.href]="local ? '#' : connectUrl('google')" (click)="go($event, 'google')">{{ sync.status()?.googleConnected ? 'Reconnecter Google' : 'Connecter Google' }}</a>
+                <a class="btn primary" [class.disabled]="lanLocked()" [attr.aria-disabled]="lanLocked() || null" [attr.href]="local ? '#' : connectUrl('google')" (click)="go($event, 'google')">{{ sync.status()?.googleConnected ? 'Reconnecter Google' : 'Connecter Google' }}</a>
               </div>
+              @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+              }
               <span class="hint">Passe par l’appli Google Cloud du propriétaire : il doit t’y avoir ajouté comme testeur, et y avoir
                 déclaré l’adresse de retour <code>{{ local ? device.redirect('google') : stravaOrigin() + '/api/google/callback' }}</code>.
                 En mode test, Google redemande l’autorisation chaque semaine.</span>
@@ -144,17 +150,23 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               <div class="client" (keydown.enter)="$event.preventDefault(); saveClient()">
                 <input type="text" [formControl]="clientId" inputmode="numeric" autocomplete="off" placeholder="Client ID" aria-label="Client ID" />
                 <input type="password" [formControl]="clientSecret" autocomplete="off" placeholder="Client Secret" aria-label="Client Secret" />
-                <button type="button" class="btn" [disabled]="entries.saving()" (click)="saveClient()">Enregistrer l’appli</button>
+                <button type="button" class="btn" [disabled]="entries.saving() || lanLocked()" (click)="saveClient()">Enregistrer l’appli</button>
                 @if (sync.status()?.stravaClient) {
                   <button type="button" class="btn" (click)="editingClient.set(false)">Annuler</button>
                 }
               </div>
+            @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+            }
               <span class="hint">{{ local ? 'Ils restent sur cet appareil (et dans ta sauvegarde chiffrée)' : 'Ils restent sur le NAS' }} et ne s’affichent plus ensuite.</span>
             } @else {
               <div class="upload">
-                <a class="btn primary" [attr.href]="local ? '#' : connectUrl('strava')" (click)="go($event, 'strava')">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
-                <button type="button" class="btn" (click)="editClient()">Changer d’appli</button>
+                <a class="btn primary" [class.disabled]="lanLocked()" [attr.aria-disabled]="lanLocked() || null" [attr.href]="local ? '#' : connectUrl('strava')" (click)="go($event, 'strava')">{{ sync.status()?.stravaConnected ? 'Reconnecter Strava' : 'Connecter Strava' }}</a>
+                <button type="button" class="btn" [disabled]="lanLocked()" (click)="editClient()">Changer d’appli</button>
               </div>
+            @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+            }
               <span class="hint">Strava te demande d’autoriser RunStat à lire tes sorties : laisse les cases cochées
                 (sinon tes sorties privées ne seront pas synchronisées) et valide ; tu reviens ensuite ici.</span>
             }
@@ -169,9 +181,9 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
             <span class="hint">Pour tout l'historique : sur strava.com, Paramètres › Mon compte › Télécharger ou supprimer ton compte ›
               Demander une archive. Le zip arrive par e-mail quelques heures plus tard ; {{ local ? 'choisis-le ici tel quel : il est lu sur l’appareil et n’est jamais envoyé.' : 'envoie-le ici tel quel.' }}</span>
             <div class="upload">
-              <label class="btn" [class.disabled]="entries.uploading() !== null || sync.running()">
+              <label class="btn" [class.disabled]="entries.uploading() !== null || sync.running() || lanLocked()">
                 <input type="file" accept=".zip,application/zip" hidden (change)="upload($event)"
-                  [disabled]="entries.uploading() !== null || sync.running()" />
+                  [disabled]="entries.uploading() !== null || sync.running() || lanLocked()" />
                 {{ entries.uploading() !== null ? (local ? 'Import…' : 'Envoi…') : 'Importer l’archive' }}
               </label>
               @if (entries.uploading() !== null) {
@@ -179,6 +191,9 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
                 <span class="hint">{{ pct(entries.uploading()!) }} %</span>
               }
             </div>
+            @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+            }
             <span class="hint">{{ uploadNotice() ?? stravaStatus() }}</span>
           </div>
         }
@@ -202,7 +217,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
                     <option [ngValue]="d">{{ d === 365 ? '1 an' : d + ' jours' }}</option>
                   }
                 </select>
-                <button type="button" class="btn" [disabled]="entries.saving() || busy()" (click)="saveGarminKey()">Enregistrer la clé</button>
+                <button type="button" class="btn" [disabled]="entries.saving() || busy() || lanLocked()" (click)="saveGarminKey()">Enregistrer la clé</button>
                 @if (sync.status()?.garminConnected) {
                   <button type="button" class="btn" (click)="editingGarmin.set(false)">Annuler</button>
                 }
@@ -210,11 +225,17 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
               <span class="hint">Garmin vérifie la clé avant qu’elle soit gardée. {{ local
                 ? 'Elle reste sur cet appareil (et dans ta sauvegarde chiffrée) ; comme Garmin refuse les appels depuis un navigateur, chaque synchro passe par le NAS qui t’héberge, sans rien y garder.'
                 : 'Elle reste sur le NAS' }} et ne s’affiche plus ensuite.</span>
+              @if (me.lanLocked()) {
+                <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+              }
             } @else {
               <div class="upload">
-                <button type="button" class="btn" (click)="editGarmin()">Changer de clé</button>
-                <button type="button" class="btn" [disabled]="entries.saving() || busy()" (click)="removeGarmin()">Retirer la clé</button>
+                <button type="button" class="btn" [disabled]="lanLocked()" (click)="editGarmin()">Changer de clé</button>
+                <button type="button" class="btn" [disabled]="entries.saving() || busy() || lanLocked()" (click)="removeGarmin()">Retirer la clé</button>
               </div>
+              @if (!local && me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+              }
             }
           </div>
         }
@@ -237,11 +258,14 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
           <h3 class="field wide group">Mes données</h3>
           <div class="field wide">
             <div class="upload">
-              <a class="btn" href="api/export" download>Exporter mes données (zip)</a>
+              <a class="btn" [class.disabled]="me.lanLocked()" [attr.aria-disabled]="me.lanLocked() || null" [attr.href]="me.lanLocked() ? null : 'api/export'" download>Exporter mes données (zip)</a>
               @if (canDelete()) {
                 <button type="button" class="btn danger" (click)="deleting.set(!deleting())">Supprimer mon compte…</button>
               }
             </div>
+            @if (me.lanLocked()) {
+              <span class="hint" role="status">Depuis l’adresse Tailscale seulement (réseau local non protégé).</span>
+            }
             <span class="hint">Tes sorties, ta santé, tes objectifs et réglages, sans les jetons de connexion.
               <a routerLink="/confidentialite" (click)="dialogClose()">Confidentialité</a></span>
             @if (deleting()) {
@@ -295,6 +319,9 @@ export class AthleteFormComponent {
   /** Domaine de rappel à déclarer dans l'appli Strava */
   protected readonly callbackDomain = computed(() => new URL(this.stravaOrigin()).hostname);
   /** Toujours par cette adresse (Tailscale), même depuis le réseau local : adresse de retour déclarée chez chaque service */
+  protected lanLocked(): boolean {
+    return !this.local && this.me.lanLocked();
+  }
   protected connectUrl(source: 'strava' | 'coros' | 'google' = 'strava'): string {
     return `${this.stravaOrigin()}/api/${source}/connect`;
   }
@@ -478,6 +505,7 @@ export class AthleteFormComponent {
 
   /** Connexion à une source : lien vers le NAS, ou autorisation lancée depuis l'appareil (local-first) */
   protected async go(event: Event, source: DeviceSource): Promise<void> {
+    if (this.lanLocked()) return void event.preventDefault();
     if (!this.local) return;
     event.preventDefault();
     if (this.busy()) return;

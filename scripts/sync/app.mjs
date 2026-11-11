@@ -50,6 +50,14 @@ const DATA_FILES = new Set(['coros.json', 'routes.json']);
 const ENTRY = /^\/api\/(goals|cycles|athlete|sources|results\/[^/]+|plans\/[^/]+)$/;
 const PLAN_COROS = /^\/api\/plans\/([^/]+)\/coros$/;
 const STRAVA_NAV = ['/api/strava/connect', CALLBACK_PATH];
+const LAN_LOCKED = ['/api/export', '/api/strava/client', '/api/garmin/key', '/api/strava/archive', '/api/strava/connect', '/api/coros/connect', '/api/google/connect'];
+/**
+ * Actions réservées à l'adresse Tailscale : export complet, secrets et connexions, import d'archive. La zone `lan` n'a aucune
+ * authentification (HTTP clair, tout appareil du Wi-Fi agit en propriétaire). Les callbacks OAuth restent ouverts : sans state
+ * valide (créé par un connect, donc en tailnet) ils n'écrivent rien. Instance mono-utilisateur (sans users.json : poste, ng serve,
+ * ancien NAS) : comportement historique, la zone n'y distingue rien.
+ */
+export const lanLocked = (zone, multi, path) => zone === 'lan' && multi && LAN_LOCKED.includes(path);
 
 const send = (res, status, body) => {
   res.writeHead(status, {
@@ -405,6 +413,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       },
     };
 
+    if (lanLocked(zone, acc.multi, path)) return send(res, 403, { error: 'possible seulement par l’adresse Tailscale (réseau local non protégé)' });
+
     // Navigations du navigateur (redirections OAuth) : sans en-tête X-RunStat, protégées par le state lié au compte
     if (STRAVA_NAV.includes(path)) {
       if (req.method !== 'GET') return send(res, 405, { error: 'méthode non autorisée' });
@@ -430,7 +440,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     }
     if (path === '/api/me') {
       if (req.method !== 'GET') return send(res, 405, { error: 'méthode non autorisée' });
-      return send(res, 200, { id: user.id, name: user.name, role: user.role, mode: user.mode, multi: acc.multi, admin: who.admin });
+      return send(res, 200, { id: user.id, name: user.name, role: user.role, mode: user.mode, multi: acc.multi, admin: who.admin, zone });
     }
     if (path.startsWith('/api/data/')) return data(req, res, path.slice('/api/data/'.length), paths);
     if (path === '/api/export') {

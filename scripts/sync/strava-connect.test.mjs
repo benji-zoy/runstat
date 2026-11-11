@@ -268,3 +268,12 @@ test('state : lié au compte, le retour de Strava chez un autre compte n’écri
     rmSync(otherSecrets, { recursive: true, force: true });
   }
 });
+
+test("state : au plus 20 en attente par compte, les plus anciens jetés", () => {
+  const store = new StateStore(() => 1_000_000);
+  const first = store.create({ userId: "a" });
+  const other = store.create({ userId: "b" });
+  for (let i = 0; i < 25; i++) store.create({ userId: "a" });
+  assert.equal(store.consume(first), null);
+  assert.ok(store.consume(other));
+});

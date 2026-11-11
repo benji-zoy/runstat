@@ -238,7 +238,15 @@ logins: [login Tailscale] }]`, un seul propriétaire, logins uniques sans casse 
   qu'ont les proches) → compte du propriétaire, sans administration ; en-têtes `Tailscale-User-*` effacés (`proxy.inc`).
 - `:81` → 8788, zone `tailnet` : `127.0.0.1:8090` du NAS, cible de Tailscale Serve (qui retire les `Tailscale-User-*` du client et pose
   les siens) ; seule la passerelle du réseau Docker (172.28.0.1, sous-réseau fixé dans le compose) est admise. Login vide, inconnu ou
-  compte `local` → 403.
+  compte `local` → 403. Tout processus local du NAS peut se connecter à ce port et forger `Tailscale-User-Login` : seuls des conteneurs
+  et services de confiance doivent tourner sur le NAS.
+- **Actions sensibles réservées au tailnet** (`lanLocked` de `app.mjs`, 403 « possible seulement par l'adresse Tailscale ») : la zone `lan`
+  n'a aucune authentification (HTTP clair, tout appareil du Wi-Fi agit en propriétaire), donc elle refuse `GET /api/export`,
+  `PUT /api/strava/client`, `PUT|DELETE /api/garmin/key`, `GET /api/strava|coros|google/connect` et `POST /api/strava/archive`. Le reste
+  (lecture, saisie, synchro) reste ouvert. Les callbacks OAuth restent ouverts mais n'écrivent rien sans `state` valide (créé par un
+  connect, donc en tailnet ; `StateStore` : 20 en attente par compte, 200 au total, les plus anciens jetés). Sans `users.json`
+  (mono-utilisateur : poste, `ng serve`), pas de verrou : la zone n'y distingue rien et le poste passe par `lan`. `GET /api/me` renvoie
+  `zone`, `MeService.lanLocked` désactive les boutons correspondants dans Réglages.
 Toutes les routes (`/api/sync`, `/api/fit`, saisie, `/api/strava/*`, `/api/data/<coros|routes>.json`) résolvent d'abord le compte puis
 ne touchent qu'à ses dossiers (`userPaths`) ; nginx renvoie `/data/` vers `/api/data/` (plus d'instantané dans la racine web).
 `GET /api/me` ; `GET|PUT /api/admin/users` (propriétaire par le tailnet seulement ; il garde son compte, son rôle et le login de sa
@@ -304,7 +312,7 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   « Mes données ») : ce qui va où selon le mode, tiers contactés, durées, droits. **À tenir à jour** quand un flux change.
 - Export (portabilité) : zip « stocké » du moteur (`src/engine/archive/zip-writer.ts`, `zipStream`, sans zip64 : 4 Gio et 65 535 fichiers
   au plus), `data-raw/` sans `secrets/` ni fichiers techniques (`EXPORT_EXCLUDED`), `snapshot/`, `LISEZMOI.txt`. Hébergé :
-  `GET /api/export` (en flux, Réglages › Mes données) ; appareil : `LocalService.exportZip()` (Compte et sauvegarde › Mes données).
+  `GET /api/export` (en flux, Réglages › Mes données ; refusé en zone `lan` d'une instance à comptes : adresse Tailscale seulement) ; appareil : `LocalService.exportZip()` (Compte et sauvegarde › Mes données).
 - Suppression : proche hébergé, `DELETE /api/account { confirm: <id> }` (tailnet seulement, jamais le propriétaire ; dossier
   `users/<id>/` effacé, compte retiré de `users.json`, accès public révoqué, tâches en attente abandonnées, 409 pendant un run) ;
   local-first, « Tout effacer » : `DELETE /auth/account` (ré-authentification par passkey : sauvegarde en suppression douce 30 jours,
