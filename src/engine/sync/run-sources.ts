@@ -56,6 +56,8 @@ export interface SyncOptions {
   only?: SourceKey | null;
   overlapDays?: number;
   fitPerRun?: number;
+  /** Taille au plus d'un FIT COROS téléchargé (MAX_FIT_BYTES) */
+  maxFitBytes?: number;
   detailsPerRun?: number;
   streamsPerRun?: number;
   /** Conserver les réponses brutes (raw/<source>/…) : sur le NAS, pas sur l'appareil (sauvegarde plus légère) */
@@ -76,6 +78,29 @@ const TOKEN_FILE: Record<SourceKey, string> = {
   garminHealth: GARMIN_KEY_FILE,
 };
 
+/** Un FIT COROS fait quelques centaines de Ko (quelques Mo pour un ultra) : au-delà, la réponse n'est pas lue */
+export const MAX_FIT_BYTES = 32 * 1024 * 1024;
+
+/** Corps d'une réponse, null s'il dépasse `max` octets (annoncés ou reçus) : lu par morceaux, jamais au-delà */
+async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+  if (Number(res.headers.get('content-length') ?? 0) > max) return void (await res.body?.cancel()), null;
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > max) return void (await reader.cancel()), null;
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let p = 0;
+  for (const c of chunks) (out.set(c, p), (p += c.length));
+  return out;
+}
+
 const localToday = () => new Date().toLocaleDateString('sv-SE');
 export const addDays = (date: string, n: number): string => {
   const d = new Date(`${date}T12:00:00Z`);
@@ -90,6 +115,7 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
   const {
     overlapDays = 3,
     fitPerRun = 50,
+    maxFitBytes = MAX_FIT_BYTES,
     detailsPerRun = 60,
     streamsPerRun = 40,
     stage: keepRaw = true,
@@ -286,8 +312,9 @@ export function sourceSync(raw: FileStore, clients: SourceClients, opts: SyncOpt
       s.fitQuotaHitAt = new Date().toISOString();
       return 'quota';
     }
+    // Seulement l'hôte des FIT COROS (fitUrls) et une taille bornée
     const url = pc.fitUrls(res.text)[0];
-    const buf = url ? new Uint8Array(await (await fetchRetry(need(clients.coros, 'coros').fetch, url)).arrayBuffer()) : null;
+    const buf = url ? await readCapped(await fetchRetry(need(clients.coros, 'coros').fetch, url), maxFitBytes) : null;
     if (!buf || !pc.isFitFile(buf)) {
       failed[r.id] = (failed[r.id] ?? 0) + 1;
       log(`  FIT indisponible pour ${r.id} (${r.date}) : « ${res.text.slice(0, 120)} »`);

@@ -66,7 +66,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short'
           }
         </span>
       </p>
-      <app-chart [config]="chart()!" style="--chart-h: 240px" />
+      <app-chart label="Évolution des chronos estimés" [config]="chart()!" style="--chart-h: 240px" />
     } @else {
       <p class="muted">Pas assez de courses ni d'efforts mesurés sur la période pour estimer un chrono.</p>
     }

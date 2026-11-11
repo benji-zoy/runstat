@@ -30,6 +30,10 @@ const PATHS = {
   download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
   share: 'M4 12v8h16v-8M12 3v13M7 8l5-5 5 5',
   check: 'M5 12.5l4.5 4.5L19 7.5',
+  altitude: 'M3 20l6-11 4 7 3-4 5 8z',
+  elevation: 'M3 20h4v-5h4v-5h4V5h6',
+  heat: 'M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z',
+  wind: 'M3 8h11a2.5 2.5 0 1 0-2.5-2.5M3 12h16a2.5 2.5 0 1 1-2.5 2.5M3 16h8',
 } as const;
 
 export type IconName = keyof typeof PATHS;

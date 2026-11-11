@@ -132,8 +132,18 @@ export function mergeLoad(existingText: string | null | undefined, fetchedText: 
 /** Message de quota FIT atteint (texte, sans code d'erreur) */
 export const isFitQuota = (text: string): boolean => /daily limit|limit of \d+ .*fit/i.test(unwrap(text));
 
-/** URL de fichiers FIT dans la réponse de queryActivityFitFileDownloadUrls */
-export const fitUrls = (text: string): string[] => [...new Set(unwrap(text).match(/https:\/\/[^\s"'<>)\]]+/g) ?? [])];
+/** Hôte des fichiers FIT COROS (s3eu.coros.com) : https, coros.com ou un sous-domaine, port par défaut, sans identifiants */
+export function isCorosFileUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && (u.hostname === 'coros.com' || u.hostname.endsWith('.coros.com')) && !u.port && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+/** URL de fichiers FIT dans la réponse de queryActivityFitFileDownloadUrls ; toute autre adresse est ignorée */
+export const fitUrls = (text: string): string[] => [...new Set(unwrap(text).match(/https:\/\/[^\s"'<>)\]]+/g) ?? [])].filter(isCorosFileUrl);
 
 /** Séance prévue au calendrier (COROS : queryTrainingSchedule) → data-raw/planned.json */
 export interface PlannedSession {

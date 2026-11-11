@@ -6,10 +6,11 @@ import {
   isDevMode,
 } from '@angular/core';
 import { registerLocaleData } from '@angular/common';
-import { ActivatedRouteSnapshot, provideRouter, withInMemoryScrolling, withViewTransitions } from '@angular/router';
+import { ActivatedRouteSnapshot, TitleStrategy, provideRouter, withInMemoryScrolling, withViewTransitions } from '@angular/router';
 import { MotionService } from './ui/motion';
 import localeFr from '@angular/common/locales/fr';
 import { routes } from './app.routes';
+import { PageTitleStrategy } from './core/page-title';
 import { provideServiceWorker } from '@angular/service-worker';
 
 registerLocaleData(localeFr);
@@ -30,6 +31,7 @@ export const appConfig: ApplicationConfig = {
         },
       }),
     ),
+    { provide: TitleStrategy, useExisting: PageTitleStrategy },
     { provide: LOCALE_ID, useValue: 'fr-FR' },
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),

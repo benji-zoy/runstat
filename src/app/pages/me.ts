@@ -39,20 +39,6 @@ import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
       </div>
     }
 
-    <section class="section">
-      <h2>Amis</h2>
-      <div class="card soon">
-        <app-icon name="users" />
-        <div>
-          <b>Bientôt : compare-toi à tes amis</b>
-          <p class="muted">
-            Invite-les par lien ou QR code, puis comparez vos chronos à âge égal, vos volumes et vos profils.
-            Tu choisis ce que chaque ami voit ; ta santé, tes tracés et tes horaires ne sont jamais partagés.
-          </p>
-        </div>
-      </div>
-    </section>
-
     @if (total()) {
       <section class="section">
         <h2>Avec une IA</h2>
@@ -116,6 +102,10 @@ import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
         <p class="muted small">Données {{ sourceLabel() }} du {{ updatedAt() }}@if (sync.available()) { · {{ sync.title() }}}</p>
       }
     </section>
+    <p class="soon-note muted">
+      <app-icon name="users" />
+      <span><b>Amis, bientôt</b> : compare-toi à tes amis (chronos à âge égal, volumes, profils). Tu choisiras ce que chacun voit ; ta santé, tes tracés et tes horaires ne seront jamais partagés.</span>
+    </p>
   `,
   styles: `
     :host { display: block; }
@@ -134,9 +124,9 @@ import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
     .stat .level { display: flex; align-items: center; gap: 0.5rem; font: 800 1.6rem var(--font-display); font-stretch: var(--display-stretch); }
     .stat .level i { width: 0.8rem; height: 0.8rem; border-radius: 50%; box-shadow: 0 0 0 2px var(--border); }
     .stat .muted { font-size: 0.8rem; }
-    .soon { display: flex; gap: 0.9rem; align-items: flex-start; --icon: 1.4rem; color: var(--text-secondary); }
-    .soon b { color: var(--text-primary); }
-    .soon p { margin: 0.3rem 0 0; font-size: 0.88rem; }
+    .soon-note { display: flex; gap: 0.6rem; align-items: flex-start; margin: 2rem 0 0; font-size: 0.82rem; line-height: 1.45; --icon: 1.1rem; }
+    .soon-note app-icon { margin-top: 0.1rem; }
+    .soon-note b { font-weight: 600; color: var(--text-secondary); }
     .row-link, .row {
       display: flex; align-items: center; gap: 0.9rem; width: 100%; min-height: 3.5rem; color: var(--text-primary);
       text-decoration: none; text-align: left; font: inherit; --icon: 1.2rem;

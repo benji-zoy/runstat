@@ -1,0 +1,35 @@
+# Contrôle des pull requests vers main : tests, syntaxe du moteur, synchro, et les deux constructions (site du NAS, appli publique).
+# Même socle que pages.yml : actions épinglées par SHA, npm ci, droits minimaux. Les doublons iCloud (« fichier 2.ts ») ne sont
+# pas versionnés (.gitignore) : ce contrôle part d'une copie propre du dépôt.
+name: Contrôle
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.14'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx ng test --watch=false
+      - run: npm run check:engine
+      - run: npm run test:sync
+      - name: Construction du site
+        run: npx ng build
+      - name: Construction de l'appli publique
+        run: npx ng build -c pages

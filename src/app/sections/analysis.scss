@@ -121,6 +121,8 @@ td.alert {
   border: 1px solid var(--c);
   background: color-mix(in srgb, var(--c) 14%, transparent);
   font-size: 0.85rem;
+
+  .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--c); }
 }
 
 .parts {

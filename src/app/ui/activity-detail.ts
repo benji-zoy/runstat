@@ -1,4 +1,4 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { Activity } from '../core/models';
 import { DataService } from '../core/data.service';
 import { ScienceService } from '../core/science.service';
@@ -32,22 +32,42 @@ const EFFORTS: [string, string][] = [
   template: `
     @let a = activity();
     <div class="tags">
-      <span class="type" [style.--c]="type().color">{{ type().icon }} {{ type().label }}</span>
+      <span class="type" [style.--c]="type().color"><i class="dot" aria-hidden="true"></i>{{ type().label }}</span>
       @for (n of notes(); track n) {
         <span class="notable">⭐ {{ n }}</span>
       }
     </div>
 
-    <div class="layout" [class.with-map]="track()">
-      <div class="body">
-        <dl class="metrics">
-          @for (m of metrics(); track m.label) {
-            <div>
-              <dt>{{ m.label }}</dt>
-              <dd>{{ m.value }}</dd>
-            </div>
+    @if (track(); as t) {
+      <app-route-map [tracks]="[t]" />
+    }
+
+    <div class="body">
+      @if (groups().length) {
+        <div class="groups">
+          @for (g of groups(); track g.id) {
+            @if (g.fold) {
+              <details class="group fold" [open]="!compact()">
+                <summary class="fit-title">{{ g.title }}</summary>
+                <dl class="metrics">
+                  @for (m of g.rows; track m.label) {
+                    <div><dt>{{ m.label }}</dt><dd>{{ m.value }}</dd></div>
+                  }
+                </dl>
+              </details>
+            } @else {
+              <section class="group">
+                <h3 class="fit-title">{{ g.title }}</h3>
+                <dl class="metrics">
+                  @for (m of g.rows; track m.label) {
+                    <div><dt>{{ m.label }}</dt><dd>{{ m.value }}</dd></div>
+                  }
+                </dl>
+              </section>
+            }
           }
-        </dl>
+        </div>
+      }
 
         <app-conditions [activity]="a" />
 
@@ -100,24 +120,31 @@ const EFFORTS: [string, string][] = [
             </div>
           </div>
         }
-      </div>
-
-      @if (track(); as t) {
-        <app-route-map [tracks]="[t]" />
-      }
     </div>
   `,
   styles: `
     :host { display: grid; gap: 0.9rem; padding: 0.9rem 0.25rem 1.1rem; }
     .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .type, .notable { padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
+    .type .dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--c); margin-right: 0.4rem; vertical-align: 0.05em; }
     .type { border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
     .notable { background: var(--accent-soft); color: var(--accent-text); }
-    .layout { display: grid; gap: 1rem; }
-    .layout.with-map { grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr); }
-    @media (max-width: 800px) { .layout.with-map { grid-template-columns: minmax(0, 1fr); } }
+    app-route-map { --map-h: 320px; }
+    @media (max-width: 800px) { app-route-map { --map-h: 240px; } }
+    .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 0.9rem 1.25rem; align-items: start; }
+    .group { display: grid; gap: 0.5rem; margin: 0; }
+    h3.fit-title { margin: 0; font-weight: 400; }
+    details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.4rem; min-height: 32px; }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::after { content: ''; width: 0.4rem; height: 0.4rem; margin-left: auto; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform var(--dur, 0.2s); }
+    details.fold[open] > summary::after { transform: rotate(-135deg); }
+    details.fold[open] > summary { margin-bottom: 0.5rem; }
+    @media (min-width: 801px) {
+      details.fold > summary { pointer-events: none; }
+      details.fold > summary::after { display: none; }
+    }
     .body { display: grid; gap: 0.8rem; align-content: start; }
-    .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.5rem; margin: 0; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.5rem; margin: 0; }
     .metrics div { background: var(--surface-2); border-radius: 8px; padding: 0.5rem 0.7rem; }
     dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
     dd { margin: 0.1rem 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -182,6 +209,9 @@ export class ActivityDetailComponent {
     };
   });
 
+  /** Téléphone : les groupes secondaires démarrent repliés */
+  protected readonly compact = signal(typeof matchMedia === 'function' && matchMedia('(max-width: 800px)').matches);
+
   constructor() {
     this.store.loadRoutes();
   }
@@ -206,37 +236,59 @@ export class ActivityDetailComponent {
     return ['Facile', 'Modéré', 'Intense'].map((label, i) => ({ label: `${label} ${Math.round((z[i] / total) * 100)} %`, share: z[i] / total }));
   });
 
-  protected readonly metrics = computed(() => {
+  /**
+   * Chiffres regroupés. Distance (précise), durée et allure moyenne sont dans l'en-tête de la page, le départ dans sa date :
+   * seule la distance au centième est gardée ici.
+   */
+  protected readonly groups = computed(() => {
     const a = this.activity();
     const f = a.fit;
-    const time = a.start ? new Date(a.start * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
     const tr = trimp(a, this.sci.athlete());
     const caps = this.sci.caps();
-    const rows: { label: string; value: string }[] = [
-      { label: 'Départ', value: time ?? '–' },
-      { label: 'Distance', value: `${num(a.distanceKm, 2)} km` },
-      { label: 'Durée', value: clock(a.durationSec) },
-      { label: 'Allure', value: `${pace(a.durationSec / a.distanceKm)} /km` },
-      ...(f ? [{ label: 'Allure plat équiv.', value: `${pace(a.durationSec / (f.gapDistance / 1000))} /km` }] : []),
-      { label: 'Meilleur km', value: a.bestKmSec ? `${pace(a.bestKmSec)} /km` : '–' },
-      { label: 'D+ / D−', value: a.elevGain != null ? `${a.elevGain} / ${a.elevLoss ?? '–'} m` : '–' },
-      ...(a.kind === 'trail' || (a.elevGain ?? 0) > 300 ? [{ label: 'Km-effort', value: num(kmEffort(a), 1) }] : []),
-      { label: 'FC moy. / max', value: a.avgHr ? `${a.avgHr}${f?.maxHr ? ' / ' + f.maxHr : ''} bpm` : '–' },
-      { label: 'Cadence', value: a.cadence ? `${a.cadence} ppm` : '–' },
-      { label: 'Foulée', value: a.stride ? `${num(a.stride, 2)} m` : '–' },
-      { label: 'Puissance', value: a.power ? `${a.power} W` : '–' },
-      // Sans COROS, la charge est déjà le TRIMP (build-data) : une seule ligne
-      ...(caps.corosLoad ? [{ label: caps.loadLabel, value: a.trainingLoad != null ? String(a.trainingLoad) : '–' }] : []),
-      { label: 'TRIMP', value: tr != null ? num(tr) : '–' },
-      ...(f?.decoupling != null ? [{ label: 'Découplage', value: `${num(f.decoupling, 1)} %` }] : []),
-      ...(caps.trainingEffect
-        ? [
-            { label: 'TE aéro / anaéro', value: a.aerobicTE != null ? `${num(a.aerobicTE, 1)} / ${num(a.anaerobicTE ?? 0, 1)}` : '–' },
-            { label: 'Focus', value: a.focus ? (FOCUS[a.focus] ?? a.focus) : '–' },
-          ]
-        : []),
-      { label: 'Calories', value: a.calories ? `${num(a.calories)} kcal` : '–' },
+    type Row = { label: string; value: string };
+    const groups: { id: string; title: string; fold: boolean; rows: Row[] }[] = [
+      {
+        id: 'allure', title: 'Allure', fold: false,
+        rows: [
+          { label: 'Distance', value: `${num(a.distanceKm, 2)} km` },
+          ...(f ? [{ label: 'Allure plat équiv.', value: `${pace(a.durationSec / (f.gapDistance / 1000))} /km` }] : []),
+          { label: 'Meilleur km', value: a.bestKmSec ? `${pace(a.bestKmSec)} /km` : '–' },
+          { label: 'D+ / D−', value: a.elevGain != null ? `${a.elevGain} / ${a.elevLoss ?? '–'} m` : '–' },
+          ...(a.kind === 'trail' || (a.elevGain ?? 0) > 300 ? [{ label: 'Km-effort', value: num(kmEffort(a), 1) }] : []),
+        ],
+      },
+      {
+        id: 'cardio', title: 'Cardio', fold: false,
+        rows: [
+          { label: 'FC moy. / max', value: a.avgHr ? `${a.avgHr}${f?.maxHr ? ' / ' + f.maxHr : ''} bpm` : '–' },
+          ...(f?.decoupling != null ? [{ label: 'Découplage', value: `${num(f.decoupling, 1)} %` }] : []),
+          { label: 'TRIMP', value: tr != null ? num(tr) : '–' },
+        ],
+      },
+      {
+        id: 'foulee', title: 'Foulée', fold: true,
+        rows: [
+          { label: 'Cadence', value: a.cadence ? `${a.cadence} ppm` : '–' },
+          { label: 'Foulée', value: a.stride ? `${num(a.stride, 2)} m` : '–' },
+          { label: 'Puissance', value: a.power ? `${a.power} W` : '–' },
+        ],
+      },
+      {
+        id: 'charge', title: 'Charge', fold: true,
+        rows: [
+          // Sans COROS, la charge est déjà le TRIMP (build-data) : une seule ligne
+          ...(caps.corosLoad ? [{ label: caps.loadLabel, value: a.trainingLoad != null ? String(a.trainingLoad) : '–' }] : []),
+          ...(caps.trainingEffect
+            ? [
+                { label: 'TE aéro / anaéro', value: a.aerobicTE != null ? `${num(a.aerobicTE, 1)} / ${num(a.anaerobicTE ?? 0, 1)}` : '–' },
+                { label: 'Focus', value: a.focus ? (FOCUS[a.focus] ?? a.focus) : '–' },
+              ]
+            : []),
+          { label: 'Calories', value: a.calories ? `${num(a.calories)} kcal` : '–' },
+        ],
+      },
     ];
-    return rows;
+    // Un groupe sans aucune valeur ne s'affiche pas
+    return groups.filter((g) => g.rows.some((r) => r.value !== '–'));
   });
 }

@@ -4,6 +4,7 @@ import { ScienceService } from '../core/science.service';
 import { SyncService } from '../core/sync.service';
 import { conditionsSummary, formatPct, reportText } from '../core/conditions';
 import { clock, pace } from '../core/format';
+import { IconComponent } from './icon';
 
 /**
  * Coût des conditions d'une sortie (façon « rapport Enduraw ») : altitude, dénivelé, température et vent en %,
@@ -11,12 +12,13 @@ import { clock, pace } from '../core/format';
  */
 @Component({
   selector: 'app-conditions',
+  imports: [IconComponent],
   template: `
     @if (report(); as r) {
       @if (compact()) {
         <p class="line">
           @for (f of r.factors; track f.key) {
-            <span>{{ f.emoji }} {{ f.label }} <b [class]="tone(f.pct)">{{ pct(f.pct) }}</b></span>
+            <span><app-icon [name]="f.key" /> {{ f.label }} <b [class]="tone(f.pct)">{{ pct(f.pct) }}</b></span>
           }
         </p>
         <p class="muted small">{{ summary() }}</p>
@@ -37,7 +39,7 @@ import { clock, pace } from '../core/format';
         <ul class="factors">
           @for (f of r.factors; track f.key) {
             <li>
-              <span class="name">{{ f.emoji }} {{ f.label }}</span>
+              <span class="name"><app-icon [name]="f.key" /> {{ f.label }}</span>
               <span class="bar" aria-hidden="true">
                 <span [class]="'fill ' + tone(f.pct)" [style.width.%]="width(f.pct)" [class.right]="f.pct > 0"></span>
               </span>
@@ -87,6 +89,7 @@ import { clock, pace } from '../core/format';
   `,
   styles: `
     :host { display: grid; gap: 0.6rem; }
+    app-icon { vertical-align: -0.18em; --icon: 1.05em; color: var(--text-muted); }
     .head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .fit-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
     button { font: inherit; font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 7px; border: 1px solid var(--border);

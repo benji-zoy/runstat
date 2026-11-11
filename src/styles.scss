@@ -410,6 +410,20 @@ td.wrap {
   }
 }
 
+// Cibles tactiles : 44 px au doigt sans changer l'apparence (la zone déborde par un pseudo-élément, sur ordinateur rien ne change)
+@media (pointer: coarse) {
+  .chip,
+  .seg button {
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: -5px 0;
+    }
+  }
+}
+
 // Étiquette de tuile chiffrée
 .label {
   font-size: 0.72rem;

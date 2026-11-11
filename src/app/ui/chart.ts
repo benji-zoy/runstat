@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, computed, ElementRef, effect, inject, input, signal, viewChild } from '@angular/core';
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 import { ThemeService } from '../core/theme.service';
 import { cssVar, resolveColors } from './palette';
@@ -125,7 +125,7 @@ function entrance(config: ChartConfiguration, canvas: HTMLCanvasElement): ChartC
 @Component({
   selector: 'app-chart',
   template: `
-    <canvas #canvas></canvas>
+    <canvas #canvas role="img" [attr.aria-label]="alt()"></canvas>
     @if (!mini()) {
       <button type="button" class="zoom" (click)="openZoom()" aria-label="Agrandir le graphique" title="Agrandir">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
@@ -135,7 +135,7 @@ function entrance(config: ChartConfiguration, canvas: HTMLCanvasElement): ChartC
           <button type="button" class="zoom-close" (click)="dialog.close()" aria-label="Fermer">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
           </button>
-          <div class="zoom-chart"><canvas #big></canvas></div>
+          <div class="zoom-chart"><canvas #big role="img" [attr.aria-label]="alt()"></canvas></div>
         </div>
       </dialog>
     }
@@ -168,6 +168,12 @@ export class ChartComponent {
   readonly config = input.required<ChartConfiguration>();
   /** Vignette : sans axes ni interactions, pas de bouton d'agrandissement */
   readonly mini = input(false);
+  /** Texte alternatif (aria-label) du canevas ; sinon le titre du graphique, sinon « Graphique » */
+  readonly label = input<string>('');
+  protected readonly alt = computed(() => {
+    const title = this.config().options?.plugins?.title?.text;
+    return this.label() || (typeof title === 'string' ? title : Array.isArray(title) ? title.join(' ') : '') || 'Graphique';
+  });
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private readonly big = viewChild<ElementRef<HTMLCanvasElement>>('big');

@@ -2,6 +2,7 @@ import { Component, ElementRef, computed, effect, inject, signal, viewChild } fr
 import { Location } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { usePageTitle } from '../core/page-title';
 import { ScienceService } from '../core/science.service';
 import { EntriesService } from '../core/entries.service';
 import { GoalEvaluation } from '../core/goals';
@@ -165,6 +166,7 @@ export class GoalPage {
   protected readonly num = num;
 
   protected readonly ev = computed(() => this.sci.goals().find((e) => e.goal.id === this.params()?.get('id')) ?? null);
+  private readonly pageTitle = usePageTitle(() => this.ev()?.goal.name);
   protected readonly planTarget = computed(() => {
     const e = this.ev();
     return e ? goalTarget(e) : null;

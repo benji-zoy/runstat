@@ -503,7 +503,7 @@
         }
       </div>
     </div>
-    <app-chart [config]="pmcChart()" style="--chart-h: 280px" />
+    <app-chart label="Forme, fatigue et fraîcheur" [config]="pmcChart()" style="--chart-h: 280px" />
     <app-chart [config]="tsbChart()" style="--chart-h: 150px" />
     <details class="method">
       <summary>Méthode</summary>
@@ -595,7 +595,7 @@
   <h2>Types de séances <small>classification automatique</small></h2>
   <div class="type-chips">
     @for (t of typeCounts(); track t.key) {
-      <span class="type-chip" [style.--c]="t.color">{{ t.icon }} {{ t.label }} <b>{{ t.count }}</b></span>
+      <span class="type-chip" [style.--c]="t.color"><i class="dot" aria-hidden="true"></i>{{ t.label }} <b>{{ t.count }}</b></span>
     }
   </div>
   <div class="types">
