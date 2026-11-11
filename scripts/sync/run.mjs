@@ -104,7 +104,8 @@ try {
     // Seule écriture vers COROS, à la demande : réussite ou erreur gardées dans le plan (affichées sur la fiche de l'objectif)
     const file = join(raw, 'plans', `${corosPlan}.json`);
     const plan = readJson(file, null);
-    const goal = readJson(join(raw, 'goals.json'), []).find((g) => g.id === corosPlan);
+    // Objectif ou cycle d'entraînement sans course : seul le nom sert (plan COROS « RunStat · <nom> »)
+    const goal = [...readJson(join(raw, 'goals.json'), []), ...readJson(join(raw, 'cycles.json'), [])].find((g) => g.id === corosPlan);
     if (plan && goal) {
       log(`Envoi du plan « ${goal.name} » dans COROS…`);
       try {

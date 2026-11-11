@@ -271,6 +271,8 @@ export class GoalFormComponent {
       debrief: old?.debrief,
       course: this.course() ?? undefined,
       parent: v.parent || undefined,
+      // Test de fin de cycle : reste rattaché à son cycle
+      cycle: old?.cycle,
     };
     await this.write(old ? goals.map((g) => (g.id === old.id ? goal : g)) : [...goals, goal], old ? null : goal.id);
   }

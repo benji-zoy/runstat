@@ -1,4 +1,4 @@
-import { InvalidEntry, validateGoals, validatePlan } from '../entries.ts';
+import { InvalidEntry, validateCycles, validateGoals, validatePlan } from '../entries.ts';
 import { MemoryStore } from '../storage/memory.ts';
 import { corosClient, WRITE_TOOLS, READ_TOOLS } from '../sync/coros.ts';
 import { fileTokenStore } from '../sync/http.ts';
@@ -89,6 +89,15 @@ describe('plan importé', () => {
     expect(validateGoals([main, { id: 'semi', name: 'Semi', date: '2026-03-08', distanceKm: 21.1, kind: 'road', parent: 'main' }])[1].parent).toBe('main');
     expect(() => validateGoals([main, { id: 'apres', name: 'Après', date: '2026-05-01', distanceKm: 10, kind: 'road', parent: 'main' }])).toThrow(/avant l’objectif principal/);
     expect(() => validateGoals([{ id: 'x', name: 'X', date: '2026-03-01', distanceKm: 10, kind: 'road', parent: 'nulle-part' }])).toThrow(/introuvable/);
+  });
+
+  it('valide les cycles sans course', () => {
+    const c = { id: 'cycle-speed-2026-11-16', name: 'Cycle Vitesse', focus: 'speed', start: '2026-11-16', weeks: 8 };
+    expect(validateCycles([c])).toEqual([c]);
+    expect(() => validateCycles([{ ...c, weeks: 20 }])).toThrow(/entre 4 et 16/);
+    expect(() => validateCycles([{ ...c, focus: 'sprint' }])).toThrow(InvalidEntry);
+    expect(() => validateCycles([c], ['cycle-speed-2026-11-16'])).toThrow(/double/);
+    expect(validateGoals([{ id: 't', name: 'Test 5 km', date: '2027-01-10', distanceKm: 5, kind: 'road', cycle: c.id }])[0].cycle).toBe(c.id);
   });
 });
 

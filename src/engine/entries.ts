@@ -124,7 +124,7 @@ function validateCourse(obj: unknown, prefix: string, errors: string[]) {
 /** Un objectif (data-raw/goals.json) */
 export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
   const r = reader(obj, prefix, errors);
-  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief', 'course', 'parent']);
+  r.unknown(['id', 'name', 'date', 'startTime', 'distanceKm', 'elevGain', 'elevLoss', 'targetSec', 'stretchSec', 'kind', 'lat', 'lon', 'debrief', 'course', 'parent', 'cycle']);
   const date = r.str('date', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
   if (date && !isRealDate(date)) errors.push(`${prefix}date : date inexistante`);
   const goal = clean({
@@ -144,6 +144,8 @@ export function validateGoal(obj: unknown, prefix = '', errors: string[] = []) {
     course: r.has('course') ? validateCourse(r.raw('course'), `${prefix}course.`, errors) : undefined,
     // Objectif secondaire : identifiant de l'objectif principal qu'il prépare
     parent: r.str('parent', { pattern: GOAL_ID, msg: 'identifiant d’objectif attendu' }),
+    // Test de fin d'un cycle d'entraînement (cycles.json)
+    cycle: r.str('cycle', { pattern: GOAL_ID, msg: 'identifiant de cycle attendu' }),
   });
   if (goal.stretchSec != null && goal.targetSec == null) errors.push(`${prefix}stretchSec : chrono visé manquant`);
   if (goal.stretchSec != null && goal.targetSec != null && goal.stretchSec >= goal.targetSec)
@@ -312,4 +314,35 @@ export function validatePlan(goalId: string, obj: unknown): TrainingPlan {
   if (errors.length) throw new InvalidEntry(errors);
   sessions.sort((a, b) => a.date.localeCompare(b.date));
   return clean({ goalId, importedAt, sessions, coros });
+}
+
+/** Buts d'un cycle d'entraînement sans course */
+export const CYCLE_FOCUS = ['restart', 'endurance', 'speed', 'maintain', 'trail'] as const;
+export type CycleFocus = (typeof CYCLE_FOCUS)[number];
+
+/** Cycles d'entraînement sans course (data-raw/cycles.json) : 4 à 16 semaines, comme un plan COROS */
+export function validateCycles(list: unknown, goalIds: string[] = []) {
+  const errors: string[] = [];
+  if (!Array.isArray(list)) throw new InvalidEntry(['liste de cycles attendue']);
+  if (list.length > 100) throw new InvalidEntry(['100 cycles au plus']);
+  const cycles = list.map((c, i) => {
+    const p = `cycle ${i + 1} · `;
+    const r = reader(c, p, errors);
+    r.unknown(['id', 'name', 'focus', 'start', 'weeks', 'previous']);
+    const start = r.str('start', { required: true, pattern: DATE, msg: 'date AAAA-MM-JJ attendue' });
+    if (start && !isRealDate(start)) errors.push(`${p}start : date inexistante`);
+    return clean({
+      id: r.str('id', { required: true, pattern: GOAL_ID, msg: 'minuscules, chiffres et tirets' }),
+      name: r.str('name', { required: true, max: 80 }),
+      focus: r.oneOf('focus', CYCLE_FOCUS, { required: true }),
+      start,
+      weeks: r.num('weeks', { required: true, min: 4, max: 16, int: true }),
+      previous: r.str('previous', { pattern: GOAL_ID }),
+    });
+  });
+  const ids = cycles.map((c) => c.id).filter(Boolean);
+  const dup = ids.find((id, i) => ids.indexOf(id) !== i || goalIds.includes(id));
+  if (dup) errors.push(`identifiant en double : ${dup}`);
+  if (errors.length) throw new InvalidEntry(errors);
+  return cycles as { id: string; name: string; focus: CycleFocus; start: string; weeks: number; previous?: string }[];
 }

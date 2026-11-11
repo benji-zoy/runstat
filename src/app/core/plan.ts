@@ -1,4 +1,5 @@
-import { Activity, Goal, PlanKind, PlanSession, PlannedCalendar, PlannedSession } from './models';
+import { Activity, Cycle, Goal, PlanKind, PlanSession, PlannedCalendar, PlannedSession, TrainingPlan } from './models';
+import type { GoalEvaluation } from './goals';
 import { SessionType } from './science';
 import { addDays, isoDay, parseDay, startOfWeek } from './stats';
 
@@ -97,29 +98,65 @@ export function mergeCalendars(
   };
 }
 
-/** Plan importé qui vaut pour un objectif : le sien, sinon celui de l'objectif principal qu'il prépare */
-export function planOf(goal: Goal, goals: Goal[]): PlanSession[] {
+/** Dernier jour prévu d'un cycle (dimanche de sa dernière semaine si le début est un lundi) */
+export const cycleLastDay = (c: Cycle) => isoDay(addDays(parseDay(c.start), c.weeks * 7 - 1));
+
+/**
+ * Une course prend le relais d'un cycle : la première séance d'un plan de course (hors test du cycle) tombée pendant le cycle
+ * marque sa fin ; les séances du cycle à partir de ce jour sont ignorées. Null si aucun relais.
+ */
+export function cycleRelay(c: Cycle, goals: Goal[]): { date: string; goal: Goal } | null {
+  const last = cycleLastDay(c);
+  let best: { date: string; goal: Goal } | null = null;
+  for (const g of goals) {
+    if (g.cycle === c.id || !g.plan?.sessions.length) continue;
+    const first = g.plan.sessions.find((s) => s.date > c.start && s.date <= last)?.date;
+    if (first && (!best || first < best.date)) best = { date: first, goal: g };
+  }
+  return best;
+}
+
+/** Séances d'un cycle qui restent valables (avant le relais d'une course) */
+export function cycleSessions(c: Cycle, goals: Goal[]): PlanSession[] {
+  const relay = cycleRelay(c, goals);
+  return (c.plan?.sessions ?? []).filter((s) => !relay || s.date < relay.date);
+}
+
+/**
+ * Plan importé qui vaut pour un objectif : le sien, sinon celui de l'objectif principal qu'il prépare, sinon celui de son
+ * cycle (test de fin de cycle) ; à défaut, les séances des cycles (avant la course, filtrées par goalCalendar).
+ */
+export function planOf(goal: Goal, goals: Goal[], cycles: Cycle[] = []): PlanSession[] {
   if (goal.plan?.sessions.length) return goal.plan.sessions;
   const main = goal.parent ? goals.find((g) => g.id === goal.parent) : null;
-  return main?.plan?.sessions ?? [];
+  if (main?.plan?.sessions.length) return main.plan.sessions;
+  const own = goal.cycle ? cycles.find((c) => c.id === goal.cycle) : null;
+  if (own) return cycleSessions(own, goals);
+  return cycles.flatMap((c) => cycleSessions(c, goals));
 }
 
 /** Calendrier projeté pour un objectif (indice de confiance) */
-export function goalPlanned(goal: Goal, goals: Goal[], planned: PlannedCalendar | null | undefined, rates: LoadRates, ref: Date): PlannedCalendar | null {
-  return mergeCalendars(planned, planOf(goal, goals), rates, ref);
+export function goalPlanned(goal: Goal, goals: Goal[], planned: PlannedCalendar | null | undefined, rates: LoadRates, ref: Date, cycles: Cycle[] = []): PlannedCalendar | null {
+  return mergeCalendars(planned, planOf(goal, goals, cycles), rates, ref);
 }
 
-/** Toutes les séances prévues (calendrier COROS + plans des objectifs à venir), renfo compris : « Séance du jour » */
-export function upcomingPlanned(goals: Goal[], planned: PlannedCalendar | null | undefined, rates: LoadRates, ref: Date): PlannedSession[] {
+/**
+ * Toutes les séances prévues (calendrier COROS + plans des objectifs à venir + cycles jusqu'au relais d'une course), renfo
+ * compris : « Séance du jour »
+ */
+export function upcomingPlanned(goals: Goal[], planned: PlannedCalendar | null | undefined, rates: LoadRates, ref: Date, cycles: Cycle[] = []): PlannedSession[] {
   const today = isoDay(ref);
   const seen = new Set<string>();
   const imported: PlanSession[] = [];
-  for (const g of [...goals].filter((g) => g.date >= today).sort((a, b) => a.date.localeCompare(b.date))) {
-    for (const s of g.plan?.sessions ?? []) {
+  const add = (list: PlanSession[]) => {
+    for (const s of list) {
       const k = `${s.date}|${s.name}`;
       if (!seen.has(k)) (seen.add(k), imported.push(s));
     }
-  }
+  };
+  for (const g of [...goals].filter((g) => g.date >= today).sort((a, b) => a.date.localeCompare(b.date))) add(g.plan?.sessions ?? []);
+  for (const c of cycles) if (cycleLastDay(c) >= today) add(cycleSessions(c, goals));
+  imported.sort((a, b) => a.date.localeCompare(b.date));
   return mergeCalendars(planned, imported, rates, ref, { strength: true })?.sessions ?? [];
 }
 
@@ -206,3 +243,20 @@ export function recommendedSessions(peakKm: number): number {
 
 /** Mode ambitieux conseillé : chrono visé à moins d'une chance sur deux */
 export const ambitiousAdvised = (probability: number | null) => probability !== null && probability < 0.5;
+
+/** Ce à quoi un plan importé se rattache : un objectif (course) ou un cycle sans course */
+export interface PlanTarget {
+  id: string;
+  name: string;
+  /** Dernier jour utile (jour de la course, fin du cycle) */
+  end: string;
+  /** « la course », « la fin du cycle » */
+  endLabel: string;
+  plan?: TrainingPlan;
+  ev?: GoalEvaluation;
+  cycle?: Cycle;
+  goal?: Goal;
+}
+
+export const goalTarget = (e: GoalEvaluation): PlanTarget => ({ id: e.goal.id, name: e.goal.name, end: e.goal.date, endLabel: 'la course', plan: e.goal.plan, ev: e, goal: e.goal });
+export const cycleTarget = (c: Cycle): PlanTarget => ({ id: c.id, name: c.name, end: cycleLastDay(c), endLabel: 'la fin du cycle', plan: c.plan, cycle: c });

@@ -5,7 +5,7 @@ import { ScienceService } from './science.service';
 import { Activity } from './models';
 import { GoalEvaluation } from './goals';
 import { AiInput, AiOptions } from './ai/context';
-import { AiDoc, AiExportKind, PlanRequest, debriefExport, goalExport, planExport, profileExport, runExport } from './ai/exports';
+import { AiDoc, AiExportKind, CycleRequest, PlanRequest, cycleExport, debriefExport, goalExport, planExport, profileExport, runExport } from './ai/exports';
 
 /** Ce dont on veut discuter : une sortie, un objectif (à venir ou passé) ou le profil */
 export type AiSubject = { run: Activity } | { goal: GoalEvaluation } | { profile: true };
@@ -54,6 +54,11 @@ export class AiExportService {
   /** Export « Plan d'entraînement » à partir des choix de l'assistant */
   buildPlan(e: GoalEvaluation, opts: AiOptions, request: PlanRequest): AiDoc {
     return planExport(e, this.input(), { ...opts, health: opts.health && this.hasHealth() }, request);
+  }
+
+  /** Export « Cycle d'entraînement » (sans course) */
+  buildCycle(opts: AiOptions, request: CycleRequest): AiDoc {
+    return cycleExport(this.input(), { ...opts, health: opts.health && this.hasHealth() }, request);
   }
 
   build(subject: AiSubject, kind: AiExportKind, opts: AiOptions): AiDoc | null {

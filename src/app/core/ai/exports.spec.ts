@@ -8,7 +8,7 @@ import { conditionsCost, personalCoefficients } from '../conditions';
 import { CAPABILITIES } from '../sources';
 import { parseDay } from '../stats';
 import { AiInput, AiOptions, age, trainingPaces } from './context';
-import { PlanRequest, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
+import { PlanRequest, cycleExport, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
 import { parsePlanMarkdown, parseSteps } from '../../../engine/plan/plan';
 
 const data = snapshot as unknown as CorosData;
@@ -147,6 +147,28 @@ describe('export pour une IA', () => {
     expect(parsed.sessions.map((s) => s.kind)).toEqual(['easy', 'quality', 'strength', 'long']);
     expect(parsed.ignored).toEqual([]);
     for (const s of parsed.sessions.filter((x) => x.steps)) expect(parseSteps(s.steps!)).not.toBeNull();
+    expectPrivate(md);
+  });
+
+  it('prépare un cycle sans course avec son but, son test et le bilan du précédent', () => {
+    const md = cycleExport(input, summary, {
+      volume: { min: 20, max: 40 },
+      sessions: { min: 3, max: 3 },
+      days: [],
+      longDays: [6],
+      mode: 'normal',
+      strength: null,
+      cycle: { name: 'Cycle Vitesse · mars 2026', focusLabel: 'Vitesse', focusPrompt: 'But : gagner en vitesse.', start: '2026-03-16', weeks: 6 },
+      test: { km: 5, date: '2026-04-26', predicted: 1260 },
+      previous: { name: 'Cycle Endurance', focus: 'Endurance', start: '2026-01-05', end: '2026-03-01', done: 30, planned: 34, doneKm: 250, plannedKm: 280, test: null, ef: { before: 1.2, now: 1.3 }, vdot: { before: 45, now: 46.5 } },
+    }).markdown;
+    expect(md).toContain('# Cycle d\'entraînement : vitesse (2026-03-16)');
+    expect(md).toContain('Dates : du 2026-03-16 au 2026-04-26 (6 semaines)');
+    expect(md).toContain('Test de fin de cycle : 5 km chronométré le 2026-04-26 (chrono probable aujourd\'hui : 21:00)');
+    expect(md).toContain('Séances faites : 30 sur 34 prévues');
+    expect(md).toContain('VDOT : 45 → 46,5');
+    expect(md).toContain('But : gagner en vitesse.');
+    expect(parsePlanMarkdown(md).sessions).toHaveLength(4);
     expectPrivate(md);
   });
 

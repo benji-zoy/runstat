@@ -17,7 +17,8 @@
 //   health-garmin.json -> santé & sommeil Garmin (source de santé « garmin »)
 //   goals.json       -> objectifs de course
 //   planned.json     -> séances prévues au calendrier de la montre (COROS), recopiées dans `planned`
-//   plans/<goal>.json -> plan d'entraînement importé (rendu par une IA), recopié dans `plan` de l'objectif
+//   plans/<goal>.json -> plan d'entraînement importé (rendu par une IA), recopié dans `plan` de l'objectif ou du cycle
+//   cycles.json      -> cycles d'entraînement sans course, recopiés dans `cycles`
 // Tout passe par un FileStore : le même code tourne sur le NAS (Node) et dans le navigateur (IndexedDB).
 import type { FitDerived } from '../fit/types.ts';
 import { firstPoint } from '../fit/analyse.ts';
@@ -107,6 +108,8 @@ export interface Snapshot {
   goals: Goal[];
   /** Séances prévues au calendrier de la montre (planned.json), absent sans calendrier */
   planned?: PlannedSnapshot;
+  /** Cycles d'entraînement sans course (cycles.json), absent sans cycle */
+  cycles?: Record<string, unknown>[];
 }
 
 export interface PlannedSnapshot {
@@ -384,6 +387,12 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
     goals,
   };
   // Calendrier : indépendant de la source d'activités (une montre COROS synchronisée par Strava garde son calendrier)
+  const cycles = (await readJson<Record<string, unknown>[]>(raw, 'cycles.json')) ?? [];
+  for (const c of cycles) {
+    const plan = await readJson<Record<string, unknown>>(raw, `plans/${c['id']}.json`);
+    if (plan) c['plan'] = plan;
+  }
+  if (cycles.length) snapshot.cycles = cycles;
   const planned = await readJson<PlannedFile>(raw, 'planned.json');
   if (planned?.sessions) {
     snapshot.planned = { source: planned.source, fetchedAt: planned.fetchedAt, from: planned.from, to: planned.to, sessions: planned.sessions };

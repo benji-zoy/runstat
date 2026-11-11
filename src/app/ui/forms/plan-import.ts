@@ -3,6 +3,7 @@ import { mergePlan, parsePlanMarkdown } from '../../../engine/plan/plan';
 import { EntriesService } from '../../core/entries.service';
 import { GoalEvaluation } from '../../core/goals';
 import { PeriodService } from '../../core/period.service';
+import { PlanTarget } from '../../core/plan';
 import { ScienceService } from '../../core/science.service';
 import { isoDay, parseDay } from '../../core/stats';
 import { IconComponent } from '../icon';
@@ -19,8 +20,8 @@ const short = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 
   selector: 'app-plan-import',
   imports: [IconComponent],
   template: `
-    <dialog #dlg class="sheet" aria-label="Importer le plan" (close)="ev.set(null)">
-      @if (ev(); as e) {
+    <dialog #dlg class="sheet" aria-label="Importer le plan" (close)="target.set(null)">
+      @if (target(); as t) {
         <form novalidate (submit)="$event.preventDefault(); save()">
           <header>
             <h2>Importer le plan</h2>
@@ -52,7 +53,7 @@ const short = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 
                     <li class="warn">⚠ {{ past() }} séance{{ past() > 1 ? 's' : '' }} avant aujourd'hui</li>
                   }
                   @if (after()) {
-                    <li class="warn">⚠ {{ after() }} séance{{ after() > 1 ? 's' : '' }} après la course ({{ short(e.goal.date) }})</li>
+                    <li class="warn">⚠ {{ after() }} séance{{ after() > 1 ? 's' : '' }} après {{ t.endLabel }} ({{ short(t.end) }})</li>
                   }
                   @if (p.ignored.length) {
                     <li class="warn">⚠ {{ p.ignored.length }} ligne{{ p.ignored.length > 1 ? 's' : '' }} ignorée{{ p.ignored.length > 1 ? 's' : '' }} :
@@ -97,7 +98,7 @@ export class PlanImportComponent {
   private readonly sci = inject(ScienceService);
   private readonly today = isoDay(inject(PeriodService).today);
   private readonly dlg = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  readonly ev = signal<GoalEvaluation | null>(null);
+  readonly target = signal<PlanTarget | null>(null);
   protected readonly text = signal('');
   protected readonly errors = signal<string[]>([]);
   protected readonly short = short;
@@ -110,20 +111,21 @@ export class PlanImportComponent {
     return s.length ? Math.floor((parseDay(s.at(-1)!.date).getTime() - parseDay(s[0].date).getTime()) / 604_800_000) + 1 : 0;
   });
   protected readonly past = computed(() => this.parsed().sessions.filter((s) => s.date < this.today).length);
-  protected readonly after = computed(() => this.parsed().sessions.filter((s) => s.date > (this.ev()?.goal.date ?? '9999')).length);
+  protected readonly after = computed(() => this.parsed().sessions.filter((s) => s.date > (this.target()?.end ?? '9999')).length);
   protected readonly replaced = computed(() => {
     const s = this.parsed().sessions;
-    const old = this.ev()?.goal.plan?.sessions ?? [];
+    const old = this.target()?.plan?.sessions ?? [];
     if (!s.length) return 0;
     return old.filter((o) => o.date >= s[0].date && o.date <= s.at(-1)!.date).length;
   });
   private readonly merged = computed(() => {
-    const e = this.ev();
+    const t = this.target();
     const s = this.parsed().sessions;
-    return e && s.length ? mergePlan(e.goal.plan ?? null, e.goal.id, s) : null;
+    return t && s.length ? mergePlan(t.plan ?? null, t.id, s) : null;
   });
   protected readonly effect = computed(() => {
-    const e = this.ev();
+    // Effet sur l'indice : seulement pour une course (un cycle n'a pas d'indice)
+    const e = this.target()?.ev;
     const m = this.merged();
     if (!e || !m) return null;
     const next = this.sci.evaluate(e.goal, m);
@@ -132,8 +134,8 @@ export class PlanImportComponent {
     return { before: fmt(e), after: fmt(next) };
   });
 
-  open(e: GoalEvaluation): void {
-    this.ev.set(e);
+  open(t: PlanTarget): void {
+    this.target.set(t);
     this.text.set('');
     this.errors.set([]);
     const d = this.dlg().nativeElement;

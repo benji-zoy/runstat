@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { DATE_RESULT, InvalidEntry, validateAthlete, validateGoals, validateResult, validatePlan, validateSources } from '../../engine/entries';
+import { DATE_RESULT, InvalidEntry, validateAthlete, validateCycles, validateGoals, validateResult, validatePlan, validateSources } from '../../engine/entries';
 import { fileKey } from '../../engine/sources';
 import { IndexedDbStore, indexedDbStorage } from '../../engine/storage/indexeddb';
 import { exportEntries, zipStream } from '../../engine/archive/zip-writer';
@@ -89,7 +89,10 @@ export class LocalService {
     let saved: unknown = null;
     try {
       if (route === 'goals') await raw.write('goals.json', JSON.stringify((saved = validateGoals(body)), null, 2));
-      else if (route === 'athlete') await raw.write('athlete.json', JSON.stringify((saved = validateAthlete(body)), null, 2));
+      else if (route === 'cycles') {
+        const goals = JSON.parse((await raw.readText('goals.json')) ?? '[]') as { id: string }[];
+        await raw.write('cycles.json', JSON.stringify((saved = validateCycles(body, goals.map((g) => g.id))), null, 2));
+      } else if (route === 'athlete') await raw.write('athlete.json', JSON.stringify((saved = validateAthlete(body)), null, 2));
       else if (route === 'sources') await raw.write('sources.json', JSON.stringify((saved = validateSources(body)), null, 2));
       else if (route.startsWith('plans/')) {
         const id = decodeURIComponent(route.slice('plans/'.length));

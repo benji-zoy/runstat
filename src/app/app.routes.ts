@@ -86,6 +86,7 @@ export const routes: Routes = [
   { path: 'journal', title: 'Journal · RunStat', loadComponent: () => import('./pages/journal').then((m) => m.JournalPage) },
   { path: 'courses', title: 'Courses · RunStat', loadComponent: () => import('./pages/goals').then((m) => m.GoalsPage) },
   { path: 'courses/:id', title: 'Course · RunStat', loadComponent: () => import('./pages/goal').then((m) => m.GoalPage) },
+  { path: 'cycles/:id', title: 'Cycle · RunStat', loadComponent: () => import('./pages/cycle').then((m) => m.CyclePage) },
   { path: 'comprendre', title: 'Comprendre · RunStat', loadComponent: () => import('./pages/understand').then((m) => m.UnderstandPage) },
   {
     path: 'comprendre/:sujet',
