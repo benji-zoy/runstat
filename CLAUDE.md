@@ -411,7 +411,9 @@ la sortie d'un objectif passé l'est toujours, quel que soit son nom).
 
 Partie Préparation de la fiche d'un objectif à venir. « Préparer mon plan avec une IA » : assistant en six écrans (courses de
 préparation, volume au plus fort par tranches de 20 km, séances par semaine : un nombre ou deux qui se suivent + jours possibles + un
-ou deux jours de sortie longue, le week-end par défaut, mode normal / ambitieux, renfo par jour et zone du corps, récapitulatif avec
+ou deux jours de sortie longue, le week-end par défaut, terrain : la plus longue côte près de chez soi (aucune, courte, moyenne, longue ;
+pente facultative ; une côte sert aussi aux répétitions plus courtes, dit `terrainPrompt`), et pour un trail l'accès au vallonné et à
+la montagne, gardés une fois pour toutes sur l'appareil (`runstat-plan-terrain`), mode normal / ambitieux, renfo par jour et zone du corps, récapitulatif avec
 vision, gênes et blessures), conseils de `core/plan.ts` (`recommendedVolume` = repère de l'indice borné à +10 %/semaine,
 `recommendedSessions`, ambitieux conseillé sous 50 % de chances), choix gardés par objectif dans `localStorage` (`runstat-plan-<id>`),
 puis `planExport` (`PlanRequest`). L'export impose à l'IA un bloc final ```` ```runstat-plan ```` (`PLAN_FORMAT`, une ligne par séance :

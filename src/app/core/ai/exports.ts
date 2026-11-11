@@ -27,6 +27,63 @@ export type PlanMode = 'normal' | 'ambitious';
 export type StrengthFocus = 'upper' | 'lower' | 'full';
 export const STRENGTH_LABELS: Record<StrengthFocus, string> = { upper: 'haut du corps', lower: 'bas du corps', full: 'tout le corps' };
 
+export type HillLength = 'none' | 'short' | 'medium' | 'long';
+export type HillSlope = 'gentle' | 'steep';
+export type RollingAccess = 'never' | 'weekend' | 'weekdays' | 'anytime';
+export type MountainAccess = 'never' | 'rare' | 'some-weekends' | 'regular';
+
+/** Où la personne peut courir : la plus longue côte près de chez elle ; terrain vallonné et montagne (plans de trail) */
+export interface PlanTerrain {
+  hill: HillLength | null;
+  slope?: HillSlope | null;
+  rolling?: RollingAccess | null;
+  mountain?: MountainAccess | null;
+}
+
+export const HILL_LABELS: Record<HillLength, string> = {
+  none: 'aucune, tout est plat',
+  short: 'courte (100 à 200 m)',
+  medium: 'moyenne (300 à 800 m)',
+  long: 'longue (plus de 1 km)',
+};
+export const SLOPE_LABELS: Record<HillSlope, string> = { gentle: 'pente douce', steep: 'pente raide' };
+export const ROLLING_LABELS: Record<RollingAccess, string> = { never: 'jamais', weekend: 'le week-end', weekdays: 'aussi en semaine', anytime: 'quand je veux' };
+export const MOUNTAIN_LABELS: Record<MountainAccess, string> = {
+  never: 'jamais',
+  rare: 'exceptionnellement, si c’est vraiment utile',
+  'some-weekends': 'certains week-ends',
+  regular: 'régulièrement',
+};
+
+/** Consigne sur le terrain : côtes possibles (une côte sert aussi aux répétitions plus courtes), vallonné, montagne */
+export function terrainPrompt(t: PlanTerrain | undefined, trail: boolean): string[] {
+  if (!t) return [];
+  const out: string[] = [];
+  if (t.hill === 'none') out.push('Je n’ai pas de côte près de chez moi : pas de séance en côte (remplace-les par du fractionné sur le plat, des escaliers ou du renforcement).');
+  else if (t.hill) {
+    const allowed = { short: 'sprints en côte de 100 à 200 m', medium: 'répétitions de 300 à 800 m, et aussi des sprints de 100 à 200 m sur la même côte', long: 'montées longues de plus de 1 km au seuil, des répétitions de 300 à 800 m et des sprints de 100 à 200 m sur la même côte' }[t.hill];
+    out.push(`Ma plus longue côte près de chez moi : ${HILL_LABELS[t.hill]}${t.slope ? `, ${SLOPE_LABELS[t.slope]}` : ''}. Une côte sert aussi aux répétitions plus courtes : tu peux prévoir des ${allowed}, mais rien de plus long qu'elle.`);
+  }
+  if (trail && t.rolling) {
+    out.push(
+      t.rolling === 'never'
+        ? 'Je n’ai pas accès à un terrain vallonné : fais le dénivelé en côte, à répétition.'
+        : `Terrain vallonné (type coteaux) : ${ROLLING_LABELS[t.rolling]} ; place-y les sorties longues et le dénivelé${t.rolling === 'weekend' ? ' du week-end' : ''}.`,
+    );
+  }
+  if (trail && t.mountain) {
+    out.push(
+      {
+        never: 'Pas de montagne possible : prépare les longues montées et descentes en côte et sur le vallonné.',
+        rare: 'Montagne : seulement exceptionnellement ; au plus une ou deux sorties sur tout le plan, aux moments clés, et seulement si c’est vraiment utile. Le reste du dénivelé se fait en côte et sur le vallonné.',
+        'some-weekends': 'Montagne : certains week-ends ; prévois-y quelques sorties longues spécifiques (longues montées et descentes), espacées.',
+        regular: 'Montagne : régulièrement ; utilise-la pour les sorties longues et le travail spécifique de montée et de descente.',
+      }[t.mountain],
+    );
+  }
+  return out;
+}
+
 /** Choix de l'assistant « Préparer mon plan » (ui/forms/plan-wizard.ts) */
 export interface PlanRequest {
   /** Volume visé au plus fort du plan (km/semaine) ; max null = « et plus » */
@@ -44,6 +101,8 @@ export interface PlanRequest {
   vision?: string;
   /** Gênes, blessures actuelles ou récentes */
   injuries?: string;
+  /** Où courir : côtes, vallonné, montagne */
+  terrain?: PlanTerrain;
   /** Objectifs secondaires inclus dans le plan */
   secondaries: GoalEvaluation[];
   /** Alertes de RunStat sur ces objectifs (core/plan-checks.ts) */
@@ -465,6 +524,9 @@ function choicesSection(doc: MdDoc, r: Omit<PlanRequest, 'secondaries' | 'checks
     ['Jours possibles pour la sortie longue', r.longDays.length ? days(r.longDays) : null],
     ['Mode', r.mode === 'ambitious' ? 'ambitieux (plus de séances de qualité et des blocs un peu plus durs, tout en restant raisonnable)' : 'normal'],
     ['Renforcement', r.strength?.length ? r.strength.map((x) => `${WEEKDAYS[x.day].toLowerCase()} (${STRENGTH_LABELS[x.focus]})`).join(', ') : 'non'],
+    ['Côte près de chez moi', r.terrain?.hill ? `${HILL_LABELS[r.terrain.hill]}${r.terrain.slope ? `, ${SLOPE_LABELS[r.terrain.slope]}` : ''}` : null],
+    ['Terrain vallonné (coteaux)', r.terrain?.rolling ? ROLLING_LABELS[r.terrain.rolling] : null],
+    ['Montagne', r.terrain?.mountain ? MOUNTAIN_LABELS[r.terrain.mountain] : null],
     ['Ma vision du plan, mes contraintes', r.vision?.trim() ? inline(r.vision) : null],
     ['Gênes, blessures actuelles ou récentes', r.injuries?.trim() ? inline(r.injuries) : 'aucune signalée'],
   ]);
@@ -506,6 +568,7 @@ export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, r
       ? 'Mode ambitieux : jusqu\'à deux séances de qualité par semaine en période de développement, des blocs spécifiques un peu plus longs ; garde au moins un jour facile entre deux séances dures et ne dépasse pas mes choix de volume.'
       : 'Mode normal : une séance de qualité par semaine, deux au plus en période de développement.',
   ];
+  prompt.push(...terrainPrompt(r.terrain, g.kind === 'trail'));
   if (r.secondaries.length) prompt.push('Intègre les objectifs secondaires (allègement avant, récupération après) et dis-moi franchement s\'ils te semblent trop durs, trop rapprochés ou incohérents avec la préparation, en t\'appuyant sur les alertes de RunStat ; propose comment les courir (à fond, en séance, ou à éviter).');
   if (r.strength?.length) prompt.push('Place le renforcement aux jours indiqués, avec 4 à 6 exercices adaptés au coureur pour chaque zone du corps, et loin des séances de qualité les plus dures quand c\'est possible.');
   prompt.push(
@@ -538,7 +601,7 @@ export interface CycleBilan {
 }
 
 export interface CycleRequest extends Omit<PlanRequest, 'secondaries' | 'checks'> {
-  cycle: { name: string; focusLabel: string; focusPrompt: string; start: string; weeks: number };
+  cycle: { name: string; focusLabel: string; focusPrompt: string; start: string; weeks: number; trail?: boolean };
   /** Test chronométré la dernière semaine */
   test: { km: number; date: string; predicted: number | null } | null;
   previous: CycleBilan | null;
@@ -582,6 +645,7 @@ export function cycleExport(input: AiInput, opts: AiOptions, r: CycleRequest): A
       ? 'Mode ambitieux : un peu plus de qualité et des blocs un peu plus durs, en gardant au moins un jour facile entre deux séances dures et sans dépasser mes choix de volume.'
       : 'Mode normal : une séance de qualité par semaine au plus, deux seulement si le but le demande.',
   ];
+  prompt.push(...terrainPrompt(r.terrain, !!c.trail));
   if (r.test) prompt.push(`Termine par le test de ${n(r.test.km, 0)} km chronométré le ${r.test.date} (type « course ») : allège les jours d'avant et indique comment le courir.`);
   if (r.previous) prompt.push('Appuie-toi sur le bilan du cycle précédent : dis ce qui a marché, ce qui n\'a pas été tenu, et adapte la charge en conséquence.');
   if (r.strength?.length) prompt.push('Place le renforcement aux jours indiqués, avec 4 à 6 exercices adaptés au coureur pour chaque zone du corps, et loin des séances de qualité les plus dures quand c\'est possible.');
