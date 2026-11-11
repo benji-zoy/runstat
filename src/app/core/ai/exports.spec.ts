@@ -8,7 +8,7 @@ import { conditionsCost, personalCoefficients } from '../conditions';
 import { CAPABILITIES } from '../sources';
 import { parseDay } from '../stats';
 import { AiInput, AiOptions, age, trainingPaces } from './context';
-import { PlanRequest, cycleExport, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
+import { PlanRequest, cycleExport, terrainPrompt, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
 import { parsePlanMarkdown, parseSteps } from '../../../engine/plan/plan';
 
 const data = snapshot as unknown as CorosData;
@@ -123,6 +123,7 @@ describe('export pour une IA', () => {
       strength: [{ day: 0, focus: 'lower' }],
       vision: 'club le mardi',
       injuries: 'tendon d\'Achille\nsensible',
+      terrain: { hill: 'medium', slope: 'steep', rolling: 'weekend', mountain: 'rare' },
       secondaries: [prep],
       checks: [{ level: 'warning', text: 'Trop proche' }],
     };
@@ -136,6 +137,11 @@ describe('export pour une IA', () => {
     expect(md).toContain('Mode ambitieux');
     // Un retour à la ligne saisi ne casse pas la liste
     expect(md).toContain('Gênes, blessures actuelles ou récentes : tendon d\'Achille sensible');
+    // Terrain : une côte moyenne permet aussi les sprints ; vallonné le week-end, montagne exceptionnelle (objectif trail)
+    expect(md).toContain('Côte près de chez moi : moyenne (300 à 800 m), pente raide');
+    expect(md).toContain('aussi des sprints de 100 à 200 m sur la même côte');
+    expect(md).toContain('Terrain vallonné (coteaux) : le week-end');
+    expect(md).toContain('au plus une ou deux sorties sur tout le plan');
     expect(md).toContain('## Objectifs secondaires à intégrer au plan');
     expect(md).toContain('10 km de Testville');
     expect(md).toContain('⚠️ Trop proche');
@@ -148,6 +154,16 @@ describe('export pour une IA', () => {
     expect(parsed.ignored).toEqual([]);
     for (const s of parsed.sessions.filter((x) => x.steps)) expect(parseSteps(s.steps!)).not.toBeNull();
     expectPrivate(md);
+  });
+
+  it('décrit le terrain : côtes plus courtes possibles, vallonné et montagne pour un trail seulement', () => {
+    expect(terrainPrompt({ hill: 'none' }, false)[0]).toContain('pas de séance en côte');
+    expect(terrainPrompt({ hill: 'short' }, false)[0]).toContain('sprints en côte de 100 à 200 m');
+    expect(terrainPrompt({ hill: 'long' }, false)[0]).toContain('répétitions de 300 à 800 m et des sprints de 100 à 200 m');
+    // Sur route, ni vallonné ni montagne
+    expect(terrainPrompt({ hill: 'medium', rolling: 'weekend', mountain: 'regular' }, false)).toHaveLength(1);
+    expect(terrainPrompt({ hill: 'medium', rolling: 'never', mountain: 'never' }, true).join(' ')).toContain('fais le dénivelé en côte');
+    expect(terrainPrompt(undefined, true)).toEqual([]);
   });
 
   it('prépare un cycle sans course avec son but, son test et le bilan du précédent', () => {

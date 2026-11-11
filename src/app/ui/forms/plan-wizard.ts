@@ -1,7 +1,10 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { AiExportService } from '../../core/ai-export.service';
 import { AiDetail } from '../../core/ai/context';
-import { CycleRequest, PlanMode, PlanRequest, STRENGTH_LABELS, StrengthFocus } from '../../core/ai/exports';
+import {
+  CycleRequest, HILL_LABELS, HillLength, HillSlope, MOUNTAIN_LABELS, MountainAccess, PlanMode, PlanRequest, PlanTerrain, ROLLING_LABELS,
+  RollingAccess, SLOPE_LABELS, STRENGTH_LABELS, StrengthFocus,
+} from '../../core/ai/exports';
 import { DataService } from '../../core/data.service';
 import { EntriesService } from '../../core/entries.service';
 import { GoalEvaluation } from '../../core/goals';
@@ -20,10 +23,11 @@ import { GoalFormComponent } from './goal-form';
 import { errorList } from './form-dialog';
 import { canCopy, canShare, copyDoc, downloadDoc, shareDoc } from './md-delivery';
 
-type Step = 'but' | 'secondaires' | 'volume' | 'seances' | 'mode' | 'renfo' | 'recap';
+type Step = 'but' | 'secondaires' | 'volume' | 'seances' | 'terrain' | 'mode' | 'renfo' | 'recap';
 const COMMON: { id: Step; title: string }[] = [
   { id: 'volume', title: 'Volume' },
   { id: 'seances', title: 'Séances' },
+  { id: 'terrain', title: 'Terrain' },
   { id: 'mode', title: 'Intensité' },
   { id: 'renfo', title: 'Renforcement' },
   { id: 'recap', title: 'Récapitulatif' },
@@ -61,6 +65,8 @@ function store(id: string, s: Saved): void {
 }
 
 const DETAIL_KEY = 'runstat-ai-detail';
+/** Le terrain ne change pas d'un plan à l'autre : gardé une fois pour toutes sur l'appareil */
+const TERRAIN_KEY = 'runstat-plan-terrain';
 const HEALTH_KEY = 'runstat-ai-sante';
 const read = (k: string) => {
   try {
@@ -204,6 +210,44 @@ const read = (k: string) => {
                 </div>
                 @if (sessionsWarning(); as w) {
                   <p class="alert">{{ w }}</p>
+                }
+              }
+              @case ('terrain') {
+                <p class="q">Où peux-tu courir ?</p>
+                <div class="field">La plus longue côte près de chez toi
+                  <div class="options" role="radiogroup" aria-label="Plus longue côte">
+                    @for (h of hills; track h) {
+                      <button type="button" class="opt" role="radio" [class.active]="hill() === h" [attr.aria-checked]="hill() === h" (click)="hill.set(h)">
+                        <span>{{ cap(hillLabels[h]) }}</span>
+                      </button>
+                    }
+                  </div>
+                  <span class="hint">Elle sert aussi aux répétitions plus courtes : sur une côte de 300 m, des sprints de 100 m sont possibles.</span>
+                </div>
+                @if (hill() === 'medium' || hill() === 'long') {
+                  <div class="field">Sa pente <span class="hint">(facultatif)</span>
+                    <div class="chips" role="group" aria-label="Pente">
+                      @for (p of slopes; track p) {
+                        <button type="button" class="chip" [class.active]="slope() === p" (click)="slope.set(slope() === p ? null : p)">{{ cap(slopeLabels[p]) }}</button>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (trail()) {
+                  <div class="field">Terrain vallonné (type coteaux)
+                    <div class="chips" role="group" aria-label="Terrain vallonné">
+                      @for (r of rollings; track r) {
+                        <button type="button" class="chip" [class.active]="rolling() === r" (click)="rolling.set(r)">{{ cap(rollingLabels[r]) }}</button>
+                      }
+                    </div>
+                  </div>
+                  <div class="field">Montagne
+                    <div class="chips" role="group" aria-label="Montagne">
+                      @for (m of mountains; track m) {
+                        <button type="button" class="chip" [class.active]="mountain() === m" (click)="mountain.set(m)">{{ cap(mountainLabels[m]) }}</button>
+                      }
+                    </div>
+                  </div>
                 }
               }
               @case ('mode') {
@@ -377,6 +421,15 @@ export class PlanWizardComponent {
   protected readonly focusInfo = FOCUS;
   protected readonly weekChoices = WEEK_CHOICES;
   protected readonly testDistances = TEST_DISTANCES;
+  protected readonly hills: HillLength[] = ['none', 'short', 'medium', 'long'];
+  protected readonly slopes: HillSlope[] = ['gentle', 'steep'];
+  protected readonly rollings: RollingAccess[] = ['never', 'weekend', 'weekdays', 'anytime'];
+  protected readonly mountains: MountainAccess[] = ['never', 'rare', 'some-weekends', 'regular'];
+  protected readonly hillLabels = HILL_LABELS;
+  protected readonly slopeLabels = SLOPE_LABELS;
+  protected readonly rollingLabels = ROLLING_LABELS;
+  protected readonly mountainLabels = MOUNTAIN_LABELS;
+  protected cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   protected readonly weekdays = WEEKDAYS;
   protected readonly counts = [2, 3, 4, 5, 6, 7];
   protected readonly focuses: StrengthFocus[] = ['upper', 'lower', 'full'];
@@ -418,6 +471,25 @@ export class PlanWizardComponent {
   protected readonly vision = signal('');
   protected readonly injuries = signal('');
   protected readonly detail = signal<AiDetail>(read(DETAIL_KEY) === 'full' ? 'full' : 'summary');
+  private readonly savedTerrain = ((): Partial<PlanTerrain> => {
+    try {
+      return JSON.parse(read(TERRAIN_KEY) ?? '{}');
+    } catch {
+      return {};
+    }
+  })();
+  protected readonly hill = signal<HillLength | null>(this.savedTerrain.hill ?? null);
+  protected readonly slope = signal<HillSlope | null>(this.savedTerrain.slope ?? null);
+  protected readonly rolling = signal<RollingAccess | null>(this.savedTerrain.rolling ?? null);
+  protected readonly mountain = signal<MountainAccess | null>(this.savedTerrain.mountain ?? null);
+  /** Vallonné et montagne : seulement pour un trail (objectif trail, cycle « Trail ») */
+  protected readonly trail = computed(() => (this.kind() === 'cycle' ? this.focus() === 'trail' : this.live()?.goal.kind === 'trail'));
+  private readonly terrain = computed<PlanTerrain>(() => ({
+    hill: this.hill(),
+    slope: this.hill() === 'medium' || this.hill() === 'long' ? this.slope() : null,
+    rolling: this.trail() ? this.rolling() : null,
+    mountain: this.trail() ? this.mountain() : null,
+  }));
   protected readonly health = signal(read(HEALTH_KEY) !== '0');
 
   protected readonly weekly = computed(() => currentWeekly(this.data.activities(), this.today));
@@ -468,7 +540,7 @@ export class PlanWizardComponent {
     const prev = this.previous() ? this.sci.cycles().find((x) => x.id === this.previous()) : null;
     return {
       ...choices,
-      cycle: { name: c.name, focusLabel: FOCUS[c.focus].label, focusPrompt: FOCUS[c.focus].prompt, start: c.start, weeks: c.weeks },
+      cycle: { name: c.name, focusLabel: FOCUS[c.focus].label, focusPrompt: FOCUS[c.focus].prompt, start: c.start, weeks: c.weeks, trail: c.focus === 'trail' },
       test: test ? { km: test.distanceKm, date: test.date, predicted: testEv?.predicted ?? null } : null,
       previous: prev ? this.sci.cycleBilan(prev) : null,
     };
@@ -485,6 +557,7 @@ export class PlanWizardComponent {
       strength: this.strength(),
       vision: this.vision(),
       injuries: this.injuries(),
+      terrain: this.terrain(),
       secondaries: this.secondaries(),
       checks: this.checks(),
     };
@@ -515,6 +588,9 @@ export class PlanWizardComponent {
       r.sessions ? (r.sessions.min === r.sessions.max ? `${r.sessions.min} séances` : `${r.sessions.min} ou ${r.sessions.max} séances`) + ' par semaine' : null,
       r.longDays.length ? `sortie longue le ${r.longDays.map((d) => WEEKDAYS[d].toLowerCase()).join(' ou le ')}` : null,
       r.mode === 'ambitious' ? 'mode ambitieux' : 'mode normal',
+      r.terrain?.hill ? (r.terrain.hill === 'none' ? 'pas de côte' : `côte ${HILL_LABELS[r.terrain.hill].replace(/ \(.*\)/, '')}`) : null,
+      r.terrain?.rolling ? `vallonné ${ROLLING_LABELS[r.terrain.rolling]}` : null,
+      r.terrain?.mountain ? `montagne ${MOUNTAIN_LABELS[r.terrain.mountain].replace(/,.*/, '')}` : null,
       r.strength?.length ? 'renfo ' + r.strength.map((x) => `${WEEKDAYS[x.day].toLowerCase()} (${STRENGTH_LABELS[x.focus]})`).join(', ') : 'sans renfo',
       r.secondaries.length ? `${r.secondaries.length} course${r.secondaries.length > 1 ? 's' : ''} de préparation` : null,
     ];
@@ -659,6 +735,11 @@ export class PlanWizardComponent {
   }
 
   private save(): void {
+    try {
+      localStorage.setItem(TERRAIN_KEY, JSON.stringify({ hill: this.hill(), slope: this.slope(), rolling: this.rolling(), mountain: this.mountain() }));
+    } catch {
+      /* navigation privée */
+    }
     const id = this.kind() === 'cycle' ? (this.cycleKey() ?? 'nouveau-cycle') : this.goalId();
     if (!id) return;
     store(id, {
