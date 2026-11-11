@@ -3,6 +3,8 @@ import { Component, input } from '@angular/core';
 export interface Brief {
   title: string;
   points: string[];
+  /** Données anciennes : bloc atténué */
+  stale?: boolean;
 }
 
 /** « En bref » : le constat d'une page en une phrase et quelques points, avant le détail */
@@ -10,7 +12,7 @@ export interface Brief {
   selector: 'app-brief',
   template: `
     @if (brief(); as b) {
-      <div class="card brief">
+      <div class="card brief" [class.stale]="b.stale">
         <span class="label">En bref</span>
         <b class="title">{{ b.title }}</b>
         @if (b.points.length) {
@@ -31,6 +33,8 @@ export interface Brief {
       border-left: 3px solid var(--accent);
       background: linear-gradient(90deg, var(--accent-soft), var(--surface-1) 45%);
     }
+    .brief.stale { border-left-color: var(--border); background: var(--surface-1); }
+    .brief.stale .title, .brief.stale ul { color: var(--text-muted); }
     .label { color: var(--accent); }
     .title { font-family: var(--font-display); font-stretch: var(--display-stretch); font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
     ul { margin: 0.15rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; color: var(--text-secondary); font-size: 0.9rem; }

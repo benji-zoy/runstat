@@ -3,6 +3,7 @@ import { ChartConfiguration } from 'chart.js';
 import { GoalEvaluation } from '../core/goals';
 import { HistoryService } from '../core/history.service';
 import { clock } from '../core/format';
+import { indexTrend } from '../core/freshness';
 import { parseDay } from '../core/stats';
 import { ChartComponent } from '../ui/chart';
 import { axisClock, timeStep } from './prediction-history';
@@ -24,9 +25,9 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short'
       <p class="summary">
         @if (trend(); as t) {
           <b [class.up]="t.diff > 0" [class.down]="t.diff < 0">{{ t.diff > 0 ? '+' : t.diff < 0 ? '−' : '±' }}{{ Math.abs(t.diff) }} pts</b>
-          en {{ t.weeks }} semaines,
+          en {{ t.weeks }} semaines (de {{ t.from }} à {{ t.to }}{{ ev().probability !== null ? ' %' : '/100' }}) ;
         }
-        de {{ points()[0].index }} à {{ points().at(-1)!.index }}{{ ev().probability !== null ? ' %' : '/100' }} depuis le {{ day(points()[0].date) }}
+        depuis le {{ day(points()[0].date) }}, de {{ Math.round(points()[0].index) }} à {{ Math.round(points().at(-1)!.index) }}{{ ev().probability !== null ? ' %' : '/100' }}
         · chrono probable {{ clock(points()[0].predicted) }} → <b>{{ clock(points().at(-1)!.predicted) }}</b>
       </p>
       <app-chart [config]="chart()" style="--chart-h: 240px" />
@@ -60,11 +61,7 @@ export class ConfidenceHistoryComponent {
   protected readonly points = computed(() => this.history() ?? []);
 
   /** Écart sur les 4 dernières semaines */
-  protected readonly trend = computed(() => {
-    const p = this.points();
-    if (p.length < 5) return null;
-    return { diff: p.at(-1)!.index - p.at(-5)!.index, weeks: 4 };
-  });
+  protected readonly trend = computed(() => indexTrend(this.points().map((x) => x.index), 4));
 
   protected readonly chart = computed<ChartConfiguration>(() => {
     const e = this.ev();

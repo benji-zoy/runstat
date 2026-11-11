@@ -572,7 +572,7 @@
     <div class="card">
       <h3>Ratio charge aiguë / chronique <small class="muted">· moyennes exponentielles 7 / 28 j</small></h3>
       @if (corosLoad(); as c) {
-        <p class="muted small">Charge actuelle selon Coros : <span class="pill" [attr.data-tone]="c.tone">{{ c.label }}</span> ratio {{ num(c.ratio, 2) }} (pointillés orange).</p>
+        <p class="muted small">{{ c.stale ? 'Dernier état de charge Coros ' + c.asOf : 'Charge actuelle selon Coros' }} : <span class="pill" [attr.data-tone]="c.tone">{{ c.label }}</span> ratio {{ num(c.ratio, 2) }} (pointillés orange){{ c.stale ? ' : sans synchro depuis, il ne reflète pas la charge d\'aujourd\'hui' : '' }}.</p>
       }
       <app-chart [config]="acwrChart()" />
       <details class="method">
