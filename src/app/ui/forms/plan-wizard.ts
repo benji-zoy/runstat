@@ -291,7 +291,11 @@ const read = (k: string) => {
     .card-opt .tag { margin-left: 0.45rem; }
     .tag { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; background: var(--accent-fill); color: var(--on-accent); }
     .nums .chip { min-width: 44px; min-height: 44px; font-size: 1rem; }
-    .renfo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    /* Jour, zone du corps, croix : toujours sur une ligne, la croix au bout (téléphone compris) */
+    .renfo-row { display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) 40px; align-items: center; gap: 0.4rem; }
+    .renfo-row select { min-width: 0; width: 100%; }
+    .renfo-row .seg { display: flex; min-width: 0; }
+    .renfo-row .seg button { flex: 1; min-width: 0; padding-inline: 0.3rem; }
     .renfo-row select { font: 400 0.95rem var(--font-body); color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-s); min-height: 40px; padding: 0 0.5rem; }
     .renfo-row .icon-btn {
       display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; cursor: pointer;
