@@ -263,3 +263,14 @@ th.sortable {
     color: var(--text-primary);
   }
 }
+
+// Pastille de type de séance (remplace l'emoji) : couleur du type, étiquette dans le title
+.t-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.15rem;
+  border-radius: 50%;
+  background: var(--c);
+  vertical-align: 0.05em;
+}

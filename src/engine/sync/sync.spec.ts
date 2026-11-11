@@ -49,7 +49,7 @@ const FIT = (() => {
 })();
 
 /** Serveur COROS simulé : métadonnées OAuth, jeton (rotation du refresh token), MCP JSON-RPC, hôte des FIT */
-function fakeCoros({ quota = false } = {}) {
+function fakeCoros({ quota = false, fitUrl = (id: string) => `https://s3eu.coros.com/fit/${id}.fit` } = {}) {
   const calls: string[] = [];
   let refreshes = 0;
   const fetch: Fetch = async (input, init) => {
@@ -62,7 +62,7 @@ function fakeCoros({ quota = false } = {}) {
       refreshes++;
       return json({ access_token: `acc-${refreshes}`, refresh_token: `ref-${refreshes}`, expires_in: 3600 });
     }
-    if (url.startsWith('https://s3eu.coros.com/')) return new Response(FIT);
+    if (url.startsWith('https://s3eu.coros.com/')) return calls.push(`fit:${url}`), new Response(FIT);
     if (url === MCP) {
       const auth = new Headers(init?.headers).get('authorization');
       const msg = JSON.parse(String(init?.body));
@@ -83,7 +83,7 @@ function fakeCoros({ quota = false } = {}) {
         case 'queryTrainingSchedule':
           return text(SCHEDULE);
         case 'queryActivityFitFileDownloadUrls':
-          return text(quota ? 'You have reached the daily limit of 50 FIT downloads' : `https://s3eu.coros.com/fit/${msg.params.arguments.labelId}.fit`);
+          return text(quota ? 'You have reached the daily limit of 50 FIT downloads' : fitUrl(msg.params.arguments.labelId));
       }
       return text('?');
     }
@@ -200,6 +200,25 @@ describe('synchro des sources', () => {
     expect(state.coros?.fitQuotaHitAt).toBeTruthy();
     // stage par défaut (NAS) : réponses brutes conservées
     expect(await raw.readText('raw/coros/querySportRecords/2026-03-10.json')).toContain('200001');
+  });
+
+  it('COROS : FIT seulement depuis l’hôte des FIT COROS, taille bornée', async () => {
+    // Adresse hors de coros.com renvoyée par le MCP : jamais demandée (le serveur simulé lèverait « requête inattendue »)
+    let raw = new MemoryStore({ 'records.txt': RECORDS });
+    let tokens = await tokenStore(raw);
+    let server = fakeCoros({ fitUrl: (id) => `https://evil.example/fit/${id}.fit` });
+    let sync = sourceSync(raw, { coros: corosClient({ tokens, fetch: server.fetch }), tokens }, quiet);
+    expect((await sync.syncOne('200002')).ok).toBe(false);
+    expect(await raw.read('fit/200002.fit')).toBeNull();
+    expect(server.calls.some((c) => c.startsWith('fit:'))).toBe(false);
+    // Hôte COROS, mais réponse plus grande que la borne : rien d'écrit
+    raw = new MemoryStore({ 'records.txt': RECORDS });
+    tokens = await tokenStore(raw);
+    server = fakeCoros();
+    sync = sourceSync(raw, { coros: corosClient({ tokens, fetch: server.fetch }), tokens }, { ...quiet, maxFitBytes: FIT.length - 1 });
+    expect((await sync.syncOne('200002')).ok).toBe(false);
+    expect(server.calls.some((c) => c.startsWith('fit:https://s3eu.coros.com/'))).toBe(true);
+    expect(await raw.read('fit/200002.fit')).toBeNull();
   });
 
   it('listes blanches : outil COROS d’écriture et chemin Strava hors liste refusés avant tout envoi', async () => {

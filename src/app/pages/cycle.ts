@@ -1,6 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { usePageTitle } from '../core/page-title';
 import { ScienceService } from '../core/science.service';
 import { DataService } from '../core/data.service';
 import { PeriodService } from '../core/period.service';
@@ -170,6 +171,7 @@ export class CyclePage {
   protected readonly clock = clock;
   protected readonly Math = Math;
 
+  private readonly pageTitle = usePageTitle(() => this.cycle()?.name);
   protected readonly cycle = computed(() => this.sci.cycles().find((c) => c.id === this.params()?.get('id')) ?? null);
   protected readonly focus = computed(() => FOCUS[this.cycle()?.focus ?? 'endurance']);
   protected readonly state = computed(() => (this.cycle() ? this.sci.cycleState(this.cycle()!) : null));

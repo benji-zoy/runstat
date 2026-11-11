@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { accountsLoader } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
 import { BackupStore, gcAllBackups } from './backup-store.mjs';
-import { createPublicApi } from './public-api.mjs';
+import { createPublicApi, ipKey } from './public-api.mjs';
 import { decodeCbor, verifyRegistration, WebAuthnError } from './webauthn.mjs';
 
 const APP = 'https://app.example';
@@ -543,6 +543,35 @@ test('limites : /auth par adresse (la plus à droite de X-Forwarded-For, posée 
   for (let i = 0; i < 31; i++) last = await call('POST', '/auth/login/options', { ip: '203.0.113.9' });
   assert.equal(last.status, 429);
   assert.equal((await call('POST', '/auth/login/options', { ip: '203.0.113.10' })).status, 200);
+});
+
+test('limites : /auth par /64 en IPv6, adresse entière en IPv4', async () => {
+  assert.equal(ipKey('203.0.113.9'), '203.0.113.9');
+  assert.equal(ipKey('::ffff:203.0.113.9'), '203.0.113.9');
+  assert.equal(ipKey('2001:db8:1:2::1'), '2001:db8:1:2::/64');
+  assert.equal(ipKey('2001:0db8:0001:0002:aaaa:bbbb:cccc:dddd'), '2001:db8:1:2::/64');
+  assert.equal(ipKey('[2001:db8:1:2:ffff::5]'), '2001:db8:1:2::/64');
+  now += 61_000;
+  // Changer d'adresse dans le même /64 ne donne pas un nouveau budget ; un autre /64 si
+  let last;
+  for (let i = 0; i < 31; i++) last = await call('POST', '/auth/login/options', { ip: `2001:db8:7:7::${(i + 1).toString(16)}` });
+  assert.equal(last.status, 429);
+  assert.equal((await call('POST', '/auth/login/options', { ip: '2001:db8:7:7:ffff:1:2:3' })).status, 429);
+  assert.equal((await call('POST', '/auth/login/options', { ip: '2001:db8:7:8::1' })).status, 200);
+});
+
+test('limites : saturer les demandes de challenge anonymes ne bloque pas les vérifications', async () => {
+  now += 61_000;
+  // 11 adresses × 30 demandes d'options : le plafond global des options (300/min) est atteint
+  let last;
+  for (let n = 0; n < 11; n++) for (let i = 0; i < 30; i++) last = await call('POST', '/auth/login/options', { ip: `192.0.2.${n + 1}` });
+  assert.equal(last.status, 429);
+  assert.equal((await call('POST', '/auth/login/options', { ip: '192.0.2.200' })).status, 429);
+  // Vérification d'une passkey (ici invalide : 400) et session : pas de 429
+  assert.equal((await call('POST', '/auth/login', { ip: '192.0.2.201', body: { credential: {} } })).status, 400);
+  assert.notEqual((await call('GET', '/auth/session', { ip: '192.0.2.202' })).status, 429);
+  now += 61_000;
+  assert.equal((await call('POST', '/auth/login/options', { ip: '192.0.2.200' })).status, 200);
 });
 
 test('CBOR : refuse les entrées tronquées, trop imbriquées ou avec des octets en trop', () => {

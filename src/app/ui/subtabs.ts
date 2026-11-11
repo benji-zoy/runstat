@@ -63,6 +63,10 @@ export interface SubTab {
       border: 1px solid var(--border); border-radius: 10px;
     }
     :host(.segment) a { color: var(--text-secondary); font-size: 0.86rem; padding: 0.45rem 0.9rem; border-radius: 7px; min-height: 36px; }
+    @media (pointer: coarse) {
+      :host(.segment) a { position: relative; min-height: 38px; }
+      :host(.segment) a::after { content: ''; position: absolute; inset: -3px 0; }
+    }
     :host(.segment) a:hover { color: var(--text-primary); }
     :host(.segment) a.active { background: var(--surface-3); color: var(--text-primary); }
   `,

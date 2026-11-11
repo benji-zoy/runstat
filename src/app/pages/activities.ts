@@ -56,7 +56,7 @@ export class JournalState {
       <select id="session-type" [value]="sessionType()" (change)="sessionType.set($any($event.target).value)" aria-label="Type de séance">
         <option value="all">Tous types</option>
         @for (t of typeList; track t.key) {
-          <option [value]="t.key">{{ t.icon }} {{ t.label }}</option>
+          <option [value]="t.key">{{ t.label }}</option>
         }
       </select>
       <input id="search" type="search" placeholder="Rechercher une séance…" [value]="query()" (input)="query.set($any($event.target).value)" />
@@ -76,7 +76,7 @@ export class JournalState {
             <a class="mrun-head" [routerLink]="['/sortie', a.id]">
               <span class="m-top">
                 <span class="muted m-date">{{ fmtDate(a.date) }}</span>
-                <span class="muted m-kind"><span [title]="typeOf(a.id).label">{{ typeOf(a.id).icon }}</span> {{ kindLabel(a.kind) }}</span>
+                <span class="muted m-kind"><span class="t-dot" [title]="typeOf(a.id).label" [style.--c]="typeOf(a.id).color"></span> {{ kindLabel(a.kind) }}</span>
               </span>
               <span class="m-name">{{ a.name || 'Sortie' }}</span>
               <span class="m-stats">
@@ -116,7 +116,7 @@ export class JournalState {
                 <tr class="row" (click)="open(a.id)" [appMorph]="'run:' + a.id" [class.fresh]="motion.fresh().has(a.id)">
                   <td>{{ fmtDate(a.date) }}</td>
                   <td class="name"><a [routerLink]="['/sortie', a.id]" (click)="$event.stopPropagation()">{{ a.name || 'Sortie' }}</a></td>
-                  <td class="muted"><span class="t-icon" [title]="typeOf(a.id).label">{{ typeOf(a.id).icon }}</span> {{ kindLabel(a.kind) }}</td>
+                  <td class="muted"><span class="t-dot" [title]="typeOf(a.id).label" [style.--c]="typeOf(a.id).color"></span> {{ kindLabel(a.kind) }}</td>
                   <td class="num">{{ num(a.distanceKm, 2) }} km</td>
                   <td class="num">{{ clock(a.durationSec) }}</td>
                   <td class="num">{{ pace(a.durationSec / a.distanceKm) }}</td>

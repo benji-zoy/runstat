@@ -33,7 +33,7 @@ const LEVELS = [0, 5, 10, 15, 21];
         }
       </h2>
       <div class="card">
-        <app-chart [config]="periodChart()" style="--chart-h: 280px" />
+        <app-chart label="Volume par période" [config]="periodChart()" style="--chart-h: 280px" />
       </div>
     </section>
 
@@ -41,12 +41,12 @@ const LEVELS = [0, 5, 10, 15, 21];
       <h2>Sur la durée</h2>
       <div class="card">
         <h3>Kilomètres cumulés, année par année <small class="muted">· pointillés : projection de fin d'année</small></h3>
-        <app-chart [config]="cumulative()" style="--chart-h: 320px" />
+        <app-chart label="Distance cumulée" [config]="cumulative()" style="--chart-h: 320px" />
       </div>
 
       <div class="card">
         <h3>Volume hebdomadaire <small class="muted">· 52 dernières semaines</small></h3>
-        <app-chart [config]="weeklyChart()" />
+        <app-chart label="Volume hebdomadaire" [config]="weeklyChart()" />
       </div>
 
       <div class="card">

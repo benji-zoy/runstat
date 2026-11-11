@@ -41,10 +41,10 @@ ssh_opts="ssh -o ControlMaster=auto -o ControlPath=/tmp/runstat-deploy-%r@%h -o 
 sync="rsync -rltp --chmod=a+rX --exclude=.DS_Store"
 
 $sync -e "$ssh_opts" deploy/docker-compose.yml "$dest/" || exit 1
-# Copies « fichier 2.ext » du Finder (conflits de synchro) : jamais envoyées, et retirées du NAS (nginx chargerait sinon
-# « default 2.conf » avant default.conf)
+# Copies « fichier 2.ext » / « fichier 3 » d'iCloud et du Finder (conflits de synchro, tout chiffre) : jamais envoyées, et retirées
+# du NAS (nginx chargerait sinon « default 2.conf » avant default.conf)
 # Configuration nginx (un dossier, monté sur /etc/nginx/conf.d) : relue au redémarrage du conteneur runstat
-$sync -e "$ssh_opts" --delete --exclude='* 2.*' --exclude='* 2' --delete-excluded deploy/nginx/ "$dest/nginx/" || exit 1
-$sync -e "$ssh_opts" --delete --exclude=/data/ "$site/" "$dest/html/" || exit 1
-$sync -e "$ssh_opts" --delete --exclude='* 2.*' --exclude='* 2' --delete-excluded "$app/" "$dest/app/" || exit 1
+$sync -e "$ssh_opts" --delete --exclude='* [0-9].*' --exclude='* [0-9]' --delete-excluded deploy/nginx/ "$dest/nginx/" || exit 1
+$sync -e "$ssh_opts" --delete --exclude=/data/ --exclude='* [0-9].*' --exclude='* [0-9]' "$site/" "$dest/html/" || exit 1
+$sync -e "$ssh_opts" --delete --exclude='* [0-9].*' --exclude='* [0-9]' --delete-excluded "$app/" "$dest/app/" || exit 1
 echo "Déployé dans $dest (site : $(du -sh "$site" | cut -f1))."

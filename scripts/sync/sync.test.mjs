@@ -137,9 +137,13 @@ test('FIT : quota, URL, en-tête', () => {
     ),
   );
   assert.ok(!pc.isFitQuota('https://example.com/a.fit'));
-  assert.deepEqual(pc.fitUrls('"Files:\\n1. https://x.example/fit/123.fit?sig=a"'), [
-    'https://x.example/fit/123.fit?sig=a',
+  assert.deepEqual(pc.fitUrls('"Files:\\n1. https://s3eu.coros.com/fit/123.fit?sig=a"'), [
+    'https://s3eu.coros.com/fit/123.fit?sig=a',
   ]);
+  // Seulement l'hôte des FIT COROS, en https : toute autre adresse renvoyée par le MCP est ignorée
+  for (const url of ['https://x.example/a.fit', 'http://s3eu.coros.com/a.fit', 'https://coros.com.evil.example/a.fit', 'https://evilcoros.com/a.fit',
+    'https://s3eu.coros.com:8443/a.fit', 'https://u:p@s3eu.coros.com/a.fit'])
+    assert.deepEqual(pc.fitUrls(`"${url}"`), [], url);
   const fit = Buffer.alloc(20);
   fit.write('.FIT', 8, 'ascii');
   assert.ok(pc.isFitFile(fit));

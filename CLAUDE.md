@@ -64,6 +64,8 @@ VO₂max et prédictions de la montre, ratio de charge, quota FIT) ; sans santé
   zip supprimé). `activities.csv` (en-têtes anglais ou français, colonnes en double, dates UTC → Europe/Paris), FIT décompressés
   dans `fit/`, GPX/TCX dans `tracks/*.gz` lus par `src/engine/fit/track.ts` (même structure que `fit-file-parser`, puis `analyse()` du moteur).
   Lecteur zip maison (`zip.mjs`, zip64, sans dépendance). Le numéro du fichier de l'archive n'est pas l'id de l'activité.
+  Bornes contre une archive piégée : une entrée du zip ne sert qu'une fois (même pointée par plusieurs lignes du CSV), 256 Mio par
+  entrée, `MAX_IMPORT_BYTES` (8 Gio décompressés par import), `MAX_CENTRAL_DIR` (64 Mio) ; `mem_limit: 1g` sur runstat-sync.
 - **API REST Strava** (`strava.mjs`, GET sur la liste blanche `READ_PATHS`) : le MCP officiel `mcp.strava.com` est réservé à Claude et aux
   abonnés, et la politique API interdit de le relayer. Pas d'appli commune : chacun crée la sienne sur strava.com/settings/api
   (abonnement Strava requis pour la créer ; sinon, l'archive), avec pour **Authorization Callback Domain l'hôte ts.net du site**
@@ -285,9 +287,13 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
   une session expirée ; 600 par heure et par compte ; journal `/relay/garmin/api/:route` sans le chemin ; nginx `location /relay/garmin/`
   sans tampon, 90 s ; testé par le client du moteur contre le vrai serveur dans `public-api.test.mjs`). Le reste se fait
   depuis le navigateur : COROS (MCP, OAuth, enregistrement dynamique), Strava, Google Health, Open-Meteo et l'hôte des FIT COROS
-  (`s3eu.coros.com`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement, et
+  (`s3eu.coros.com` : seules les adresses https de `coros.com` et de ses sous-domaines sont suivies, `fitUrls`, 32 Mio au plus,
+  `MAX_FIT_BYTES`) acceptent le CORS. Les jetons Google des proches transitent donc en clair par le NAS à chaque renouvellement, et
   la clé, le jeton et les données Garmin à chaque synchro Garmin.
-- Limites : `/auth` 30/min par IP et 300/min au total, sauvegarde 1 200 requêtes / 10 min par compte. Journal : méthode, route type,
+- Limites : `/auth` 30/min par adresse (`ipKey` : le /64 en IPv6), plus 300/min au total pour les seules demandes de challenge
+  (`…/options`) : les saturer ne bloque ni les vérifications ni les sessions ouvertes ; sauvegarde 1 200 requêtes / 10 min par compte.
+  En amont, `limit_req` de nginx sur `:82` par adresse du client (`$client_ip`) : `/auth/` 60/min (rafale 30), `/backup/` 10/s
+  (rafale 300), `/relay/` 5/s (rafale 100), 429 au-delà ; zones lan et tailnet non limitées. Journal : méthode, route type,
   statut, compte ; jamais de corps, jeton, code ni URL relayée.
 - Mise en service (avec l'accord du propriétaire) : variables ci-dessus et port `127.0.0.1:8091:82` dans le YAML de Container Manager,
   Nettoyer › Construire ; attribut `funnel` dans la politique du tailnet ; `sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8091` ;
@@ -579,7 +585,7 @@ qui part accélère et sort à vitesse de croisière sans freiner (`--ease-depar
 (fondus gardés, déplacements supprimés ; `prefersReducedMotion()` côté JS). Transitions de page par `withViewTransitions` (pas pour un simple
 changement de `?…`), carte → en-tête de fiche par `[appMorph]="'run:' + id"` et `.vt-hero` (un seul nom `hero` à la fois), cartes en cascade,
 `<dialog>` par `@starting-style`, `details` par `::details-content`, indicateur qui glisse (`installSlidingIndicators` : `.seg`, sous-onglets,
-barres de navigation), chiffres clés `[appCountUp]` (texte déjà formaté, chronos en secondes), graphiques animés à leur première apparition
+barres de navigation), chiffres clés `[appCountUp]` (texte déjà formaté ; nombres simples qui défilent depuis zéro à la première apparition, mais durées, chronos et allures, texte avec « : », affichés tels quels, sans défilement, et seulement transformés d'un chrono à l'autre), graphiques animés à leur première apparition
 à l'écran puis transformés d'une donnée à l'autre, sorties nouvelles après une synchro `.fresh` (`MotionService.fresh`), moment signature
 `[appSignature]` (une fois par clé et par appareil). Profondeur : `--edge`, `--shadow`, `--shadow-lift` ; rayons `--radius-s` / `--radius` / `--radius-l`.
 
@@ -603,7 +609,10 @@ local, assemblage du service vérifié à la main (dossier temporaire, `server.m
 Projet Container Manager dans `/docker/runstat` (`deploy/docker-compose.yml`) : `runstat` (nginx, ports 8080 réseau local et
 127.0.0.1:8090 Tailscale Serve, dossier `deploy/nginx/` monté sur `conf.d` : `default.conf` (un bloc par zone, voir Comptes), `site.inc`
 (fallback vers `index.html` pour les routes Angular, `index.html`, `ngsw-worker.js`, `ngsw.json` et le manifeste en no-cache, `/data/` et
-`/api/` vers runstat-sync, `/api/strava/archive` sans tampon jusqu'à 2 Go), `proxy.inc` (en-têtes relayés, dans chaque location)) et
+`/api/` vers runstat-sync, `/api/strava/archive` sans tampon jusqu'à 2 Go), `proxy.inc` (en-têtes relayés, dans chaque location),
+`security.inc` (nosniff, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'` seulement : inclus au
+niveau server et **répété dans chaque location qui a ses propres `add_header`**, sinon nginx ne les hérite pas ; inclusions en `.inc`,
+car nginx charge tout `*.conf` de conf.d au niveau http)) et
 `runstat-sync` (node:24-alpine, uid 1026:100, volume `./users`, voir Synchronisation et Comptes). `npm run deploy` (`scripts/deploy.sh`) : `ng build`, puis rsync de la config, de
 `dist/runstat/browser/` vers `<destination>/html/` (**sauf `data/`**, produit sur le NAS) et des scripts + `fit-file-parser`
 vers `<destination>/app/` (relus à chaque synchro, sans redémarrage). Destination dans `data-raw/nas.txt` (SSH
@@ -622,3 +631,5 @@ local via Tailscale uniquement : données personnelles, ne pas ouvrir de port.
 - `npm run check:engine` (syntaxe compatible avec le type stripping de Node)
 - `npx ng build` (et `npx ng build -c pages` pour l'appli publique)
 - `npm run test:sync` (synchro, `node:test`)
+- CI des pull requests (`.github/workflows/ci.yml`, vers main) : `npm ci`, `ng test`, `check:engine`, `test:sync`, `ng build` et `ng build -c pages`, mêmes actions épinglées que `pages.yml`.
+- Doublons iCloud / Finder (« fichier 2.ts », « Dockerfile 3 ») : ignorés par `.gitignore` et `.dockerignore`, exclus de la compilation (`* ?.ts` dans les `tsconfig`) et des rsync de `scripts/deploy.sh` (tout chiffre isolé). Ils reviennent : supprimer `find . -name '* [0-9]*' -not -path './node_modules/*'` avant `ng build` ou un déploiement.

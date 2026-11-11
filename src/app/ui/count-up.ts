@@ -15,7 +15,8 @@ interface Token {
 
 /**
  * Chiffre clé qui défile jusqu'à sa valeur en ralentissant à la fin, la première fois qu'il apparaît à l'écran ; ensuite,
- * d'une valeur à l'autre. Reçoit le texte déjà formaté et le réécrit tel quel à chaque image (mêmes séparateurs, mêmes
+ * d'une valeur à l'autre. Les durées, chronos et allures (texte avec « : ») ne défilent pas depuis zéro : affichage direct à la première apparition,
+ * puis transformation d'une valeur à l'autre seulement pour un chrono. Reçoit le texte déjà formaté et le réécrit tel quel à chaque image (mêmes séparateurs, mêmes
  * décimales) ; un chrono défile en secondes. `<span [appCountUp]="clock(e.predicted)"></span>`
  */
 @Directive({ selector: '[appCountUp]' })
@@ -72,15 +73,19 @@ export class CountUpDirective {
 }
 
 /** Texte intermédiaire à l'avancement `k` (0 → 1), ou null s'il n'y a rien à faire défiler */
-function frames(text: string, from: string | null): ((k: number) => string) | null {
+export function frames(text: string, from: string | null): ((k: number) => string) | null {
   const clock = CLOCK.exec(text.trim());
   if (clock) {
     const target = toSec(clock);
+    // Un chrono ne défile jamais depuis zéro (valeurs fausses mais plausibles) : seulement d'un chrono de même forme à l'autre
     const prev = from ? CLOCK.exec(from.trim()) : null;
-    const origin = prev && !!prev[3] === !!clock[3] ? toSec(prev) : 0;
+    if (!prev || !!prev[3] !== !!clock[3]) return null;
+    const origin = toSec(prev);
     if (origin === target) return null;
     return (k) => fmtClock(Math.round(origin + (target - origin) * k), !!clock[3]);
   }
+  // Allure (« 4:59 /km ») et autres durées : affichées telles quelles, pas de défilement par morceaux
+  if (text.includes(':')) return null;
   const parts = text.split(NUMBER);
   const tokens = [...text.matchAll(NUMBER)].map((m) => token(m[0]));
   if (!tokens.length) return null;

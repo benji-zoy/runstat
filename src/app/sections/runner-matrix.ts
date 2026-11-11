@@ -65,7 +65,7 @@ export function formatValue(v: number | null, unit: MetricUnit): string {
               Absolu · % du niveau mondial
             </button>
           </div>
-          <app-chart [config]="radarChart()" />
+          <app-chart label="Radar des six branches du profil de coureur" [config]="radarChart()" />
           <p class="muted small legend-note">
             <span class="key" [style.background]="todayColor"></span> Aujourd'hui
             <span class="key dashed"></span> Il y a six mois ({{ fmtDate(m.then) }})

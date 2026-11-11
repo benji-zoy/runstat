@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Location } from '@angular/common';
 import { DataService } from '../core/data.service';
+import { usePageTitle } from '../core/page-title';
 import { parseDay } from '../core/stats';
 import { clock, num, pace } from '../core/format';
 import { ActivityDetailComponent } from '../ui/activity-detail';
@@ -149,6 +150,7 @@ export class RunPage {
       const id = this.params()?.get('id');
       if (id) motion.last = 'run:' + id;
     });
+    usePageTitle(() => this.activity()?.name);
   }
   protected distLabel = (km: number) =>
     Math.abs(km - 42.195) < 0.05 ? 'Marathon' : Math.abs(km - 21.0975) < 0.05 ? 'Semi' : `${num(km, km % 1 ? 1 : 0)} km`;

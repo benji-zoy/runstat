@@ -49,6 +49,11 @@ const GRANS: { key: Granularity; label: string }[] = [
       font: 600 0.8rem var(--font-body); color: var(--accent); background: var(--accent-soft); border: 0;
       border-radius: 8px; padding: 0.45rem 0.8rem; min-height: 36px; cursor: pointer;
     }
+    @media (pointer: coarse) {
+      .arrow { width: 2.75rem; height: 2.75rem; }
+      .today { position: relative; }
+      .today::after { content: ''; position: absolute; inset: -4px 0; }
+    }
     .hint { margin: 0.4rem 0 0; font-size: 0.82rem; }
     @media (max-width: 600px) {
       .bar { gap: 0.5rem 0.75rem; }

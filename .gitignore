@@ -53,3 +53,7 @@ Thumbs.db
 
 # Comptes de l'instance (multi-utilisateur, sur le NAS)
 /users
+
+# Doublons créés par la synchro iCloud / le Finder (« fichier 2.ts », « Dockerfile 3 ») : jamais versionnés
+* [0-9].*
+* [0-9]

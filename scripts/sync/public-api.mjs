@@ -24,6 +24,7 @@
 import { createWriteStream, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { isIPv4, isIPv6 } from 'node:net';
 import { Readable } from 'node:stream';
 import { allowedRequest, API_KEY_HEADER, BEARER_HEADER, GARMIN_API_URL, GARMIN_TOKEN_PATH, JWT } from '#engine/sync/garmin.ts';
 import { AuthStore } from './auth-store.mjs';
@@ -55,6 +56,25 @@ export function parseOrigins(value) {
     .filter(Boolean);
 }
 
+/**
+ * Clé de limite d'une adresse : l'adresse entière en IPv4 (y compris « ::ffff:a.b.c.d »), le /64 en IPv6 (un client en
+ * reçoit un entier : changer d'adresse dedans ne doit pas donner un nouveau budget). Autre chose : la valeur telle quelle.
+ */
+export function ipKey(ip) {
+  const v = String(ip ?? '').trim().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(v);
+  if (mapped && isIPv4(mapped[1])) return mapped[1];
+  if (isIPv4(v)) return v;
+  if (!isIPv6(v)) return v.slice(0, 64) || '?';
+  // Forme complète : « :: » développé en groupes nuls (une IPv4 finale compte pour deux groupes)
+  const [head, tail] = v.toLowerCase().split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const used = h.length + t.length + (String(t.at(-1) ?? h.at(-1)).includes('.') ? 1 : 0);
+  const all = [...h, ...Array(tail === undefined ? 0 : Math.max(0, 8 - used)).fill('0'), ...t];
+  return `${all.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
 /** Seau à jetons : `capacity` requêtes, rechargé de `capacity` par `windowMs` */
 export class Limiter {
   constructor(capacity, windowMs, now = Date.now) {
@@ -62,6 +82,9 @@ export class Limiter {
   }
   take(key) {
     const t = this.now();
+    // Mémoire bornée : on oublie d'abord les seaux pleins (rien à retenir), et tout seulement en dernier recours
+    if (this.buckets.size > 10_000)
+      for (const [k, b] of this.buckets) if (b.tokens + ((t - b.at) * this.capacity) / this.windowMs >= this.capacity) this.buckets.delete(k);
     if (this.buckets.size > 10_000) this.buckets.clear();
     const b = this.buckets.get(key) ?? { tokens: this.capacity, at: t };
     b.tokens = Math.min(this.capacity, b.tokens + ((t - b.at) * this.capacity) / this.windowMs);
@@ -123,8 +146,10 @@ export function createPublicApi({
   const auth = new AuthStore(usersDir, now);
   const challenges = new Map();
   const limits = {
+    // /auth : 30 par minute et par adresse (/64 en IPv6), toutes routes confondues. Plafond global seulement sur les demandes
+    // de challenge anonymes (…/options) : les saturer ne bloque ni les vérifications ni les sessions déjà ouvertes.
     authIp: new Limiter(30, 60_000, now),
-    authAll: new Limiter(300, 60_000, now),
+    authOptions: new Limiter(300, 60_000, now),
     backup: new Limiter(1200, 10 * 60_000, now),
     relay: new Limiter(30, 3_600_000, now),
     // Une synchro Garmin : un jeton, une page d'activités par centaine, un FIT par sortie, la santé par fenêtres de 28 jours
@@ -515,7 +540,7 @@ export function createPublicApi({
     if (!area || !accounts().multi) return finish(404, { error: 'introuvable' });
     // Adresse du client : posée par nginx (:82) d'après la valeur la plus à droite de X-Forwarded-For (celle de Funnel)
     const ip = String(req.headers['x-real-ip'] ?? req.socket.remoteAddress ?? '?');
-    if (area === 'auth' && (!limits.authIp.take(ip) || !limits.authAll.take('*')))
+    if (area === 'auth' && (!limits.authIp.take(ipKey(ip)) || (path.endsWith('/options') && !limits.authOptions.take('*'))))
       return finish(429, { error: 'trop de tentatives : réessaie dans une minute' });
     try {
       const out = await (area === 'auth' ? authRoutes : area === 'backup' ? backupRoutes : relayRoutes)(req, res, path, ctx, url);

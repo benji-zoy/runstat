@@ -49,6 +49,9 @@ services:
       - ./app/package.json:/app/package.json:ro
       - ./users:/app/users
     command: ["node", "scripts/sync/server.mjs"]
+    # Mémoire bornée (archive Strava piégée, rafale de requêtes) : le conteneur est tué et relancé plutôt que le NAS saturé.
+    # Comme tout changement de ce fichier : à recopier dans Projet › runstat › YAML, puis Arrêter › Nettoyer › Construire.
+    mem_limit: 1g
     networks: [runstat]
     restart: unless-stopped
 

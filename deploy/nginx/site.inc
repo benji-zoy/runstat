@@ -1,6 +1,9 @@
 # Fichiers du site (build Angular dans ./html), communs aux deux blocs server de default.conf.
 root /usr/share/nginx/html;
 
+# En-têtes de sécurité : ici pour toutes les locations sans add_header, et répétés dans celles qui en ont (security.inc)
+include /etc/nginx/conf.d/security.inc;
+
 gzip on;
 gzip_proxied any;
 gzip_types application/json application/javascript text/css image/svg+xml;
@@ -9,16 +12,20 @@ gzip_types application/json application/javascript text/css image/svg+xml;
 # (sinon la règle de cache long ci-dessous figerait l'appli un an). Les locations exactes passent avant les regex.
 location = /ngsw-worker.js {
   add_header Cache-Control "no-cache";
+  include /etc/nginx/conf.d/security.inc;
 }
 location = /safety-worker.js {
   add_header Cache-Control "no-cache";
+  include /etc/nginx/conf.d/security.inc;
 }
 location = /ngsw.json {
   add_header Cache-Control "no-cache";
+  include /etc/nginx/conf.d/security.inc;
 }
 location = /manifest.webmanifest {
   default_type application/manifest+json;
   add_header Cache-Control "no-cache";
+  include /etc/nginx/conf.d/security.inc;
 }
 
 # Icônes (noms fixes) : une semaine.
@@ -37,6 +44,7 @@ location ~* \.(js|css|woff2?|png|svg)$ {
 # Page d'entrée : toujours revalidée après un déploiement.
 location = /index.html {
   add_header Cache-Control "no-cache";
+  include /etc/nginx/conf.d/security.inc;
 }
 
 # Instantané du compte de la requête (coros.json, routes.json) : servi par runstat-sync (/api/data/), jamais en statique.

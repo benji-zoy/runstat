@@ -33,6 +33,8 @@ services:
       RUNSTAT_BACKUP_QUOTA_MB: "1024"
     volumes:
       - ./users:/app/users
+    # Mémoire bornée (archive Strava piégée, rafale de requêtes) : le conteneur est tué et relancé plutôt que le NAS saturé.
+    mem_limit: 1g
     networks: [runstat]
     restart: unless-stopped
 

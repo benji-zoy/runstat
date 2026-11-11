@@ -74,8 +74,19 @@ export const inflate = (data: Uint8Array, format: 'deflate-raw' | 'gzip', max: n
 /** Compression gzip (tracés rangés en .gz, comme sur le NAS) */
 export const gzip = (data: Uint8Array): Promise<Uint8Array> => collect(once(data).pipeThrough(new CompressionStream('gzip')));
 
-/** Ouvre un zip ; `maxEntrySize` borne la taille décompressée d'une entrée */
-export async function openZip(src: ByteSource, { maxEntrySize = 256 * 1024 * 1024 } = {}): Promise<Zip> {
+/**
+ * Répertoire central lu d'un bloc en mémoire : ≈ 100 octets par entrée, donc 64 Mio laissent la place à des centaines de
+ * milliers de fichiers (une archive Strava de plusieurs milliers de sorties en fait quelques Mo).
+ */
+export const MAX_CENTRAL_DIR = 64 * 1024 * 1024;
+/** Données compressées d'une entrée lues d'un bloc : au plus la taille décompressée permise, plus la marge du deflate */
+const compressedLimit = (maxEntrySize: number) => maxEntrySize + Math.ceil(maxEntrySize / 64) + 1024;
+
+/** Ouvre un zip ; `maxEntrySize` borne la taille décompressée d'une entrée, `maxCentralDir` celle du répertoire central */
+export async function openZip(
+  src: ByteSource,
+  { maxEntrySize = 256 * 1024 * 1024, maxCentralDir = MAX_CENTRAL_DIR } = {},
+): Promise<Zip> {
   const at = async (pos: number, len: number) => {
     const buf = await src.read(pos, len);
     if (buf.length !== len) throw new ZipError('zip tronqué');
@@ -103,6 +114,7 @@ export async function openZip(src: ByteSource, { maxEntrySize = 256 * 1024 * 102
     cdOffset = u64(rec, 48);
   }
   if (cdOffset + cdSize > src.size) throw new ZipError('répertoire central hors du fichier');
+  if (cdSize > maxCentralDir) throw new ZipError(`répertoire central trop volumineux (plus de ${Math.round(maxCentralDir / 2 ** 20)} Mio) : archive refusée`);
 
   const cd = await at(cdOffset, cdSize);
   const bytes = new Uint8Array(cd.buffer, cd.byteOffset, cd.byteLength);
@@ -137,6 +149,7 @@ export async function openZip(src: ByteSource, { maxEntrySize = 256 * 1024 * 102
     entries,
     async read(entry) {
       if (entry.size > maxEntrySize) throw new ZipError(`${entry.name} : trop volumineux`);
+      if (entry.compressedSize > compressedLimit(maxEntrySize)) throw new ZipError(`${entry.name} : trop volumineux (données compressées)`);
       const head = await at(entry.offset, 30);
       if (head.getUint32(0, true) !== LOCAL) throw new ZipError(`${entry.name} : en-tête local invalide`);
       const start = entry.offset + 30 + head.getUint16(26, true) + head.getUint16(28, true);
