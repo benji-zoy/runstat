@@ -1,7 +1,7 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { AiExportService } from '../../core/ai-export.service';
 import { AiDetail } from '../../core/ai/context';
-import { PlanMode, PlanRequest, STRENGTH_LABELS, StrengthFocus } from '../../core/ai/exports';
+import { CycleRequest, PlanMode, PlanRequest, STRENGTH_LABELS, StrengthFocus } from '../../core/ai/exports';
 import { DataService } from '../../core/data.service';
 import { EntriesService } from '../../core/entries.service';
 import { GoalEvaluation } from '../../core/goals';
@@ -9,6 +9,10 @@ import { WEEKDAYS } from '../../core/insights';
 import { PeriodService } from '../../core/period.service';
 import { ambitiousAdvised, bandOf, currentWeekly, recommendedSessions, recommendedVolume, volumeBands, VolumeBand } from '../../core/plan';
 import { secondaryChecks } from '../../core/plan-checks';
+import { FOCUS, FOCUS_ORDER, TEST_DISTANCES, cycleId, cycleName, cycleTest, cycleVolume, nextMonday } from '../../core/cycle';
+import { Cycle, CycleFocus, Goal } from '../../core/models';
+import { addDays, isoDay, parseDay } from '../../core/stats';
+import { goalId } from './goal-form';
 import { ScienceService } from '../../core/science.service';
 import { clock, num } from '../../core/format';
 import { IconComponent } from '../icon';
@@ -16,15 +20,18 @@ import { GoalFormComponent } from './goal-form';
 import { errorList } from './form-dialog';
 import { canCopy, canShare, copyDoc, downloadDoc, shareDoc } from './md-delivery';
 
-type Step = 'secondaires' | 'volume' | 'seances' | 'mode' | 'renfo' | 'recap';
-const STEPS: { id: Step; title: string }[] = [
-  { id: 'secondaires', title: 'Courses de préparation' },
+type Step = 'but' | 'secondaires' | 'volume' | 'seances' | 'mode' | 'renfo' | 'recap';
+const COMMON: { id: Step; title: string }[] = [
   { id: 'volume', title: 'Volume' },
   { id: 'seances', title: 'Séances' },
   { id: 'mode', title: 'Intensité' },
   { id: 'renfo', title: 'Renforcement' },
   { id: 'recap', title: 'Récapitulatif' },
 ];
+/** Plan vers une course : courses de préparation d'abord ; cycle sans course : son but d'abord */
+const GOAL_STEPS = [{ id: 'secondaires' as Step, title: 'Courses de préparation' }, ...COMMON];
+const CYCLE_STEPS = [{ id: 'but' as Step, title: 'Ton but' }, ...COMMON];
+const WEEK_CHOICES = [4, 6, 8, 10, 12, 16];
 
 /** Choix gardés sur l'appareil, par objectif (rouvrir l'assistant les retrouve) */
 interface Saved {
@@ -72,21 +79,57 @@ const read = (k: string) => {
   imports: [IconComponent, GoalFormComponent],
   template: `
     <app-goal-form #goalForm />
-    <dialog #dlg class="sheet wizard" aria-label="Préparer mon plan" (close)="ev.set(null)">
-      @if (ev(); as e) {
+    <dialog #dlg class="sheet wizard" aria-label="Préparer mon plan" (close)="closed()">
+      @if (active()) {
         <form novalidate (submit)="$event.preventDefault(); next()">
           <header>
             <div>
-              <p class="kicker">{{ index() + 1 }} / {{ steps.length }} · {{ steps[index()].title }}</p>
-              <h2>Plan pour {{ e.goal.name }}</h2>
+              <p class="kicker">{{ index() + 1 }} / {{ steps().length }} · {{ steps()[index()].title }}</p>
+              <h2>{{ heading() }}</h2>
             </div>
             <button type="button" class="icon-btn" (click)="close()" aria-label="Fermer"><app-icon name="close" /></button>
           </header>
-          <div class="progress" aria-hidden="true"><span [style.width.%]="((index() + 1) / steps.length) * 100"></span></div>
+          <div class="progress" aria-hidden="true"><span [style.width.%]="((index() + 1) / steps().length) * 100"></span></div>
 
           <div class="body">
             @switch (step()) {
+              @case ('but') {
+                <p class="q">Quel est ton but pour ce cycle ?</p>
+                <div class="options" role="radiogroup" aria-label="But du cycle">
+                  @for (f of focusOrder; track f) {
+                    <button type="button" class="opt card-opt" role="radio" [class.active]="focus() === f" [attr.aria-checked]="focus() === f" (click)="pickFocus(f)">
+                      <span><b>{{ focusInfo[f].label }}</b></span>
+                      <small class="muted">{{ focusInfo[f].hint }}</small>
+                    </button>
+                  }
+                </div>
+                <div class="field">Durée
+                  <div class="chips nums" role="group" aria-label="Durée en semaines">
+                    @for (w of weekChoices; track w) {
+                      <button type="button" class="chip" [class.active]="weeks() === w" [attr.aria-pressed]="weeks() === w" (click)="weeks.set(w)">{{ w }}</button>
+                    }
+                  </div>
+                  <span class="hint">semaines · conseillé : {{ focusInfo[focus()].weeks }} · 16 au plus (limite d'un plan COROS)</span>
+                </div>
+                <label class="field">Début
+                  <input type="date" [value]="start()" (change)="start.set($any($event.target).value || start())" />
+                  <span class="hint">Jusqu'au {{ lastDay() }}. Pour l'envoyer dans COROS, le cycle doit commencer dans les 14 jours.</span>
+                </label>
+                <div class="field">Test chronométré la dernière semaine
+                  <div class="chips" role="group" aria-label="Test de fin de cycle">
+                    <button type="button" class="chip" [class.active]="testKm() === null" (click)="testKm.set(null)">Sans test</button>
+                    @for (k of testDistances; track k) {
+                      <button type="button" class="chip" [class.active]="testKm() === k" (click)="testKm.set(k)">{{ k }} km</button>
+                    }
+                  </div>
+                  <span class="hint">{{ focusInfo[focus()].testKm ? 'Conseillé : ' + focusInfo[focus()].testKm + ' km' : 'Conseillé : sans test' }} · le test apparaît dans Courses, avec son chrono probable puis son bilan.</span>
+                </div>
+                @if (error(); as err) {
+                  <p class="alert warn" role="alert">{{ err }}</p>
+                }
+              }
               @case ('secondaires') {
+                @if (live(); as e) {
                 <p class="q">Des courses de préparation avant {{ e.goal.name }} ?</p>
                 <p class="muted small">Elles sont intégrées au plan (allègement avant, récupération après). Coche celles qui en font partie.</p>
                 @if (candidates().length) {
@@ -115,9 +158,10 @@ const read = (k: string) => {
                 @if (error(); as err) {
                   <p class="alert warn" role="alert">{{ err }}</p>
                 }
+                }
               }
               @case ('volume') {
-                <p class="q">Combien de km par semaine au plus fort du plan ?</p>
+                <p class="q">Combien de km par semaine au plus fort {{ kind() === 'cycle' ? 'du cycle' : 'du plan' }} ?</p>
                 <p class="muted small">Aujourd'hui : {{ num(weekly()) }} km/semaine en moyenne sur 6 semaines. Conseillé : ≈ {{ num(recommended()) }} km.</p>
                 <div class="options" role="radiogroup" aria-label="Volume au plus fort">
                   @for (b of bands(); track $index) {
@@ -174,9 +218,13 @@ const read = (k: string) => {
                     <small class="muted">Jusqu'à deux séances de qualité, des blocs un peu plus longs et plus durs, toujours raisonnables.</small>
                   </button>
                 </div>
-                @if (e.probability !== null) {
-                  <p class="muted small">Objectif {{ clock(e.goal.targetSec!) }} : {{ num(e.probability * 100) }} % de chances aujourd'hui ({{ e.verdict.label.toLowerCase() }}).
-                    {{ advisedAmbitious() ? 'Le mode ambitieux t’aide à combler l’écart.' : 'Le mode normal suffit pour le tenir.' }}</p>
+                @if (live(); as e) {
+                  @if (e.probability !== null) {
+                    <p class="muted small">Objectif {{ clock(e.goal.targetSec!) }} : {{ num(e.probability * 100) }} % de chances aujourd'hui ({{ e.verdict.label.toLowerCase() }}).
+                      {{ advisedAmbitious() ? 'Le mode ambitieux t’aide à combler l’écart.' : 'Le mode normal suffit pour le tenir.' }}</p>
+                  }
+                } @else {
+                  <p class="muted small">{{ advisedAmbitious() ? 'Pour gagner en vitesse, le mode ambitieux est conseillé.' : 'Pour ce but, le mode normal est conseillé.' }}</p>
                 }
               }
               @case ('renfo') {
@@ -232,7 +280,7 @@ const read = (k: string) => {
                   }
                 </div>
                 @if (doc(); as d) {
-                  <p class="muted small">≈ {{ tokens(d.tokens) }} jetons · aucune coordonnée GPS, aucun nom de sortie ni de tiers. Donne ce texte à l'IA de ton choix, puis importe sa réponse avec « Importer le plan ».</p>
+                  <p class="muted small">≈ {{ tokens(d.tokens) }} jetons · aucune coordonnée GPS, aucun nom de sortie ni de tiers. Donne ce texte à l'IA de ton choix, puis importe sa réponse avec « {{ kind() === 'cycle' ? 'Importer le cycle' : 'Importer le plan' }} ».</p>
                   <details class="preview">
                     <summary>Aperçu du texte</summary>
                     <pre>{{ d.markdown }}</pre>
@@ -259,7 +307,7 @@ const read = (k: string) => {
                 <button type="button" class="btn primary act" (click)="copy()"><app-icon name="copy" />Copier</button>
               }
             } @else {
-              <button type="submit" class="btn primary">Suivant</button>
+              <button type="submit" class="btn primary" [disabled]="entries.saving()">Suivant</button>
             }
           </footer>
         </form>
@@ -325,7 +373,10 @@ export class PlanWizardComponent {
   private readonly today = inject(PeriodService).today;
   private readonly dlg = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
 
-  protected readonly steps = STEPS;
+  protected readonly focusOrder = FOCUS_ORDER;
+  protected readonly focusInfo = FOCUS;
+  protected readonly weekChoices = WEEK_CHOICES;
+  protected readonly testDistances = TEST_DISTANCES;
   protected readonly weekdays = WEEKDAYS;
   protected readonly counts = [2, 3, 4, 5, 6, 7];
   protected readonly focuses: StrengthFocus[] = ['upper', 'lower', 'full'];
@@ -334,12 +385,27 @@ export class PlanWizardComponent {
   protected readonly canCopy = canCopy();
   protected readonly canShare = canShare();
 
+  /** Plan vers une course, ou cycle d'entraînement sans course */
+  protected readonly kind = signal<'goal' | 'cycle'>('goal');
+  protected readonly active = signal(false);
   /** Objectif ouvert : relu dans les évaluations à jour (un objectif secondaire ajouté change tout) */
   private readonly goalId = signal<string | null>(null);
-  readonly ev = signal<GoalEvaluation | null>(null);
-  private readonly live = computed(() => this.sci.goals().find((e) => e.goal.id === this.goalId()) ?? this.ev());
+  private readonly ev = signal<GoalEvaluation | null>(null);
+  protected readonly live = computed(() => (this.kind() === 'goal' ? (this.sci.goals().find((e) => e.goal.id === this.goalId()) ?? this.ev()) : null));
+  protected readonly steps = computed(() => (this.kind() === 'cycle' ? CYCLE_STEPS : GOAL_STEPS));
   protected readonly index = signal(0);
-  protected readonly step = computed(() => STEPS[this.index()].id);
+  protected readonly step = computed(() => this.steps()[this.index()].id);
+
+  // Cycle : identifiant (null tant qu'il n'est pas enregistré), but, durée, début, test, cycle précédent
+  private readonly cycleKey = signal<string | null>(null);
+  protected readonly focus = signal<CycleFocus>('endurance');
+  protected readonly weeks = signal(8);
+  protected readonly start = signal('');
+  protected readonly testKm = signal<number | null>(10);
+  private readonly previous = signal<string | null>(null);
+  protected readonly lastDay = computed(() => (this.start() ? isoDay(addDays(parseDay(this.start()), this.weeks() * 7 - 1)) : ''));
+  private readonly cycle = computed(() => this.sci.cycles().find((c) => c.id === this.cycleKey()) ?? null);
+  protected readonly heading = computed(() => (this.kind() === 'cycle' ? cycleName(this.focus(), this.start() || isoDay(this.today)) : `Plan pour ${this.live()?.goal.name ?? ''}`));
   protected readonly error = signal<string | null>(null);
   protected readonly status = signal<string | null>(null);
 
@@ -356,6 +422,7 @@ export class PlanWizardComponent {
 
   protected readonly weekly = computed(() => currentWeekly(this.data.activities(), this.today));
   protected readonly recommended = computed(() => {
+    if (this.kind() === 'cycle') return cycleVolume(this.focus(), this.weekly(), this.weeks());
     const e = this.live();
     return e ? recommendedVolume(e.goal, this.weekly(), this.today) : 0;
   });
@@ -366,7 +433,7 @@ export class PlanWizardComponent {
     const b = this.chosenBand();
     return recommendedSessions(b ? (b.max ?? b.min + 20) - 10 : this.recommended());
   });
-  protected readonly advisedAmbitious = computed(() => ambitiousAdvised(this.live()?.probability ?? null));
+  protected readonly advisedAmbitious = computed(() => (this.kind() === 'cycle' ? this.focus() === 'speed' : ambitiousAdvised(this.live()?.probability ?? null)));
 
   /** Objectifs à venir avant celui-ci, sauf ceux qui préparent un autre objectif principal ou en ont eux-mêmes */
   protected readonly candidates = computed(() => {
@@ -392,6 +459,21 @@ export class PlanWizardComponent {
     return null;
   });
 
+  private readonly cycleRequest = computed<CycleRequest | null>(() => {
+    const c = this.cycle();
+    if (!c) return null;
+    const { secondaries, checks, ...choices } = this.request();
+    const test = cycleTest(c, this.data.data()?.goals ?? []);
+    const testEv = test ? this.sci.goals().find((e) => e.goal.id === test.id) : null;
+    const prev = this.previous() ? this.sci.cycles().find((x) => x.id === this.previous()) : null;
+    return {
+      ...choices,
+      cycle: { name: c.name, focusLabel: FOCUS[c.focus].label, focusPrompt: FOCUS[c.focus].prompt, start: c.start, weeks: c.weeks },
+      test: test ? { km: test.distanceKm, date: test.date, predicted: testEv?.predicted ?? null } : null,
+      previous: prev ? this.sci.cycleBilan(prev) : null,
+    };
+  });
+
   private readonly request = computed<PlanRequest>(() => {
     const s = this.sessions();
     return {
@@ -409,18 +491,26 @@ export class PlanWizardComponent {
   });
 
   protected readonly doc = computed(() => {
+    if (this.step() !== 'recap') return null;
+    const opts = { detail: this.detail(), health: this.health() };
+    if (this.kind() === 'cycle') {
+      const r = this.cycleRequest();
+      return r ? this.ai.buildCycle(opts, r) : null;
+    }
     const e = this.live();
-    if (!e || this.step() !== 'recap') return null;
-    return this.ai.buildPlan(e, { detail: this.detail(), health: this.health() }, this.request());
+    return e ? this.ai.buildPlan(e, opts, this.request()) : null;
   });
 
   protected readonly summary = computed(() => {
     const r = this.request();
     const e = this.live();
-    if (!e) return '';
-    const weeks = Math.max(1, Math.ceil(e.daysLeft / 7));
+    const c = this.cycle();
+    if (!e && !c) return '';
+    const weeks = c ? c.weeks : Math.max(1, Math.ceil(e!.daysLeft / 7));
+    const test = c ? cycleTest(c, this.data.data()?.goals ?? []) : null;
     const parts = [
-      `${weeks} semaine${weeks > 1 ? 's' : ''}`,
+      c ? `${FOCUS[c.focus].label} : ${weeks} semaines à partir du ${c.start}` : `${weeks} semaine${weeks > 1 ? 's' : ''}`,
+      c ? (test ? `test de ${test.distanceKm} km le ${test.date}` : 'sans test') : null,
       r.volume ? this.bandLabel(r.volume) + ' au plus fort' : null,
       r.sessions ? (r.sessions.min === r.sessions.max ? `${r.sessions.min} séances` : `${r.sessions.min} ou ${r.sessions.max} séances`) + ' par semaine' : null,
       r.longDays.length ? `sortie longue le ${r.longDays.map((d) => WEEKDAYS[d].toLowerCase()).join(' ou le ')}` : null,
@@ -432,22 +522,62 @@ export class PlanWizardComponent {
   });
 
   open(e: GoalEvaluation): void {
+    this.kind.set('goal');
     this.ev.set(e);
     this.goalId.set(e.goal.id);
-    const s = load(e.goal.id);
+    this.restore(e.goal.id, ambitiousAdvised(e.probability));
+  }
+
+  /** Cycle sans course : `cycle` à modifier, ou null pour un nouveau ; `previous` : cycle dont il prend la suite */
+  openCycle(cycle: Cycle | null, { previous }: { previous?: string } = {}): void {
+    this.kind.set('cycle');
+    this.ev.set(null);
+    this.goalId.set(null);
+    this.cycleKey.set(cycle?.id ?? null);
+    const goals = this.data.data()?.goals ?? [];
+    const prev = previous ? this.sci.cycles().find((c) => c.id === previous) : null;
+    // Un cycle suivant commence le lendemain du précédent (ou au prochain lundi s'il est déjà passé)
+    const after = prev ? isoDay(addDays(parseDay(this.sci.cycleState(prev).end), 1)) : null;
+    const focus = cycle?.focus ?? prev?.focus ?? 'endurance';
+    this.focus.set(focus);
+    this.weeks.set(cycle?.weeks ?? FOCUS[focus].weeks);
+    this.start.set(cycle?.start ?? (after && after >= isoDay(this.today) ? after : nextMonday(this.today)));
+    this.testKm.set(cycle ? (cycleTest(cycle, goals)?.distanceKm ?? null) : FOCUS[focus].testKm);
+    this.previous.set(cycle?.previous ?? previous ?? null);
+    this.restore(cycle?.id ?? 'nouveau-cycle', focus === 'speed');
+  }
+
+  private restore(key: string, ambitious: boolean): void {
+    const s = load(key);
     this.band.set(s.band ?? null);
     this.sessions.set(s.sessions ?? []);
     this.days.set(s.days ?? []);
     this.longDays.set(s.longDays ?? [5, 6]);
-    this.mode.set(s.mode ?? (ambitiousAdvised(e.probability) ? 'ambitious' : 'normal'));
+    this.mode.set(s.mode ?? (ambitious ? 'ambitious' : 'normal'));
     this.strength.set(s.strength ?? null);
     this.vision.set(s.vision ?? '');
     this.injuries.set(s.injuries ?? '');
     this.index.set(0);
     this.error.set(null);
     this.status.set(null);
+    this.active.set(true);
     const d = this.dlg().nativeElement;
     if (!d.open) d.showModal();
+  }
+
+  protected closed(): void {
+    this.active.set(false);
+    this.ev.set(null);
+  }
+
+  /** Change de but : durée et test conseillés pour ce but */
+  protected pickFocus(f: CycleFocus): void {
+    this.focus.set(f);
+    if (!this.cycle()) {
+      this.weeks.set(FOCUS[f].weeks);
+      this.testKm.set(FOCUS[f].testKm);
+      this.mode.set(f === 'speed' ? 'ambitious' : 'normal');
+    }
   }
 
   close(): void {
@@ -455,10 +585,65 @@ export class PlanWizardComponent {
     this.dlg().nativeElement.close();
   }
 
-  protected next(): void {
+  protected async next(): Promise<void> {
+    if (this.step() === 'but' && !(await this.saveCycle())) return;
     this.save();
     if (this.step() === 'seances' && !this.sessions().length) this.sessions.set([this.recommendedCount()]);
-    if (this.index() < STEPS.length - 1) this.go(this.index() + 1);
+    if (this.index() < this.steps().length - 1) this.go(this.index() + 1);
+  }
+
+  /**
+   * Enregistre le cycle (création ou modification) et son test de fin (objectif rattaché par `cycle`, le dernier jour) ;
+   * faux si la saisie est refusée.
+   */
+  private async saveCycle(): Promise<boolean> {
+    this.error.set(null);
+    const d = this.data.data();
+    const cycles = d?.cycles ?? [];
+    const goals = d?.goals ?? [];
+    const start = this.start();
+    if (!start) return (this.error.set('Indique la date de début'), false);
+    const old = this.cycle();
+    const taken = [...cycles.map((c) => c.id), ...goals.map((g) => g.id)];
+    const id = old?.id ?? cycleId(this.focus(), start, taken);
+    const cycle: Cycle = {
+      id,
+      name: cycleName(this.focus(), start),
+      focus: this.focus(),
+      start,
+      weeks: this.weeks(),
+      ...(this.previous() ? { previous: this.previous()! } : {}),
+    };
+    const km = this.testKm();
+    const existing = goals.find((g) => g.cycle === id);
+    const date = this.lastDay();
+    let nextGoals: Goal[] | null = null;
+    if (km) {
+      const test: Goal = {
+        ...(existing ?? {}),
+        id: existing?.id ?? goalId(`test ${km} km`, date, taken),
+        name: `Test ${km} km · ${FOCUS[this.focus()].label}`,
+        date,
+        distanceKm: km,
+        kind: 'road',
+        cycle: id,
+      };
+      if (!existing || existing.date !== test.date || existing.distanceKm !== km || existing.name !== test.name)
+        nextGoals = existing ? goals.map((g) => (g.id === existing.id ? test : g)) : [...goals, test];
+    } else if (existing) nextGoals = goals.filter((g) => g.id !== existing.id);
+    try {
+      await this.entries.saveCycles(old ? cycles.map((c) => (c.id === id ? { ...cycle, plan: c.plan } : c)) : [...cycles, cycle]);
+      if (nextGoals) await this.entries.saveGoals(nextGoals);
+      if (!old) {
+        // Les choix de l'assistant passent du brouillon au cycle enregistré
+        this.cycleKey.set(id);
+        this.save();
+      }
+      return true;
+    } catch (e) {
+      this.error.set(errorList(e).join(' ; '));
+      return false;
+    }
   }
 
   protected back(): void {
@@ -474,7 +659,7 @@ export class PlanWizardComponent {
   }
 
   private save(): void {
-    const id = this.goalId();
+    const id = this.kind() === 'cycle' ? (this.cycleKey() ?? 'nouveau-cycle') : this.goalId();
     if (!id) return;
     store(id, {
       band: this.band(),

@@ -5,6 +5,9 @@ import { PeriodService } from '../core/period.service';
 import { ScienceService } from '../core/science.service';
 import { Activity, PlannedSession } from '../core/models';
 import { PLAN_KIND_LABELS } from '../core/plan';
+import { currentCycle } from '../core/cycle';
+import { EntriesService } from '../core/entries.service';
+import { PlanWizardComponent } from '../ui/forms/plan-wizard';
 import { addDays, fastestOver, inRange, isoDay, maxBy, parseDay, startOfWeek, summarize, weekly } from '../core/stats';
 import { freshnessState, pmc, yearProjection } from '../core/insights';
 import { healthNow, hrvStatus, readinessFor, rhrStatus } from '../core/health';
@@ -22,7 +25,7 @@ const DAY_MS = 86_400_000;
 /** Aujourd'hui : où j'en suis. Le résumé du jour, la prochaine course, la forme, l'année et les dernières sorties. */
 @Component({
   selector: 'app-today',
-  imports: [RouterLink, BriefComponent, IconComponent, ConditionsCardComponent, CountUpDirective, MorphDirective, SignatureDirective],
+  imports: [RouterLink, BriefComponent, IconComponent, ConditionsCardComponent, CountUpDirective, MorphDirective, SignatureDirective, PlanWizardComponent],
   template: `
     <header class="page-head lanes">
       <h1>{{ title() }}</h1>
@@ -30,6 +33,7 @@ const DAY_MS = 86_400_000;
     </header>
 
     <app-brief [brief]="brief()" />
+    <app-plan-wizard #wizard />
 
     @if (agenda(); as ag) {
       <section class="card session" [class.done]="ag.done.length > 0">
@@ -87,6 +91,31 @@ const DAY_MS = 86_400_000;
           </div>
           <div class="progress" aria-hidden="true"><span [style.width.%]="e.index"></span></div>
         </a>
+      } @else if (cycleNow(); as x) {
+        <a class="card race" [routerLink]="['/cycles', x.c.id]">
+          <span class="label head">{{ x.st.status === 'active' ? 'Cycle en cours' : 'Cycle à venir' }} <span class="go">Suivi <app-icon name="arrow" /></span></span>
+          <div class="race-id">
+            <span class="display days">{{ x.st.status === 'active' ? 'S' + x.st.week : 'J-' + x.wait }}</span>
+            <div>
+              <b class="name">{{ x.c.name }}</b>
+              <span class="muted small">{{ x.st.status === 'active' ? 'semaine ' + x.st.week + ' sur ' + x.c.weeks : 'commence le ' + fmtDay(x.c.start) }} · jusqu'au {{ fmtDay(x.st.end) }}</span>
+            </div>
+          </div>
+          <div class="race-stats">
+            <div><span class="display v">{{ x.t.doneToDate }}<small> / {{ x.t.plannedToDate }}</small></span><span class="muted small">séances faites</span></div>
+            <div><span class="display v">{{ num(x.t.doneKmToDate) }}<small> km</small></span><span class="muted small">courus</span></div>
+          </div>
+          <div class="progress" aria-hidden="true"><span [style.width.%]="x.t.plannedToDate ? (x.t.doneToDate / x.t.plannedToDate) * 100 : 0"></span></div>
+        </a>
+      } @else if (entries.available()) {
+        <section class="card race">
+          <span class="label head">Pas de course prévue</span>
+          <p class="muted">Prépare un cycle d'entraînement sans course : reprendre, endurance, vitesse, entretien ou trail, de 4 à 16 semaines, avec un test chronométré à la fin si tu veux.</p>
+          <div class="cta">
+            <button type="button" class="btn primary" (click)="wizard.openCycle(null)"><app-icon name="training" />Préparer un cycle</button>
+            <a class="btn" routerLink="/courses">Ajouter une course</a>
+          </div>
+        </section>
       }
 
       <a class="card vitals" [routerLink]="health() ? '/comprendre/recuperation' : '/comprendre/charge'">
@@ -207,6 +236,7 @@ const DAY_MS = 86_400_000;
     .rest { margin: 0; font-weight: 600; }
     .tomorrow { border-top: 1px solid var(--border); padding-top: 0.5rem; }
 
+    .cta { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .race-id { display: flex; align-items: center; gap: 1rem; }
     .days { font-size: 2.8rem; color: var(--accent); }
     .race-id > div { display: grid; gap: 0.15rem; min-width: 0; }
@@ -265,6 +295,7 @@ const DAY_MS = 86_400_000;
 export class TodayPage {
   private readonly store = inject(DataService);
   protected readonly sci = inject(ScienceService);
+  protected readonly entries = inject(EntriesService);
   private readonly today = inject(PeriodService).today;
   protected readonly motion = inject(MotionService);
 
@@ -327,8 +358,17 @@ export class TodayPage {
   protected sessionLine = (s: PlannedSession) =>
     [s.durationSec ? duration(s.durationSec) : null, s.distanceKm ? `${num(s.distanceKm, 1)} km` : null, s.phase ?? null].filter(Boolean).join(' · ');
 
+  /** Sans course à venir : le cycle en cours (ou le prochain) */
+  protected readonly cycleNow = computed(() => {
+    const c = currentCycle(this.sci.cycles(), this.store.data()?.goals ?? [], this.today);
+    if (!c) return null;
+    const st = this.sci.cycleState(c);
+    return { c, st, t: this.sci.cycleTracking(c), wait: Math.max(0, Math.round((parseDay(c.start).getTime() - this.today.getTime()) / DAY_MS)) };
+  });
+
   // Prochaine course
-  protected readonly nextGoal = computed(() => this.sci.upcomingGoals()[0] ?? null);
+  /** Prochaine vraie course (le test de fin d'un cycle s'affiche dans la carte du cycle) */
+  protected readonly nextGoal = computed(() => this.sci.upcomingGoals().find((e) => !e.goal.cycle) ?? null);
 
   // Forme du jour
   protected readonly health = computed(() => {

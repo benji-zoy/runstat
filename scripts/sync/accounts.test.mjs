@@ -189,6 +189,16 @@ test('API : chacun lit son instantané, jamais celui d’un autre', async () => 
   assert.equal((await api('tailnet', '/api/data/coros.json', { login: 'bob@exemple.fr', headers: { 'If-None-Match': etag } })).status, 304);
 });
 
+test('API : cycles sans course de B, validés et cloisonnés', async () => {
+  const cycles = [{ id: 'cycle-speed-2026-11-16', name: 'Cycle Vitesse', focus: 'speed', start: '2026-11-16', weeks: 8 }];
+  const put = await json(await api('tailnet', '/api/cycles', { login: 'bob@exemple.fr', method: 'PUT', body: cycles }));
+  assert.equal(put.status, 200);
+  assert.equal(JSON.parse(readFileSync(raw('bob', 'cycles.json'), 'utf8'))[0].focus, 'speed');
+  assert.equal(existsSync(raw('alice', 'cycles.json')), false);
+  assert.deepEqual((await json(await api('tailnet', '/api/cycles', { login: 'alice@exemple.fr' }))).body, []);
+  assert.equal((await api('tailnet', '/api/cycles', { login: 'bob@exemple.fr', method: 'PUT', body: [{ ...cycles[0], weeks: 30 }] })).status, 400);
+});
+
 test('API : plan importé de B (écriture cloisonnée, suppression, envoi COROS en file)', async () => {
   const plan = { importedAt: '2026-11-11T08:00:00.000Z', sessions: [{ date: '2026-11-17', kind: 'easy', name: 'Footing', durationMin: 45 }] };
   const put = await json(await api('tailnet', '/api/plans/semi-b', { login: 'bob@exemple.fr', method: 'PUT', body: plan }));

@@ -257,7 +257,8 @@ export class DeviceSyncService {
     const r = await withLock('runstat-sources', async () => {
       const c = await this.clients();
       const plan = await readJson<TrainingPlan>(c.raw, `plans/${goalId}.json`);
-      const goal = ((await readJson<{ id: string; name: string }[]>(c.raw, 'goals.json')) ?? []).find((g) => g.id === goalId);
+      const named = async (f: string) => (await readJson<{ id: string; name: string }[]>(c.raw, f)) ?? [];
+      const goal = [...(await named('goals.json')), ...(await named('cycles.json'))].find((g) => g.id === goalId);
       if (!plan || !goal) throw new EntryError(['aucun plan pour cet objectif']);
       try {
         plan.coros = await pushPlanToCoros(c.coros, plan, goal.name, isoDay(new Date()));

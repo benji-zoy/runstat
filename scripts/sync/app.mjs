@@ -11,6 +11,7 @@
 //   POST /api/fit?id=<labelId | strava:id | garmin:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
 //   GET|PUT /api/goals, GET|PUT /api/athlete, GET|PUT /api/sources, GET|PUT|DELETE /api/results/<id>[?replaces=date-….json]
 //     → saisie depuis le site (scripts/sync/entries.mjs), puis reconstruction seule (run.mjs --rebuild) : 200 | 400 | 404
+//   GET|PUT /api/cycles → cycles d'entraînement sans course (data-raw/cycles.json), puis reconstruction
 //   GET|PUT|DELETE /api/plans/<goalId> → plan d'entraînement importé (data-raw/plans/<goalId>.json), puis reconstruction
 //   POST /api/plans/<goalId>/coros → envoi du plan dans le calendrier COROS (run.mjs --coros-plan, en file) : 202 | 404 | 409
 //   POST /api/strava/archive (corps application/zip, 2 Gio au plus) → import de l'archive Strava puis reconstruction :
@@ -28,7 +29,7 @@
 import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ACTIVITY_ID, GOAL_ID, InvalidEntry, deleteResult, readJsonFile, saveResult, validateAthlete, validateGoals, validatePlan, validateSources,
+  ACTIVITY_ID, GOAL_ID, InvalidEntry, deleteResult, readJsonFile, saveResult, validateAthlete, validateCycles, validateGoals, validatePlan, validateSources,
   writeJsonAtomic,
 } from './entries.mjs';
 import { fileKey, readSources } from './sources.mjs';
@@ -46,7 +47,7 @@ const MAX_BODY = 64 * 1024;
 const MIN_GAP_MS = 20_000; // anti-rebond des clics
 const SIZE_TTL_MS = 60_000;
 const DATA_FILES = new Set(['coros.json', 'routes.json']);
-const ENTRY = /^\/api\/(goals|athlete|sources|results\/[^/]+|plans\/[^/]+)$/;
+const ENTRY = /^\/api\/(goals|cycles|athlete|sources|results\/[^/]+|plans\/[^/]+)$/;
 const PLAN_COROS = /^\/api\/plans\/([^/]+)\/coros$/;
 const STRAVA_NAV = ['/api/strava/connect', CALLBACK_PATH];
 
@@ -172,6 +173,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     }
     if (req.method === 'GET') {
       if (path === '/api/goals') return send(res, 200, readJsonFile(goalsFile, []));
+      if (path === '/api/cycles') return send(res, 200, readJsonFile(join(raw, 'cycles.json'), []));
       if (path === '/api/athlete') return send(res, 200, readJsonFile(athleteFile, null));
       if (path === '/api/sources') return send(res, 200, readSources(raw));
       return send(res, 200, readJsonFile(join(raw, 'results', `${fileKey(result[1])}.json`), null));
@@ -187,6 +189,8 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
       } else {
         const body = await readBody(req);
         if (path === '/api/goals') writeJsonAtomic(goalsFile, (saved = validateGoals(body)));
+        else if (path === '/api/cycles')
+          writeJsonAtomic(join(raw, 'cycles.json'), (saved = validateCycles(body, readJsonFile(goalsFile, []).map((g) => g.id))));
         else if (path === '/api/athlete') writeJsonAtomic(athleteFile, (saved = validateAthlete(body)));
         else if (path === '/api/sources') writeJsonAtomic(sourcesFile, (saved = validateSources(body)));
         else if (plan) writeJsonAtomic(planFile, (saved = validatePlan(plan[1], body)));

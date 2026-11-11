@@ -5,7 +5,7 @@ import { LOCAL_MODE } from './runtime';
 import { DataService } from './data.service';
 import { SyncService } from './sync.service';
 import { DeviceSyncService } from './device-sync.service';
-import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult, TrainingPlan } from './models';
+import { Activity, ActivitySource, Athlete, CorosData, Goal, HealthSource, RaceResult, TrainingPlan, Cycle } from './models';
 
 export { EntryError } from './entry-error';
 
@@ -41,6 +41,16 @@ export class EntriesService {
         return o?.forecast && o.date === g.date && o.startTime === g.startTime ? { ...kept, forecast: o.forecast } : kept;
       });
       return { ...d, goals };
+    });
+  }
+
+  /** Remplace toute la liste des cycles d'entraînement sans course */
+  async saveCycles(cycles: Cycle[]): Promise<void> {
+    const body = cycles.map(({ plan, ...c }) => c);
+    const saved = (await this.send('PUT', 'cycles', body)).saved as Cycle[];
+    this.patch((d) => {
+      const old = new Map((d.cycles ?? []).map((c) => [c.id, c]));
+      return { ...d, cycles: saved.map((c) => (old.get(c.id)?.plan ? { ...c, plan: old.get(c.id)!.plan } : c)) };
     });
   }
 
@@ -124,12 +134,20 @@ export class EntriesService {
   /** Plan d'entraînement importé d'un objectif (remplace le précédent : la fusion est faite avant, par mergePlan) */
   async savePlan(plan: TrainingPlan): Promise<void> {
     const saved = (await this.send('PUT', `plans/${plan.goalId}`, plan)).saved as TrainingPlan;
-    this.patch((d) => ({ ...d, goals: (d.goals ?? []).map((g) => (g.id === plan.goalId ? { ...g, plan: saved } : g)) }));
+    this.patch((d) => ({
+      ...d,
+      goals: (d.goals ?? []).map((g) => (g.id === plan.goalId ? { ...g, plan: saved } : g)),
+      cycles: (d.cycles ?? []).map((c) => (c.id === plan.goalId ? { ...c, plan: saved } : c)),
+    }));
   }
 
   async deletePlan(goalId: string): Promise<void> {
     await this.send('DELETE', `plans/${goalId}`);
-    this.patch((d) => ({ ...d, goals: (d.goals ?? []).map(({ plan, ...g }) => (g.id === goalId ? g : { ...g, ...(plan ? { plan } : {}) })) }));
+    this.patch((d) => ({
+      ...d,
+      goals: (d.goals ?? []).map(({ plan, ...g }) => (g.id === goalId ? g : { ...g, ...(plan ? { plan } : {}) })),
+      cycles: (d.cycles ?? []).map(({ plan, ...c }) => (c.id === goalId ? c : { ...c, ...(plan ? { plan } : {}) })),
+    }));
   }
 
   /** Envoi du plan dans le calendrier COROS : sur l'appareil tout de suite, sur le NAS en file (résultat au rechargement) */
@@ -143,7 +161,7 @@ export class EntriesService {
         return msg;
       }
       const stamp = () => {
-        const c = this.store.data()?.goals?.find((g) => g.id === goalId)?.plan?.coros;
+        const c = this.planFor(goalId)?.coros;
         return `${c?.sentAt ?? ''}|${c?.errorAt ?? ''}`;
       };
       const before = stamp();
@@ -157,12 +175,18 @@ export class EntriesService {
       if (!res.ok) throw new EntryError([json.error ?? `HTTP ${res.status}`]);
       await this.sync.follow();
       if (stamp() === before) return 'Envoi demandé : le résultat s’affichera ici dès que le NAS l’aura fait.';
-      const plan = this.store.data()?.goals?.find((g) => g.id === goalId)?.plan;
+      const plan = this.planFor(goalId);
       if (plan?.coros?.errorAt && (!plan.coros.sentAt || plan.coros.errorAt > plan.coros.sentAt)) throw new EntryError([`COROS : ${plan.coros.error}`]);
       return plan?.coros?.sentAt ? `Plan envoyé dans COROS : ${plan.coros.sessions} séances sur ${plan.coros.weeks} semaines.` : 'Envoi demandé.';
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Plan importé d'un objectif ou d'un cycle */
+  private planFor(id: string): TrainingPlan | undefined {
+    const d = this.store.data();
+    return d?.goals?.find((g) => g.id === id)?.plan ?? d?.cycles?.find((c) => c.id === id)?.plan;
   }
 
   private async send(method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<{ saved: unknown }> {

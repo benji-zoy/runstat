@@ -5,8 +5,10 @@ import { SessionType, bestEfforts, classifyAll, criticalSpeed, personalExponentF
 import { GoalEvaluation, evaluateGoal, goalContext, goalResult } from './goals';
 import { RaceDebrief, raceDebrief } from './debrief';
 import { runnerMatrix } from './matrix';
-import { Activity, Athlete, Goal, TrainingPlan } from './models';
+import { Activity, Athlete, Cycle, Goal, TrainingPlan } from './models';
 import { goalPlanned, loadRates, upcomingPlanned } from './plan';
+import { CycleState, CycleTracking, FOCUS, cycleState, cycleTest, cycleTracking } from './cycle';
+import { CycleBilan } from './ai/exports';
 import { ConditionsReport, conditionsCost, personalCoefficients } from './conditions';
 import { CAPABILITIES, HEALTH_LABELS, sourcesOf } from './sources';
 
@@ -69,7 +71,7 @@ export class ScienceService {
   /** Séances prévues à venir (calendrier COROS prioritaire, plans importés), renfo compris */
   readonly upcomingPlanned = computed(() => {
     const d = this.store.data();
-    return upcomingPlanned(d?.goals ?? [], d?.planned, this.loadRates(), this.today);
+    return upcomingPlanned(d?.goals ?? [], d?.planned, this.loadRates(), this.today, d?.cycles ?? []);
   });
 
   /** Évaluation d'un objectif ; `plan` remplace le plan importé (aperçu d'un import avant de l'enregistrer) */
@@ -79,7 +81,7 @@ export class ScienceService {
     const acts = this.store.activities();
     const goals = d.goals ?? [];
     const goal = plan === undefined ? g : { ...g, plan: plan ?? undefined };
-    const planned = goalPlanned(goal, goals.map((x) => (x.id === g.id ? goal : x)), d.planned, this.loadRates(), this.today);
+    const planned = goalPlanned(goal, goals.map((x) => (x.id === g.id ? goal : x)), d.planned, this.loadRates(), this.today, d.cycles ?? []);
     return evaluateGoal(goal, goalContext(goal, acts, this.types(), this.athlete(), this.today, d.fitness?.predictions ?? {}, d.health, planned), this.today, acts);
   }
 
@@ -107,6 +109,40 @@ export class ScienceService {
     }
     return out;
   });
+
+  /** Cycles d'entraînement sans course */
+  readonly cycles = computed(() => this.store.data()?.cycles ?? []);
+
+  /** Suivi d'un cycle : prévu face à fait, charge, EF, VDOT */
+  cycleTracking(c: Cycle): CycleTracking {
+    return cycleTracking(c, this.store.data()?.goals ?? [], this.store.activities(), this.types(), this.loadRates(), this.today);
+  }
+
+  cycleState(c: Cycle): CycleState {
+    return cycleState(c, this.store.data()?.goals ?? [], this.today);
+  }
+
+  /** Bilan d'un cycle (pour l'export du cycle suivant et la fiche) */
+  cycleBilan(c: Cycle): CycleBilan {
+    const t = this.cycleTracking(c);
+    const goals = this.store.data()?.goals ?? [];
+    const test = cycleTest(c, goals);
+    const ev = test ? this.goals().find((e) => e.goal.id === test.id) : null;
+    const d = test ? this.debriefs().get(test.id) : null;
+    return {
+      name: c.name,
+      focus: FOCUS[c.focus].label,
+      start: c.start,
+      end: this.cycleState(c).end,
+      done: t.doneToDate,
+      planned: t.plannedToDate,
+      doneKm: t.doneKmToDate,
+      plannedKm: t.plannedKmToDate,
+      test: test ? { label: test.name, time: d?.official ?? null, predicted: ev?.predicted ?? null } : null,
+      ef: t.ef,
+      vdot: t.vdot,
+    };
+  }
 }
 
 function isArchived(e: GoalEvaluation): boolean {

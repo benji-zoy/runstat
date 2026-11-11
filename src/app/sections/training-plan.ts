@@ -2,7 +2,7 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { corosSessions } from '../../engine/plan/coros-plan';
 import { EntriesService } from '../core/entries.service';
 import { GoalEvaluation } from '../core/goals';
-import { PLAN_KIND_LABELS, planOf, planWeeks } from '../core/plan';
+import { PLAN_KIND_LABELS, PlanTarget, planOf, planWeeks } from '../core/plan';
 import { PeriodService } from '../core/period.service';
 import { ScienceService } from '../core/science.service';
 import { SyncService } from '../core/sync.service';
@@ -27,24 +27,24 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'num
   template: `
     <app-plan-wizard #wizard />
     <app-plan-import #importer />
-    @let e = ev();
+    @let t = target();
     <div class="head">
-      <h3>Mon plan d'entraînement</h3>
+      <h3>{{ t.cycle ? 'Plan du cycle' : 'Mon plan d’entraînement' }}</h3>
       <div class="actions">
-        <button type="button" class="btn small" (click)="wizard.open(e)"><app-icon name="chat" />Préparer mon plan avec une IA</button>
+        <button type="button" class="btn small" (click)="prepare(wizard)"><app-icon name="chat" />{{ t.cycle ? 'Préparer le cycle avec une IA' : 'Préparer mon plan avec une IA' }}</button>
         @if (entries.available()) {
-          <button type="button" class="btn small" (click)="importer.open(e)"><app-icon name="list" />{{ own().length ? 'Mettre à jour le plan' : 'Importer le plan' }}</button>
+          <button type="button" class="btn small" (click)="importer.open(t)"><app-icon name="list" />{{ own().length ? 'Mettre à jour le plan' : t.cycle ? 'Importer le cycle' : 'Importer le plan' }}</button>
         }
       </div>
     </div>
 
     @if (inherited()) {
-      <p class="muted small">Course de préparation : elle suit le plan de {{ mainName() }}.</p>
+      <p class="muted small">{{ t.goal?.cycle ? 'Test de fin de cycle' : 'Course de préparation' }} : elle suit le plan de {{ mainName() }}.</p>
     }
 
     @if (own().length) {
       <p class="muted small">
-        {{ own().length }} séances, du {{ day(own()[0].date) }} au {{ day(own().at(-1)!.date) }} · importé le {{ stamp(e.goal.plan!.importedAt) }}.
+        {{ own().length }} séances, du {{ day(own()[0].date) }} au {{ day(own().at(-1)!.date) }} · importé le {{ stamp(t.plan!.importedAt) }}.
         @if (corosShadowed()) {
           Les semaines qui ont des séances dans le calendrier COROS suivent COROS.
         }
@@ -106,7 +106,7 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'num
         <button type="button" class="btn small danger del" (click)="remove()"><app-icon name="close" />Supprimer le plan</button>
       }
     } @else if (!inherited()) {
-      <p class="muted small">Pas encore de plan : « Préparer mon plan avec une IA » prépare le texte à lui donner (volume, séances, intensité, renfo, courses de préparation), puis importe sa réponse ici. L'indice de confiance en tiendra compte.</p>
+      <p class="muted small">Pas encore de plan : « {{ t.cycle ? 'Préparer le cycle' : 'Préparer mon plan' }} avec une IA » prépare le texte à lui donner (volume, séances, intensité, renfo{{ t.cycle ? '' : ', courses de préparation' }}), puis importe sa réponse ici. {{ t.cycle ? 'Le suivi du cycle comparera ensuite le prévu et le fait.' : 'L’indice de confiance en tiendra compte.' }}</p>
     }
   `,
   styles: `
@@ -140,7 +140,7 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'num
   `,
 })
 export class TrainingPlanComponent {
-  readonly ev = input.required<GoalEvaluation>();
+  readonly target = input.required<PlanTarget>();
   protected readonly entries = inject(EntriesService);
   private readonly sci = inject(ScienceService);
   private readonly sync = inject(SyncService);
@@ -154,22 +154,35 @@ export class TrainingPlanComponent {
   protected readonly confirming = signal(false);
   protected readonly notice = signal<string | null>(null);
 
-  protected readonly own = computed(() => this.ev().goal.plan?.sessions ?? []);
+  protected readonly own = computed(() => this.target().plan?.sessions ?? []);
   private readonly goals = computed(() => this.sci.goals().map((x) => x.goal));
-  protected readonly inherited = computed(() => !this.own().length && planOf(this.ev().goal, this.goals()).length > 0);
-  protected readonly mainName = computed(() => this.goals().find((g) => g.id === this.ev().goal.parent)?.name ?? '');
+  /** Course de préparation ou test de fin de cycle : suit le plan d'un autre */
+  protected readonly inherited = computed(() => {
+    const g = this.target().goal;
+    return !!g && !this.own().length && (!!g.parent || !!g.cycle) && planOf(g, this.goals(), this.sci.cycles()).length > 0;
+  });
+  protected readonly mainName = computed(() => {
+    const g = this.target().goal;
+    return this.goals().find((x) => x.id === g?.parent)?.name ?? this.sci.cycles().find((c) => c.id === g?.cycle)?.name ?? '';
+  });
   protected readonly weeks = computed(() => planWeeks(this.own(), this.sci.loadRates()));
   protected readonly thisWeek = computed(() => this.weeks().filter((w) => w.start <= this.today).at(-1)?.start ?? this.weeks()[0]?.start ?? '');
-  protected readonly coros = computed(() => this.ev().goal.plan?.coros ?? null);
+  protected readonly coros = computed(() => this.target().plan?.coros ?? null);
   protected readonly corosReady = computed(() => !!this.sync.status()?.corosConnected);
   protected readonly corosShadowed = computed(() => this.sci.upcomingPlanned().some((s) => !s.imported) && this.own().some((s) => s.date >= this.today));
   protected readonly corosSummary = computed(() => {
-    const plan = this.ev().goal.plan;
+    const plan = this.target().plan;
     if (!plan) return '';
     const running = corosSessions(plan).filter((s) => s.date >= this.today);
     const strength = plan.sessions.filter((s) => s.kind === 'strength' && s.date >= this.today).length;
-    return `${running.length} séances de course à partir d'aujourd'hui (16 semaines au plus), dans un plan COROS « RunStat · ${this.ev().goal.name} »${this.coros()?.sentAt ? ' réécrit d’un bloc à partir d’aujourd’hui' : ''}. ${strength ? `Le renfo (${strength} séances) reste dans RunStat. ` : ''}Il apparaîtra dans le calendrier de la montre.`;
+    return `${running.length} séances de course à partir d'aujourd'hui (16 semaines au plus), dans un plan COROS « RunStat · ${this.target().name} »${this.coros()?.sentAt ? ' réécrit d’un bloc à partir d’aujourd’hui' : ''}. ${strength ? `Le renfo (${strength} séances) reste dans RunStat. ` : ''}Il apparaîtra dans le calendrier de la montre.`;
   });
+
+  protected prepare(wizard: PlanWizardComponent): void {
+    const t = this.target();
+    if (t.ev) wizard.open(t.ev);
+    else if (t.cycle) wizard.openCycle(t.cycle);
+  }
 
   protected runs = (s: { kind: string }[]) => s.filter((x) => x.kind !== 'strength').length;
 
@@ -180,7 +193,7 @@ export class TrainingPlanComponent {
 
   protected async send(): Promise<void> {
     try {
-      this.notice.set(await this.entries.sendPlanToCoros(this.ev().goal.id));
+      this.notice.set(await this.entries.sendPlanToCoros(this.target().id));
       this.confirming.set(false);
     } catch (e) {
       this.notice.set(errorList(e).join(' ; '));
@@ -189,9 +202,9 @@ export class TrainingPlanComponent {
   }
 
   protected async remove(): Promise<void> {
-    if (!confirm(`Supprimer le plan de ${this.ev().goal.name} ? Il reste dans COROS s'il y a été envoyé.`)) return;
+    if (!confirm(`Supprimer le plan de ${this.target().name} ? Il reste dans COROS s'il y a été envoyé.`)) return;
     try {
-      await this.entries.deletePlan(this.ev().goal.id);
+      await this.entries.deletePlan(this.target().id);
     } catch (e) {
       this.notice.set(errorList(e).join(' ; '));
     }

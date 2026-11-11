@@ -17,6 +17,7 @@ import { IconComponent } from '../ui/icon';
 import { AiExportDialogComponent } from '../ui/forms/ai-export-dialog';
 import { MotionService } from '../ui/motion';
 import { TrainingPlanComponent } from '../sections/training-plan';
+import { goalTarget } from '../core/plan';
 
 type Part = GoalPart | 'confiance' | 'bilan';
 
@@ -108,7 +109,7 @@ const pct = (x: number) => `${x > 0 ? '+' : '−'}${fixed(Math.abs(x), 1)} %`;
           @case ('confiance') { <app-confidence-history [ev]="e" /> }
           @default {
             @if (part() === 'preparation' && !archived()) {
-              <app-training-plan [ev]="e" />
+              <app-training-plan [target]="planTarget()!" />
             }
             <app-goal-card [ev]="e" [part]="cardPart()" />
           }
@@ -164,6 +165,10 @@ export class GoalPage {
   protected readonly num = num;
 
   protected readonly ev = computed(() => this.sci.goals().find((e) => e.goal.id === this.params()?.get('id')) ?? null);
+  protected readonly planTarget = computed(() => {
+    const e = this.ev();
+    return e ? goalTarget(e) : null;
+  });
 
   constructor() {
     // Au retour, la carte de cet objectif (Courses, Aujourd'hui) reprend la place de l'en-tête

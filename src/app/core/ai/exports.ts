@@ -452,6 +452,10 @@ function requestSection(doc: MdDoc, main: GoalEvaluation, r: PlanRequest): void 
     doc.h(3, 'Alertes de RunStat sur ces objectifs');
     doc.list(r.checks.map((c) => `${c.level === 'warning' ? '⚠️ ' : ''}${c.text}`));
   }
+  choicesSection(doc, r);
+}
+
+function choicesSection(doc: MdDoc, r: Omit<PlanRequest, 'secondaries' | 'checks'>): void {
   doc.h(2, 'Mes choix pour le plan');
   const sessions = r.sessions ? (r.sessions.min === r.sessions.max ? String(r.sessions.min) : `${r.sessions.min} ou ${r.sessions.max} selon la semaine et la phase`) : null;
   doc.facts([
@@ -512,6 +516,83 @@ export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, r
   const markdown = out.markdown.replace('### Ma question', `${PLAN_FORMAT}\n\n### Ma question`);
   const withFormat = markdown.includes(PLAN_FORMAT) ? markdown : markdown.trimEnd() + '\n\n' + PLAN_FORMAT + '\n';
   return { ...out, markdown: withFormat, tokens: Math.round(withFormat.length / 3.5) };
+}
+
+// ---------------------------------------------------------------------------
+// Cycle d'entraînement sans course
+// ---------------------------------------------------------------------------
+
+/** Bilan d'un cycle terminé, donné à l'IA pour préparer le suivant */
+export interface CycleBilan {
+  name: string;
+  focus: string;
+  start: string;
+  end: string;
+  done: number;
+  planned: number;
+  doneKm: number;
+  plannedKm: number;
+  test: { label: string; time: number | null; predicted: number | null } | null;
+  ef: { before: number | null; now: number | null };
+  vdot: { before: number | null; now: number | null };
+}
+
+export interface CycleRequest extends Omit<PlanRequest, 'secondaries' | 'checks'> {
+  cycle: { name: string; focusLabel: string; focusPrompt: string; start: string; weeks: number };
+  /** Test chronométré la dernière semaine */
+  test: { km: number; date: string; predicted: number | null } | null;
+  previous: CycleBilan | null;
+}
+
+export function cycleExport(input: AiInput, opts: AiOptions, r: CycleRequest): AiDoc {
+  const doc = new MdDoc();
+  const c = r.cycle;
+  const end = isoDay(new Date(parseDay(c.start).getFullYear(), parseDay(c.start).getMonth(), parseDay(c.start).getDate() + c.weeks * 7 - 1));
+  doc.h(2, 'Le cycle');
+  doc.facts([
+    ['But', c.focusLabel],
+    ['Dates', `du ${c.start} au ${end} (${c.weeks} semaines)`],
+    ['Test de fin de cycle', r.test ? `${n(r.test.km, 0)} km chronométré le ${r.test.date}${r.test.predicted ? ` (chrono probable aujourd'hui : ${clock(r.test.predicted)})` : ''}` : 'aucun'],
+  ]);
+  if (r.previous) {
+    const b = r.previous;
+    doc.h(2, 'Bilan du cycle précédent');
+    doc.facts([
+      ['Cycle', `${inline(b.name)} (${b.focus}), du ${b.start} au ${b.end}`],
+      ['Séances faites', `${b.done} sur ${b.planned} prévues`],
+      ['Volume', `${n(b.doneKm)} km faits pour ${n(b.plannedKm)} km prévus`],
+      ['Test', b.test ? `${b.test.label} : ${b.test.time ? clock(b.test.time) : 'pas de sortie trouvée'}${b.test.predicted ? ` (prédit ${clock(b.test.predicted)})` : ''}` : null],
+      ['Efficacité (EF) des sorties faciles', b.ef.before && b.ef.now ? `${n(b.ef.before, 2)} → ${n(b.ef.now, 2)}` : null],
+      ['VDOT', b.vdot.before && b.vdot.now ? `${n(b.vdot.before, 1)} → ${n(b.vdot.now, 1)}` : null],
+    ]);
+  }
+  choicesSection(doc, r);
+  athleteSection(doc, input, opts);
+  levelSection(doc, input, opts, input.today, true);
+  trainingSection(doc, input, { ...opts, detail: 'full' }, input.today);
+  doc.p(habitsLine(input, input.today));
+  keySessions(doc, input, input.today, opts.detail === 'full' ? 12 : 6);
+  healthSection(doc, input, opts, input.today);
+  const prompt = [
+    `Propose-moi un cycle d'entraînement de ${c.weeks} semaines, du ${c.start} au ${end}, sans course à préparer, qui part de mon volume actuel et respecte mes choix.`,
+    c.focusPrompt,
+    'Explique d\'abord en quelques lignes la logique du cycle (progression, séances clés, semaines allégées), puis donne un tableau par semaine : jour, séance, durée ou distance, allure ou FC cible, but de la séance.',
+    'Utilise mes allures d\'entraînement et mes seuils de FC.',
+    r.mode === 'ambitious'
+      ? 'Mode ambitieux : un peu plus de qualité et des blocs un peu plus durs, en gardant au moins un jour facile entre deux séances dures et sans dépasser mes choix de volume.'
+      : 'Mode normal : une séance de qualité par semaine au plus, deux seulement si le but le demande.',
+  ];
+  if (r.test) prompt.push(`Termine par le test de ${n(r.test.km, 0)} km chronométré le ${r.test.date} (type « course ») : allège les jours d'avant et indique comment le courir.`);
+  if (r.previous) prompt.push('Appuie-toi sur le bilan du cycle précédent : dis ce qui a marché, ce qui n\'a pas été tenu, et adapte la charge en conséquence.');
+  if (r.strength?.length) prompt.push('Place le renforcement aux jours indiqués, avec 4 à 6 exercices adaptés au coureur pour chaque zone du corps, et loin des séances de qualité les plus dures quand c\'est possible.');
+  prompt.push(
+    'Termine OBLIGATOIREMENT par le plan complet dans un bloc de code `runstat-plan`, une ligne par séance (pas de ligne pour les jours de repos), colonnes séparées par « | » dans cet ordre : date (AAAA-MM-JJ) | type (facile, qualité, longue, course, renfo, autre) | nom court | durée (« 45 min », « 1 h 40 ») | distance (« 11 km » ou « - ») | étapes | phase. Étapes : morceaux reliés par « + », chacun une durée (« 15\' ») ou une distance (« 1000 m », « 3 km ») suivie de l\'intensité : zone Z1 à Z5 de la montre, allure « @ 4:10-4:15 » (min/km) ou FC « @ FC 140-150 » ; les répétitions s\'écrivent « 6×(1000 m @ 4:10-4:15 / 2\' Z1) ». Ce bloc sera relu par RunStat (suivi, séance du jour, envoi dans la montre) : respecte exactement ce format, par exemple :',
+  );
+  const out = finish(doc, `Cycle d'entraînement : ${c.focusLabel.toLowerCase()} (${c.start})`, `cycle-${slug(c.focusLabel)}`, input, prompt, opts);
+  const markdown = out.markdown.includes('### Ma question')
+    ? out.markdown.replace('### Ma question', `${PLAN_FORMAT}\n\n### Ma question`)
+    : out.markdown.trimEnd() + '\n\n' + PLAN_FORMAT + '\n';
+  return { ...out, markdown, tokens: Math.round(markdown.length / 3.5) };
 }
 
 // ---------------------------------------------------------------------------

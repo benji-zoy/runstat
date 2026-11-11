@@ -13,6 +13,7 @@ import { IconComponent } from '../ui/icon';
 import { PredictionHistoryComponent } from '../sections/prediction-history';
 import { CountUpDirective } from '../ui/count-up';
 import { MorphDirective, SignatureDirective } from '../ui/motion';
+import { PlanWizardComponent } from '../ui/forms/plan-wizard';
 
 const TONE: Record<string, string> = { good: 'var(--good)', neutral: 'var(--series-1)', warning: 'var(--warning)', serious: 'var(--serious)' };
 const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -23,7 +24,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
  */
 @Component({
   selector: 'app-goals',
-  imports: [RouterLink, GoalFormComponent, ResultFormComponent, IconComponent, PredictionHistoryComponent, CountUpDirective, MorphDirective, SignatureDirective],
+  imports: [RouterLink, GoalFormComponent, ResultFormComponent, IconComponent, PredictionHistoryComponent, CountUpDirective, MorphDirective, SignatureDirective, PlanWizardComponent],
   template: `
     <header class="page-head">
       <h1>Courses</h1>
@@ -31,12 +32,14 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
       @if (entries.available()) {
         <div class="add">
           <button type="button" class="btn small" (click)="resultForm.declare()"><app-icon name="flag" />Course passée</button>
+          <button type="button" class="btn small" (click)="wizard.openCycle(null)"><app-icon name="training" />Cycle sans course</button>
           <button type="button" class="btn small" (click)="goalForm.open()"><app-icon name="plus" />Objectif</button>
         </div>
       }
     </header>
     <app-goal-form #goalForm />
     <app-result-form #resultForm />
+    <app-plan-wizard #wizard />
 
     <section class="section">
       <h2>À venir</h2>
@@ -61,8 +64,12 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
         } @empty {
           <div class="card empty">
             @if (entries.available()) {
-              <p>Pas d'objectif à venir : ajoute ta prochaine course pour suivre ta préparation et ton chrono probable.</p>
-              <button type="button" class="btn primary" (click)="goalForm.open()"><app-icon name="plus" />Ajouter un objectif</button>
+              <p>Pas d'objectif à venir : ajoute ta prochaine course pour suivre ta préparation et ton chrono probable, ou prépare un
+                cycle d'entraînement sans course (reprendre, endurance, vitesse, entretien, trail).</p>
+              <div class="empty-actions">
+                <button type="button" class="btn primary" (click)="goalForm.open()"><app-icon name="plus" />Ajouter un objectif</button>
+                <button type="button" class="btn" (click)="wizard.openCycle(null)"><app-icon name="training" />Préparer un cycle</button>
+              </div>
             } @else {
               <p>Ajoute tes prochains objectifs dans <code>data-raw/goals.json</code> puis lance <code>npm run data</code> :</p>
               <pre>[{{ '{' }} "id": "semi-2026", "name": "Semi", "date": "2026-10-11", "startTime": "09:30",
@@ -72,6 +79,29 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
         }
       </div>
     </section>
+
+    @if (cycles().length) {
+      <section class="section">
+        <h2>Cycles sans course</h2>
+        <div class="tiles">
+          @for (x of cycles(); track x.c.id) {
+            <a class="card tile cycle" [routerLink]="['/cycles', x.c.id]" [class.done]="x.st.status === 'done'">
+              <div class="head">
+                <h3>{{ x.c.name }}</h3>
+                <span class="days display">{{ x.st.status === 'active' ? 'S' + x.st.week + '/' + x.c.weeks : x.st.status === 'upcoming' ? 'à venir' : 'terminé' }}</span>
+              </div>
+              <span class="muted small">{{ fmt(x.c.start) }} → {{ fmt(x.st.end) }}{{ x.c.plan?.sessions?.length ? ' · plan importé' : ' · plan à préparer' }}</span>
+              <div class="figures">
+                <div><span class="v">{{ x.t.doneToDate }}<small> / {{ x.t.plannedToDate }}</small></span><span class="muted small">séances faites</span></div>
+                <div><span class="v">{{ num(x.t.doneKmToDate) }}<small> km</small></span><span class="muted small">courus</span></div>
+              </div>
+              <div class="progress" aria-hidden="true"><span [style.width.%]="x.t.plannedToDate ? (x.t.doneToDate / x.t.plannedToDate) * 100 : 0"></span></div>
+              <span class="verdict">{{ x.st.status === 'done' ? 'Bilan et cycle suivant' : 'Suivi du cycle' }} <app-icon name="arrow" /></span>
+            </a>
+          }
+        </div>
+      </section>
+    }
 
     @if (past().length) {
       <section class="section">
@@ -169,11 +199,23 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
     .past[data-tone='warning'] .verdict { color: var(--warning); }
     .empty { display: grid; gap: 0.75rem; justify-items: start; grid-column: 1 / -1; }
     .empty p { margin: 0; }
+    .empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .cycle { --tone: var(--accent); }
+    .cycle.done { --tone: var(--text-muted); }
     .method ul { gap: 0.5rem; }
     pre { background: var(--surface-2); padding: 0.8rem; border-radius: 8px; overflow-x: auto; font-size: 0.82rem; }
   `,
 })
 export class GoalsPage {
+  /** Cycles sans course : en cours et à venir d'abord, puis terminés (du plus récent) */
+  protected readonly cycles = computed(() => {
+    const order = { active: 0, upcoming: 1, done: 2 } as const;
+    return this.sci
+      .cycles()
+      .map((c) => ({ c, st: this.sci.cycleState(c), t: this.sci.cycleTracking(c) }))
+      .sort((a, b) => order[a.st.status] - order[b.st.status] || (a.st.status === 'done' ? b.c.start.localeCompare(a.c.start) : a.c.start.localeCompare(b.c.start)));
+  });
+
   /** Nom de l'objectif principal d'un objectif secondaire */
   protected mainOf(id: string | undefined): string | null {
     return id ? (this.sci.goals().find((x) => x.goal.id === id)?.goal.name ?? null) : null;
@@ -191,6 +233,7 @@ export class GoalsPage {
   private readonly sci = inject(ScienceService);
   protected readonly entries = inject(EntriesService);
   protected readonly clock = clock;
+  protected readonly num = num;
   protected readonly upcoming = this.sci.upcomingGoals;
 
   /** Objectifs passés : temps réalisé (puce si saisi) face à l'objectif */

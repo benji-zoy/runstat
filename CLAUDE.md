@@ -439,6 +439,26 @@ puis `planExport` (`PlanRequest`). L'export impose à l'IA un bloc final ```` ``
 - Tests : `src/engine/plan/plan.spec.ts`, `core/plan.spec.ts`, `core/ai/exports.spec.ts` (aller-retour du format), `accounts.test.mjs`
   (routes du NAS).
 
+## Cycles sans course (`core/cycle.ts`, `pages/cycle.ts`, `/cycles/:id`)
+
+Même système que le plan d'une course, pour qui n'a pas d'objectif précis. `data-raw/cycles.json` (`validateCycles` : `{ id, name,
+focus, start, weeks, previous? }`, 4 à 16 semaines comme un plan COROS, identifiants distincts de ceux des objectifs ; `GET|PUT
+/api/cycles` ou zone raw), plan dans `plans/<cycleId>.json` comme un objectif (mêmes routes, même envoi COROS sous le nom du cycle :
+`run.mjs` et `pushPlan` cherchent aussi dans `cycles.json`), recopiés dans `cycles` du snapshot.
+- Buts (`FOCUS`) : reprendre, endurance, vitesse, entretenir, trail ; chacun donne une durée et un test conseillés, une consigne à
+  l'IA et le volume conseillé (`cycleVolume`). Assistant : `PlanWizardComponent.openCycle(cycle | null, { previous })`, premier écran
+  « Ton but » (but, durée, début, test 3 / 5 / 10 km), enregistré en passant à l'écran suivant ; puis les écrans communs ; export
+  `cycleExport` (`CycleRequest`, bilan du cycle précédent).
+- Test de fin de cycle = un objectif ordinaire rattaché par `cycle` (le dernier jour) : chrono probable, bilan ; il suit le plan
+  du cycle (`planOf`), n'apparaît pas comme « Prochaine course » sur l'accueil.
+- Une course prend le relais (`cycleRelay`) : la première séance du plan d'une course pendant le cycle en marque la fin (veille) ;
+  les séances du cycle à partir de ce jour sont ignorées (séance du jour, suivi). Sans plan propre, un objectif prend les séances
+  des cycles pour l'indice.
+- Suivi (`cycleTracking`) : séances de course prévues jusqu'à hier et faites (une sortie le même jour), volume semaine par semaine,
+  ratio de charge aigu/chronique, EF des sorties faciles comparables (4 semaines avant / 4 dernières), VDOT de la meilleure référence.
+  Fiche : suivi ou bilan, test, plan ; « Préparer le cycle suivant » une fois terminé. Courses › « Cycles sans course » ; accueil :
+  sans course à venir, carte du cycle en cours ou « Préparer un cycle ». Tests : `core/cycle.spec.ts`.
+
 ## Discuter avec une IA (`src/app/core/ai/`, `core/ai-export.service.ts`, `ui/forms/ai-export-dialog.ts`)
 
 Export Markdown à donner à n'importe quel assistant (aucun appel à une IA, aucun envoi : copier, télécharger `.md`, partager par la

@@ -217,6 +217,24 @@ export interface Goal {
   parent?: string;
   /** Plan d'entraînement importé (data-raw/plans/<id>.json, recopié par la reconstruction) */
   plan?: TrainingPlan;
+  /** Test de fin d'un cycle d'entraînement : identifiant du cycle */
+  cycle?: string;
+}
+
+export type CycleFocus = 'restart' | 'endurance' | 'speed' | 'maintain' | 'trail';
+
+/** Cycle d'entraînement sans course (cycles.json) : un but, 4 à 16 semaines à partir de `start` */
+export interface Cycle {
+  id: string;
+  name: string;
+  focus: CycleFocus;
+  /** Premier jour (AAAA-MM-JJ) */
+  start: string;
+  weeks: number;
+  /** Cycle précédent (enchaînement : son bilan est donné à l'IA) */
+  previous?: string;
+  /** Plan importé (data-raw/plans/<id>.json) */
+  plan?: TrainingPlan;
 }
 
 /** Profil compact d'un tracé : altitude (m) tous les `stepKm` depuis le départ, points de passage nommés */
@@ -246,6 +264,8 @@ export interface CorosData {
   load: LoadDay[];
   /** Séances prévues au calendrier de la montre (COROS), absent sans calendrier */
   planned?: PlannedCalendar;
+  /** Cycles d'entraînement sans course (cycles.json) */
+  cycles?: Cycle[];
 }
 
 /** Séance prévue (calendrier COROS) */
