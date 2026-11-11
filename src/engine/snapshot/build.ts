@@ -17,6 +17,7 @@
 //   health-garmin.json -> santé & sommeil Garmin (source de santé « garmin »)
 //   goals.json       -> objectifs de course
 //   planned.json     -> séances prévues au calendrier de la montre (COROS), recopiées dans `planned`
+//   plans/<goal>.json -> plan d'entraînement importé (rendu par une IA), recopié dans `plan` de l'objectif
 // Tout passe par un FileStore : le même code tourne sur le NAS (Node) et dans le navigateur (IndexedDB).
 import type { FitDerived } from '../fit/types.ts';
 import { firstPoint } from '../fit/analyse.ts';
@@ -336,6 +337,10 @@ export async function buildSnapshot(raw: FileStore, { now = new Date() }: { now?
   // Objectifs : météo moyenne prévue entre le départ et l'arrivée estimée (heure locale de la machine, comme sur
   // le NAS réglé sur Europe/Paris)
   const goals = (await readJson<Goal[]>(raw, 'goals.json')) ?? [];
+  for (const g of goals) {
+    const plan = await readJson<Record<string, unknown>>(raw, `plans/${g.id}.json`);
+    if (plan) g['plan'] = plan;
+  }
   for (const g of goals) {
     const forecast = await readJson<{ hourly: Hourly; fetchedAt?: string }>(raw, `weather/forecast-${g.id}.json`);
     if (!forecast) continue;

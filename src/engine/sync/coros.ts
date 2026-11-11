@@ -1,4 +1,4 @@
-// Client COROS MCP (HTTP sans session, OAuth 2.0) en lecture seule, portable (NAS et navigateur : le MCP, l'OAuth et
+// Client COROS MCP (HTTP sans session, OAuth 2.0), en lecture seule sauf l'envoi d'un plan d'entraînement, portable (NAS et navigateur : le MCP, l'OAuth et
 // l'enregistrement dynamique de COROS acceptent le CORS). Autorisation : client public enregistré dynamiquement pour une
 // adresse de retour, puis code + PKCE. Jetons : coros-client.json et coros-tokens.json du magasin du compte.
 import { fetchRetry, globalFetch, guardedRefresh, postForm, ReauthRequired, type Fetch, type TokenStore } from './http.ts';
@@ -7,7 +7,7 @@ export const COROS_MCP_URL = 'https://mcpeu.coros.com/mcp';
 export const COROS_SCOPE = 'openid mcp.tools offline_access';
 const PROTOCOL = '2025-06-18';
 
-/** Seuls outils appelables. Les outils d'écriture (create…, update…, schedule…) n'y figurent pas. */
+/** Outils de lecture appelables. Les outils d'écriture (create…, update…, schedule…) n'y figurent pas. */
 export const READ_TOOLS = new Set([
   'querySportRecords',
   'getActivityDetail',
@@ -22,7 +22,14 @@ export const READ_TOOLS = new Set([
   'queryTrainingLoadAssessment',
   'queryFitnessAssessmentOverview',
   'queryTrainingSchedule',
+  'queryTrainingPlanLibrary',
 ]);
+
+/**
+ * Seules écritures permises, et seulement à la demande (« Envoyer dans COROS » d'un plan importé) : créer ou réécrire un
+ * plan d'entraînement. Jamais pendant une synchro ; ni séance isolée, ni modification des séances de la bibliothèque.
+ */
+export const WRITE_TOOLS = new Set(['createTrainingPlan', 'updateTrainingPlan']);
 
 export interface CorosMeta {
   authorization_endpoint: string;
@@ -164,11 +171,11 @@ export function corosClient({ tokens, fetch = globalFetch, mcp = COROS_MCP_URL, 
   }
 
   /** Requête JSON-RPC ; la réponse peut être du JSON ou un flux SSE */
-  async function rpc(method: string, params?: unknown, { notification = false } = {}): Promise<any> {
+  async function rpc(method: string, params?: unknown, { notification = false, retry = true } = {}): Promise<any> {
     const token = await accessToken();
     const message: Record<string, unknown> = { jsonrpc: '2.0', method, ...(params !== undefined && { params }) };
     if (!notification) message['id'] = ++rpcId;
-    // Outils en lecture seule : renvoyer la requête après une erreur 5xx est sans effet de bord
+    // Outils en lecture seule : renvoyer la requête après une erreur 5xx est sans effet de bord ; une écriture part une fois
     const res = await fetchRetry(fetch, mcp, {
       method: 'POST',
       headers: {
@@ -178,7 +185,7 @@ export function corosClient({ tokens, fetch = globalFetch, mcp = COROS_MCP_URL, 
         'MCP-Protocol-Version': PROTOCOL,
       },
       body: JSON.stringify(message),
-    });
+    }, retry ? undefined : { tries: 1, timeoutMs: 120_000 });
     if (res.status === 401) throw new ReauthRequired('coros', 'token refusé par le serveur MCP');
     if (notification) return null;
     const text = await res.text();
@@ -218,5 +225,11 @@ export function corosClient({ tokens, fetch = globalFetch, mcp = COROS_MCP_URL, 
     return rpc('tools/call', { name, arguments: args });
   }
 
-  return { issuer, metadata, registerClient, authorizeUrl, exchangeCode, initialize, listTools, callTool, toolText, fetch };
+  /** Écriture de la liste WRITE_TOOLS, envoyée une seule fois (pas de nouvel essai après une erreur) */
+  async function callWriteTool(name: string, args: Record<string, unknown>): Promise<any> {
+    if (!WRITE_TOOLS.has(name)) throw new Error(`Outil COROS non autorisé en écriture : ${name}`);
+    return rpc('tools/call', { name, arguments: args }, { retry: false });
+  }
+
+  return { issuer, metadata, registerClient, authorizeUrl, exchangeCode, initialize, listTools, callTool, callWriteTool, toolText, fetch };
 }

@@ -11,6 +11,8 @@
 //   POST /api/fit?id=<labelId | strava:id | garmin:id> → tracé d'une seule sortie (« Affiner avec le tracé ») : 202 | 400 | 409
 //   GET|PUT /api/goals, GET|PUT /api/athlete, GET|PUT /api/sources, GET|PUT|DELETE /api/results/<id>[?replaces=date-….json]
 //     → saisie depuis le site (scripts/sync/entries.mjs), puis reconstruction seule (run.mjs --rebuild) : 200 | 400 | 404
+//   GET|PUT|DELETE /api/plans/<goalId> → plan d'entraînement importé (data-raw/plans/<goalId>.json), puis reconstruction
+//   POST /api/plans/<goalId>/coros → envoi du plan dans le calendrier COROS (run.mjs --coros-plan, en file) : 202 | 404 | 409
 //   POST /api/strava/archive (corps application/zip, 2 Gio au plus) → import de l'archive Strava puis reconstruction :
 //     202 | 400 | 413 | 507
 //   PUT /api/strava/client, GET /api/strava/connect, GET /api/strava/callback → connexion Strava depuis Réglages
@@ -26,7 +28,7 @@
 import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ACTIVITY_ID, InvalidEntry, deleteResult, readJsonFile, saveResult, validateAthlete, validateGoals, validateSources,
+  ACTIVITY_ID, GOAL_ID, InvalidEntry, deleteResult, readJsonFile, saveResult, validateAthlete, validateGoals, validatePlan, validateSources,
   writeJsonAtomic,
 } from './entries.mjs';
 import { fileKey, readSources } from './sources.mjs';
@@ -44,7 +46,8 @@ const MAX_BODY = 64 * 1024;
 const MIN_GAP_MS = 20_000; // anti-rebond des clics
 const SIZE_TTL_MS = 60_000;
 const DATA_FILES = new Set(['coros.json', 'routes.json']);
-const ENTRY = /^\/api\/(goals|athlete|sources|results\/[^/]+)$/;
+const ENTRY = /^\/api\/(goals|athlete|sources|results\/[^/]+|plans\/[^/]+)$/;
+const PLAN_COROS = /^\/api\/plans\/([^/]+)\/coros$/;
 const STRAVA_NAV = ['/api/strava/connect', CALLBACK_PATH];
 
 const send = (res, status, body) => {
@@ -157,6 +160,16 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
     const sourcesFile = join(raw, 'sources.json');
     const result = path.match(/^\/api\/results\/([^/]+)$/);
     if (result && !ACTIVITY_ID.test(result[1])) return send(res, 400, { error: 'identifiant de sortie invalide' });
+    const plan = path.match(/^\/api\/plans\/([^/]+)$/);
+    if (plan && !GOAL_ID.test(plan[1])) return send(res, 400, { error: 'identifiant d’objectif invalide' });
+    const planFile = plan && join(raw, 'plans', `${plan[1]}.json`);
+    if (req.method === 'GET' && plan) return send(res, 200, readJsonFile(planFile, null));
+    if (req.method === 'DELETE' && plan) {
+      if (!existsSync(planFile)) return send(res, 404, { error: 'aucun plan pour cet objectif' });
+      rmSync(planFile);
+      enqueue(user, jobs.rebuild());
+      return send(res, 200, { saved: null });
+    }
     if (req.method === 'GET') {
       if (path === '/api/goals') return send(res, 200, readJsonFile(goalsFile, []));
       if (path === '/api/athlete') return send(res, 200, readJsonFile(athleteFile, null));
@@ -176,6 +189,7 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
         if (path === '/api/goals') writeJsonAtomic(goalsFile, (saved = validateGoals(body)));
         else if (path === '/api/athlete') writeJsonAtomic(athleteFile, (saved = validateAthlete(body)));
         else if (path === '/api/sources') writeJsonAtomic(sourcesFile, (saved = validateSources(body)));
+        else if (plan) writeJsonAtomic(planFile, (saved = validatePlan(plan[1], body)));
         else saved = saveResult(raw, result[1], body, replaces);
       }
     } catch (e) {
@@ -485,6 +499,13 @@ export function createApp({ zone, accounts, queue, strava, oauth, appUrl = null,
         log.error?.('Saisie :', e);
         return send(res, 500, { error: 'écriture impossible' });
       }
+    }
+    const toCoros = path.match(PLAN_COROS);
+    if (toCoros) {
+      if (req.method !== 'POST') return send(res, 405, { error: 'méthode non autorisée' });
+      if (!GOAL_ID.test(toCoros[1]) || !existsSync(join(paths.raw, 'plans', `${toCoros[1]}.json`))) return send(res, 404, { error: 'aucun plan pour cet objectif' });
+      if (enqueue(user, jobs.corosPlan(toCoros[1])) === 'busy') return send(res, 409, { error: 'un autre envoi attend déjà' });
+      return send(res, 202, { running: true, startedAt: queue.status(user.id).startedAt });
     }
     if (path !== '/api/sync' && path !== '/api/fit') return send(res, 404, { error: 'introuvable' });
     if (req.method === 'POST') {

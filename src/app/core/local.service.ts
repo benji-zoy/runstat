@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { DATE_RESULT, InvalidEntry, validateAthlete, validateGoals, validateResult, validateSources } from '../../engine/entries';
+import { DATE_RESULT, InvalidEntry, validateAthlete, validateGoals, validateResult, validatePlan, validateSources } from '../../engine/entries';
 import { fileKey } from '../../engine/sources';
 import { IndexedDbStore, indexedDbStorage } from '../../engine/storage/indexeddb';
 import { exportEntries, zipStream } from '../../engine/archive/zip-writer';
@@ -91,6 +91,13 @@ export class LocalService {
       if (route === 'goals') await raw.write('goals.json', JSON.stringify((saved = validateGoals(body)), null, 2));
       else if (route === 'athlete') await raw.write('athlete.json', JSON.stringify((saved = validateAthlete(body)), null, 2));
       else if (route === 'sources') await raw.write('sources.json', JSON.stringify((saved = validateSources(body)), null, 2));
+      else if (route.startsWith('plans/')) {
+        const id = decodeURIComponent(route.slice('plans/'.length));
+        if (method === 'DELETE') {
+          if ((await raw.read(`plans/${id}.json`)) == null) throw new EntryError(['aucun plan pour cet objectif']);
+          await raw.remove(`plans/${id}.json`);
+        } else await raw.write(`plans/${id}.json`, JSON.stringify((saved = validatePlan(id, body)), null, 2));
+      }
       else if (route.startsWith('results/')) {
         const id = decodeURIComponent(route.slice('results/'.length));
         if (method === 'DELETE') {

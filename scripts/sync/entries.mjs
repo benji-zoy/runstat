@@ -6,7 +6,7 @@ import { ACTIVITY_ID, fileKey } from './sources.mjs';
 import { DATE_RESULT, validateResult } from '#engine/entries.ts';
 
 export { ACTIVITY_ID };
-export { DATE_RESULT, InvalidEntry, validateAthlete, validateGoal, validateGoals, validateResult, validateSources } from '#engine/entries.ts';
+export { DATE_RESULT, GOAL_ID, InvalidEntry, validateAthlete, validateGoal, validateGoals, validatePlan, validateResult, validateSources } from '#engine/entries.ts';
 
 // ---------- fichiers ----------
 

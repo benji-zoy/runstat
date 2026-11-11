@@ -6,7 +6,10 @@ import { GARMIN_KEY_FILE, garminClient, garminKeyExpiry, validateGarminKey, type
 import { fileTokenStore, ReauthRequired, type TokenStore } from '../../engine/sync/http';
 import { sourceSync, type SyncState } from '../../engine/sync/run-sources';
 import { fitQueue, fitQueueText } from '../../engine/fit-queue';
-import { InvalidEntry } from '../../engine/entries';
+import { InvalidEntry, validatePlan } from '../../engine/entries';
+import { pushPlanToCoros } from '../../engine/plan/coros-plan';
+import type { TrainingPlan } from '../../engine/plan/plan';
+import { isoDay } from './stats';
 import { readJson } from '../../engine/storage/types';
 import { AccountService } from './account.service';
 import { DataService } from './data.service';
@@ -244,6 +247,30 @@ export class DeviceSyncService {
 
   private say(m: unknown[]): void {
     this.log.update((l) => [...l.slice(-49), m.map(String).join(' ')]);
+  }
+
+  /**
+   * « Envoyer dans COROS » d'un plan importé (seule écriture vers COROS) : sous le verrou des synchros, état gardé dans le
+   * plan (data-raw/plans/<id>.json), réussite comme échec.
+   */
+  async pushPlan(goalId: string): Promise<string> {
+    const r = await withLock('runstat-sources', async () => {
+      const c = await this.clients();
+      const plan = await readJson<TrainingPlan>(c.raw, `plans/${goalId}.json`);
+      const goal = ((await readJson<{ id: string; name: string }[]>(c.raw, 'goals.json')) ?? []).find((g) => g.id === goalId);
+      if (!plan || !goal) throw new EntryError(['aucun plan pour cet objectif']);
+      try {
+        plan.coros = await pushPlanToCoros(c.coros, plan, goal.name, isoDay(new Date()));
+        return `Plan envoyé dans COROS : ${plan.coros.sessions} séances sur ${plan.coros.weeks} semaines.`;
+      } catch (e) {
+        const message = e instanceof ReauthRequired ? 'connexion COROS à refaire (Réglages)' : e instanceof Error ? e.message : String(e);
+        plan.coros = { ...(plan.coros ?? {}), error: message.slice(0, 500), errorAt: new Date().toISOString() };
+        throw new EntryError([`COROS : ${message}`]);
+      } finally {
+        await c.raw.write(`plans/${goalId}.json`, JSON.stringify(validatePlan(goalId, plan), null, 2));
+      }
+    }, true);
+    return r ?? 'Synchro en cours dans un autre onglet : réessaie dans un instant.';
   }
 
   /** Appli Strava de la personne (Réglages) : changer d'appli efface les jetons de l'ancienne */

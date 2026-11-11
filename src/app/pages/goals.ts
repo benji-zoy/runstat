@@ -47,7 +47,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
               <h3>{{ e.goal.name }}</h3>
               <span class="days display">{{ e.daysLeft > 0 ? 'J-' + e.daysLeft : 'Jour J' }}</span>
             </div>
-            <span class="muted small">{{ fmt(e.goal.date) }} · {{ km(e) }}</span>
+            <span class="muted small">{{ fmt(e.goal.date) }} · {{ km(e) }}{{ mainOf(e.goal.parent) ? ' · préparation de ' + mainOf(e.goal.parent) : '' }}{{ e.goal.plan?.sessions?.length ? ' · plan importé' : '' }}</span>
             <div class="figures">
               <div><span class="v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">chrono probable</span></div>
               <div>
@@ -174,6 +174,11 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
   `,
 })
 export class GoalsPage {
+  /** Nom de l'objectif principal d'un objectif secondaire */
+  protected mainOf(id: string | undefined): string | null {
+    return id ? (this.sci.goals().find((x) => x.goal.id === id)?.goal.name ?? null) : null;
+  }
+
   constructor() {
     const route = inject(ActivatedRoute);
     const router = inject(Router);
