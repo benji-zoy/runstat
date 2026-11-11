@@ -2,6 +2,7 @@ import { Activity } from './models';
 import { addDays, isoDay, parseDay, startOfWeek } from './stats';
 import { eddington, startHour, startPlaces } from './insights';
 import { C } from '../ui/palette';
+import type { IconName } from '../ui/icon';
 
 // ---------------------------------------------------------------------------
 // Niveaux par distance cumulée (inspirés des niveaux Nike Run Club)
@@ -50,7 +51,7 @@ export interface BadgeResult {
 export interface Badge {
   id: string;
   family: string;
-  icon: string;
+  icon: IconName;
   name: string;
   description: string;
   eval: (acts: Activity[]) => BadgeResult;
@@ -199,79 +200,79 @@ const hourIn = (from: number, to: number) => (a: Activity) => {
 
 export const BADGES: Badge[] = [
   // Distance d'une sortie
-  { id: 'd5', family: 'Distance', icon: '🥉', name: '5 km', description: 'Courir 5 km d\'une traite', eval: single(5, (a) => a.distanceKm, km) },
-  { id: 'd10', family: 'Distance', icon: '🔟', name: '10 km', description: 'Courir 10 km d\'une traite', eval: single(10, (a) => a.distanceKm, km) },
-  { id: 'd21', family: 'Distance', icon: '🥈', name: 'Semi', description: 'Courir 21,1 km d\'une traite', eval: single(21.0975, (a) => a.distanceKm, km) },
-  { id: 'd30', family: 'Distance', icon: '💪', name: '30 km', description: 'Courir 30 km d\'une traite', eval: single(30, (a) => a.distanceKm, km) },
-  { id: 'd42', family: 'Distance', icon: '🏅', name: 'Marathon', description: 'Courir 42,195 km d\'une traite', eval: single(42.195, (a) => a.distanceKm, km) },
-  { id: 'd50', family: 'Distance', icon: '🦄', name: 'Ultra', description: 'Courir 50 km d\'une traite', eval: single(50, (a) => a.distanceKm, km) },
+  { id: 'd5', family: 'Distance', icon: 'medal', name: '5 km', description: 'Courir 5 km d\'une traite', eval: single(5, (a) => a.distanceKm, km) },
+  { id: 'd10', family: 'Distance', icon: 'hash', name: '10 km', description: 'Courir 10 km d\'une traite', eval: single(10, (a) => a.distanceKm, km) },
+  { id: 'd21', family: 'Distance', icon: 'medal', name: 'Semi', description: 'Courir 21,1 km d\'une traite', eval: single(21.0975, (a) => a.distanceKm, km) },
+  { id: 'd30', family: 'Distance', icon: 'dumbbell', name: '30 km', description: 'Courir 30 km d\'une traite', eval: single(30, (a) => a.distanceKm, km) },
+  { id: 'd42', family: 'Distance', icon: 'medal', name: 'Marathon', description: 'Courir 42,195 km d\'une traite', eval: single(42.195, (a) => a.distanceKm, km) },
+  { id: 'd50', family: 'Distance', icon: 'star', name: 'Ultra', description: 'Courir 50 km d\'une traite', eval: single(50, (a) => a.distanceKm, km) },
 
   // Cumul
-  { id: 'c500', family: 'Cumul', icon: '🛣️', name: '500 km', description: '500 km au total', eval: cumulative(500, (a) => a.distanceKm, km) },
-  { id: 'c1000', family: 'Cumul', icon: '🇫🇷', name: 'La France', description: '1 000 km au total, la longueur de la France', eval: cumulative(1000, (a) => a.distanceKm, km) },
-  { id: 'c2500', family: 'Cumul', icon: '🌊', name: 'Le Danube', description: '2 500 km au total', eval: cumulative(2500, (a) => a.distanceKm, km) },
-  { id: 'c5000', family: 'Cumul', icon: '🧱', name: '5 000 km', description: '5 000 km au total', eval: cumulative(5000, (a) => a.distanceKm, km) },
-  { id: 'c10000', family: 'Cumul', icon: '🌍', name: 'Un quart de Terre', description: '10 000 km au total', eval: cumulative(10000, (a) => a.distanceKm, km) },
-  { id: 't24', family: 'Cumul', icon: '🕛', name: 'Une journée', description: '24 h de course cumulées', eval: cumulative(24 * 3600, (a) => a.durationSec, h) },
-  { id: 't168', family: 'Cumul', icon: '📅', name: 'Une semaine', description: '168 h de course cumulées', eval: cumulative(168 * 3600, (a) => a.durationSec, h) },
-  { id: 't750', family: 'Cumul', icon: '🗓️', name: 'Un mois', description: '750 h de course cumulées', eval: cumulative(750 * 3600, (a) => a.durationSec, h) },
+  { id: 'c500', family: 'Cumul', icon: 'road', name: '500 km', description: '500 km au total', eval: cumulative(500, (a) => a.distanceKm, km) },
+  { id: 'c1000', family: 'Cumul', icon: 'flag', name: 'La France', description: '1 000 km au total, la longueur de la France', eval: cumulative(1000, (a) => a.distanceKm, km) },
+  { id: 'c2500', family: 'Cumul', icon: 'wind', name: 'Le Danube', description: '2 500 km au total', eval: cumulative(2500, (a) => a.distanceKm, km) },
+  { id: 'c5000', family: 'Cumul', icon: 'wall', name: '5 000 km', description: '5 000 km au total', eval: cumulative(5000, (a) => a.distanceKm, km) },
+  { id: 'c10000', family: 'Cumul', icon: 'globe', name: 'Un quart de Terre', description: '10 000 km au total', eval: cumulative(10000, (a) => a.distanceKm, km) },
+  { id: 't24', family: 'Cumul', icon: 'clock', name: 'Une journée', description: '24 h de course cumulées', eval: cumulative(24 * 3600, (a) => a.durationSec, h) },
+  { id: 't168', family: 'Cumul', icon: 'calendar', name: 'Une semaine', description: '168 h de course cumulées', eval: cumulative(168 * 3600, (a) => a.durationSec, h) },
+  { id: 't750', family: 'Cumul', icon: 'calendar', name: 'Un mois', description: '750 h de course cumulées', eval: cumulative(750 * 3600, (a) => a.durationSec, h) },
 
   // Volume
-  { id: 'w30', family: 'Volume', icon: '📈', name: 'Semaine solide', description: '30 km dans une semaine', eval: bucketed(30, weekKey, (a) => a.distanceKm, km) },
-  { id: 'w50', family: 'Volume', icon: '🚀', name: 'Grosse semaine', description: '50 km dans une semaine', eval: bucketed(50, weekKey, (a) => a.distanceKm, km) },
-  { id: 'w80', family: 'Volume', icon: '🔥', name: 'Semaine de folie', description: '80 km dans une semaine', eval: bucketed(80, weekKey, (a) => a.distanceKm, km) },
-  { id: 'm100', family: 'Volume', icon: '💯', name: 'Mois à 100', description: '100 km dans un mois', eval: bucketed(100, monthKey, (a) => a.distanceKm, km) },
-  { id: 'm200', family: 'Volume', icon: '⚡', name: 'Mois à 200', description: '200 km dans un mois', eval: bucketed(200, monthKey, (a) => a.distanceKm, km) },
-  { id: 'm300', family: 'Volume', icon: '🌋', name: 'Mois à 300', description: '300 km dans un mois', eval: bucketed(300, monthKey, (a) => a.distanceKm, km) },
+  { id: 'w30', family: 'Volume', icon: 'trend', name: 'Semaine solide', description: '30 km dans une semaine', eval: bucketed(30, weekKey, (a) => a.distanceKm, km) },
+  { id: 'w50', family: 'Volume', icon: 'bolt', name: 'Grosse semaine', description: '50 km dans une semaine', eval: bucketed(50, weekKey, (a) => a.distanceKm, km) },
+  { id: 'w80', family: 'Volume', icon: 'flame', name: 'Semaine de folie', description: '80 km dans une semaine', eval: bucketed(80, weekKey, (a) => a.distanceKm, km) },
+  { id: 'm100', family: 'Volume', icon: 'target', name: 'Mois à 100', description: '100 km dans un mois', eval: bucketed(100, monthKey, (a) => a.distanceKm, km) },
+  { id: 'm200', family: 'Volume', icon: 'bolt', name: 'Mois à 200', description: '200 km dans un mois', eval: bucketed(200, monthKey, (a) => a.distanceKm, km) },
+  { id: 'm300', family: 'Volume', icon: 'altitude', name: 'Mois à 300', description: '300 km dans un mois', eval: bucketed(300, monthKey, (a) => a.distanceKm, km) },
 
   // Régularité
-  { id: 's5', family: 'Régularité', icon: '🔗', name: '5 d\'affilée', description: '5 jours de course consécutifs', eval: dayStreak(5) },
-  { id: 's10', family: 'Régularité', icon: '⛓️', name: '10 d\'affilée', description: '10 jours de course consécutifs', eval: dayStreak(10) },
-  { id: 's21', family: 'Régularité', icon: '🧠', name: 'Une habitude', description: '21 jours consécutifs, le temps d\'ancrer une habitude', eval: dayStreak(21) },
-  { id: 'ws12', family: 'Régularité', icon: '📆', name: 'Un trimestre', description: '12 semaines de suite avec au moins une sortie', eval: weekStreak(12) },
-  { id: 'ws26', family: 'Régularité', icon: '🗓️', name: 'Un semestre', description: '26 semaines de suite avec au moins une sortie', eval: weekStreak(26) },
-  { id: 'ws52', family: 'Régularité', icon: '🏆', name: 'Une année pleine', description: '52 semaines de suite avec au moins une sortie', eval: weekStreak(52) },
-  { id: 'stairs', family: 'Régularité', icon: '🪜', name: 'Escalier', description: 'Distance mensuelle en hausse 4 mois de suite', eval: monthlyStairs(4, (as) => as.reduce((s, a) => s + a.distanceKm, 0), 'de distance') },
-  { id: 'further', family: 'Régularité', icon: '🔭', name: 'Toujours plus loin', description: 'Plus longue sortie du mois en hausse 4 mois de suite', eval: monthlyStairs(4, (as) => Math.max(...as.map((a) => a.distanceKm)), 'de la plus longue sortie') },
+  { id: 's5', family: 'Régularité', icon: 'link', name: '5 d\'affilée', description: '5 jours de course consécutifs', eval: dayStreak(5) },
+  { id: 's10', family: 'Régularité', icon: 'link', name: '10 d\'affilée', description: '10 jours de course consécutifs', eval: dayStreak(10) },
+  { id: 's21', family: 'Régularité', icon: 'repeat', name: 'Une habitude', description: '21 jours consécutifs, le temps d\'ancrer une habitude', eval: dayStreak(21) },
+  { id: 'ws12', family: 'Régularité', icon: 'calendar', name: 'Un trimestre', description: '12 semaines de suite avec au moins une sortie', eval: weekStreak(12) },
+  { id: 'ws26', family: 'Régularité', icon: 'calendar', name: 'Un semestre', description: '26 semaines de suite avec au moins une sortie', eval: weekStreak(26) },
+  { id: 'ws52', family: 'Régularité', icon: 'trophy', name: 'Une année pleine', description: '52 semaines de suite avec au moins une sortie', eval: weekStreak(52) },
+  { id: 'stairs', family: 'Régularité', icon: 'elevation', name: 'Escalier', description: 'Distance mensuelle en hausse 4 mois de suite', eval: monthlyStairs(4, (as) => as.reduce((s, a) => s + a.distanceKm, 0), 'de distance') },
+  { id: 'further', family: 'Régularité', icon: 'arrow', name: 'Toujours plus loin', description: 'Plus longue sortie du mois en hausse 4 mois de suite', eval: monthlyStairs(4, (as) => Math.max(...as.map((a) => a.distanceKm)), 'de la plus longue sortie') },
 
   // Moments
-  { id: 'early', family: 'Moments', icon: '🐓', name: 'Lève-tôt', description: '10 sorties parties avant 7 h', eval: countOf(10, hourIn(0, 7)) },
-  { id: 'night', family: 'Moments', icon: '🦉', name: 'Oiseau de nuit', description: '10 sorties parties après 21 h', eval: countOf(10, hourIn(21, 24)) },
-  { id: 'lunch', family: 'Moments', icon: '🥪', name: 'Pause déj', description: '10 sorties parties entre 12 h et 14 h', eval: countOf(10, hourIn(12, 14)) },
-  { id: 'sunday', family: 'Moments', icon: '⛪', name: 'Messe du dimanche', description: '50 sorties le dimanche', eval: countOf(50, (a) => parseDay(a.date).getDay() === 0) },
-  { id: 'double', family: 'Moments', icon: '✌️', name: 'Double ration', description: 'Deux sorties le même jour', eval: (acts) => {
+  { id: 'early', family: 'Moments', icon: 'sun', name: 'Lève-tôt', description: '10 sorties parties avant 7 h', eval: countOf(10, hourIn(0, 7)) },
+  { id: 'night', family: 'Moments', icon: 'moon', name: 'Oiseau de nuit', description: '10 sorties parties après 21 h', eval: countOf(10, hourIn(21, 24)) },
+  { id: 'lunch', family: 'Moments', icon: 'clock', name: 'Pause déj', description: '10 sorties parties entre 12 h et 14 h', eval: countOf(10, hourIn(12, 14)) },
+  { id: 'sunday', family: 'Moments', icon: 'calendar', name: 'Messe du dimanche', description: '50 sorties le dimanche', eval: countOf(50, (a) => parseDay(a.date).getDay() === 0) },
+  { id: 'double', family: 'Moments', icon: 'repeat', name: 'Double ration', description: 'Deux sorties le même jour', eval: (acts) => {
       const seen = new Set<string>();
       const hit = acts.find((a) => (seen.has(a.date) ? true : (seen.add(a.date), false)));
       return hit ? { earned: hit.date, progress: 1, hint: '' } : { earned: null, progress: 0, hint: 'Pas encore' };
     } },
-  { id: 'ny', family: 'Moments', icon: '🎆', name: 'Bonne résolution', description: 'Courir le 1er janvier', eval: onDay(['01-01']) },
-  { id: 'nye', family: 'Moments', icon: '🥂', name: 'Saint-Sylvestre', description: 'Courir le 31 décembre', eval: onDay(['12-31']) },
-  { id: 'summer', family: 'Moments', icon: '🌞', name: 'Solstice d\'été', description: 'Courir le 21 juin', eval: onDay(['06-21']) },
-  { id: 'xmas', family: 'Moments', icon: '🎄', name: 'Footing de Noël', description: 'Courir le 25 décembre', eval: onDay(['12-25']) },
+  { id: 'ny', family: 'Moments', icon: 'star', name: 'Bonne résolution', description: 'Courir le 1er janvier', eval: onDay(['01-01']) },
+  { id: 'nye', family: 'Moments', icon: 'star', name: 'Saint-Sylvestre', description: 'Courir le 31 décembre', eval: onDay(['12-31']) },
+  { id: 'summer', family: 'Moments', icon: 'sun', name: 'Solstice d\'été', description: 'Courir le 21 juin', eval: onDay(['06-21']) },
+  { id: 'xmas', family: 'Moments', icon: 'star', name: 'Footing de Noël', description: 'Courir le 25 décembre', eval: onDay(['12-25']) },
 
   // Dénivelé
-  { id: 'e330', family: 'Dénivelé', icon: '🗼', name: 'Tour Eiffel', description: '330 m de D+ en une sortie', eval: single(330, (a) => a.elevGain ?? null, m) },
-  { id: 'e828', family: 'Dénivelé', icon: '🏙️', name: 'Burj Khalifa', description: '828 m de D+ en une sortie', eval: single(828, (a) => a.elevGain ?? null, m) },
-  { id: 'e1500', family: 'Dénivelé', icon: '🧗', name: 'Grimpeur', description: '1 500 m de D+ en une sortie', eval: single(1500, (a) => a.elevGain ?? null, m) },
-  { id: 'emb', family: 'Dénivelé', icon: '🏔️', name: 'Mont Blanc du mois', description: '4 806 m de D+ dans un mois', eval: bucketed(4806, monthKey, (a) => a.elevGain ?? 0, m) },
-  { id: 'eev', family: 'Dénivelé', icon: '🏔️', name: 'Everest cumulé', description: '8 849 m de D+ au total', eval: cumulative(8849, (a) => a.elevGain ?? 0, m) },
-  { id: 'eev5', family: 'Dénivelé', icon: '🚡', name: '5 Everest', description: '44 245 m de D+ au total', eval: cumulative(44245, (a) => a.elevGain ?? 0, m) },
+  { id: 'e330', family: 'Dénivelé', icon: 'altitude', name: 'Tour Eiffel', description: '330 m de D+ en une sortie', eval: single(330, (a) => a.elevGain ?? null, m) },
+  { id: 'e828', family: 'Dénivelé', icon: 'elevation', name: 'Burj Khalifa', description: '828 m de D+ en une sortie', eval: single(828, (a) => a.elevGain ?? null, m) },
+  { id: 'e1500', family: 'Dénivelé', icon: 'altitude', name: 'Grimpeur', description: '1 500 m de D+ en une sortie', eval: single(1500, (a) => a.elevGain ?? null, m) },
+  { id: 'emb', family: 'Dénivelé', icon: 'altitude', name: 'Mont Blanc du mois', description: '4 806 m de D+ dans un mois', eval: bucketed(4806, monthKey, (a) => a.elevGain ?? 0, m) },
+  { id: 'eev', family: 'Dénivelé', icon: 'altitude', name: 'Everest cumulé', description: '8 849 m de D+ au total', eval: cumulative(8849, (a) => a.elevGain ?? 0, m) },
+  { id: 'eev5', family: 'Dénivelé', icon: 'altitude', name: '5 Everest', description: '44 245 m de D+ au total', eval: cumulative(44245, (a) => a.elevGain ?? 0, m) },
 
   // Vitesse & intensité
-  { id: 'km4', family: 'Vitesse', icon: '🚀', name: 'Sub 4', description: 'Un kilomètre en moins de 4:00', eval: single(1, (a) => (a.bestKmSec ? 240 / a.bestKmSec : null), (n) => (n ? `${Math.floor(240 / n / 60)}:${String(Math.round((240 / n) % 60)).padStart(2, '0')}` : '–')) },
-  { id: 'p10', family: 'Vitesse', icon: '💨', name: '10 km sub 5', description: 'Une sortie de 10 km ou plus sous 5:00 /km', eval: single(1, (a) => (a.distanceKm >= 10 ? 300 / (a.durationSec / a.distanceKm) : null), (n) => (n ? `${Math.floor(300 / n / 60)}:${String(Math.round((300 / n) % 60)).padStart(2, '0')} /km` : '–')) },
-  { id: 'ana', family: 'Vitesse', icon: '🫀', name: 'Dans le rouge', description: 'Une séance avec un TE anaérobie de 4 ou plus', eval: single(4, (a) => a.anaerobicTE ?? null, (n) => n.toFixed(1)) },
-  { id: 'load300', family: 'Vitesse', icon: '🏋️', name: 'Grosse charge', description: 'Une sortie avec une charge d\'entraînement de 300 ou plus', eval: single(300, (a) => a.trainingLoad ?? null, (n) => String(Math.round(n))) },
+  { id: 'km4', family: 'Vitesse', icon: 'bolt', name: 'Sub 4', description: 'Un kilomètre en moins de 4:00', eval: single(1, (a) => (a.bestKmSec ? 240 / a.bestKmSec : null), (n) => (n ? `${Math.floor(240 / n / 60)}:${String(Math.round((240 / n) % 60)).padStart(2, '0')}` : '–')) },
+  { id: 'p10', family: 'Vitesse', icon: 'wind', name: '10 km sub 5', description: 'Une sortie de 10 km ou plus sous 5:00 /km', eval: single(1, (a) => (a.distanceKm >= 10 ? 300 / (a.durationSec / a.distanceKm) : null), (n) => (n ? `${Math.floor(300 / n / 60)}:${String(Math.round((300 / n) % 60)).padStart(2, '0')} /km` : '–')) },
+  { id: 'ana', family: 'Vitesse', icon: 'heart', name: 'Dans le rouge', description: 'Une séance avec un TE anaérobie de 4 ou plus', eval: single(4, (a) => a.anaerobicTE ?? null, (n) => n.toFixed(1)) },
+  { id: 'load300', family: 'Vitesse', icon: 'dumbbell', name: 'Grosse charge', description: 'Une sortie avec une charge d\'entraînement de 300 ou plus', eval: single(300, (a) => a.trainingLoad ?? null, (n) => String(Math.round(n))) },
 
   // Exploration
-  { id: 'places10', family: 'Exploration', icon: '🧭', name: 'Explorateur', description: '10 lieux de départ différents (à plus de 1 km)', eval: (acts) => {
+  { id: 'places10', family: 'Exploration', icon: 'compass', name: 'Explorateur', description: '10 lieux de départ différents (à plus de 1 km)', eval: (acts) => {
       const n = startPlaces(acts).length;
       if (n < 10) return { earned: null, progress: n / 10, hint: `${n} / 10 lieux` };
       const sorted = startPlaces(acts).sort((a, b) => a.first.localeCompare(b.first));
       return { earned: sorted[9].first, progress: 1, hint: '' };
     } },
-  { id: 'trail10', family: 'Exploration', icon: '🌲', name: 'Traileur', description: '10 sorties trail', eval: countOf(10, (a) => a.kind === 'trail') },
-  { id: 'edd30', family: 'Exploration', icon: '📐', name: 'Eddington 30', description: '30 jours différents à 30 km ou plus', eval: (acts) => {
+  { id: 'trail10', family: 'Exploration', icon: 'tree', name: 'Traileur', description: '10 sorties trail', eval: countOf(10, (a) => a.kind === 'trail') },
+  { id: 'edd30', family: 'Exploration', icon: 'ruler', name: 'Eddington 30', description: '30 jours différents à 30 km ou plus', eval: (acts) => {
       const { e } = eddington(acts);
       const days = new Map<string, number>();
       for (const a of acts) days.set(a.date, (days.get(a.date) ?? 0) + a.distanceKm);

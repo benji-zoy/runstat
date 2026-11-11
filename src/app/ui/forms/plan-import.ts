@@ -40,23 +40,23 @@ const short = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 
               @let p = parsed();
               @if (p.sessions.length) {
                 <ul class="facts">
-                  <li>✓ {{ p.sessions.length }} séance{{ p.sessions.length > 1 ? 's' : '' }} lue{{ p.sessions.length > 1 ? 's' : '' }}
+                  <li><app-icon name="check" /> {{ p.sessions.length }} séance{{ p.sessions.length > 1 ? 's' : '' }} lue{{ p.sessions.length > 1 ? 's' : '' }}
                     ({{ running() }} de course{{ strength() ? ', ' + strength() + ' de renfo' : '' }}) sur {{ weeks() }} semaine{{ weeks() > 1 ? 's' : '' }},
                     du {{ short(p.sessions[0].date) }} au {{ short(p.sessions.at(-1)!.date) }}</li>
                   @if (!p.fenced) {
-                    <li class="warn">⚠ Pas de bloc <code>runstat-plan</code> : lu depuis les tableaux du texte, vérifie l'aperçu.</li>
+                    <li class="warn"><app-icon name="warning" /> Pas de bloc <code>runstat-plan</code> : lu depuis les tableaux du texte, vérifie l'aperçu.</li>
                   }
                   @if (replaced()) {
                     <li>↺ remplace {{ replaced() }} séance{{ replaced() > 1 ? 's' : '' }} du plan actuel sur ces dates</li>
                   }
                   @if (past()) {
-                    <li class="warn">⚠ {{ past() }} séance{{ past() > 1 ? 's' : '' }} avant aujourd'hui</li>
+                    <li class="warn"><app-icon name="warning" /> {{ past() }} séance{{ past() > 1 ? 's' : '' }} avant aujourd'hui</li>
                   }
                   @if (after()) {
-                    <li class="warn">⚠ {{ after() }} séance{{ after() > 1 ? 's' : '' }} après {{ t.endLabel }} ({{ short(t.end) }})</li>
+                    <li class="warn"><app-icon name="warning" /> {{ after() }} séance{{ after() > 1 ? 's' : '' }} après {{ t.endLabel }} ({{ short(t.end) }})</li>
                   }
                   @if (p.ignored.length) {
-                    <li class="warn">⚠ {{ p.ignored.length }} ligne{{ p.ignored.length > 1 ? 's' : '' }} ignorée{{ p.ignored.length > 1 ? 's' : '' }} :
+                    <li class="warn"><app-icon name="warning" /> {{ p.ignored.length }} ligne{{ p.ignored.length > 1 ? 's' : '' }} ignorée{{ p.ignored.length > 1 ? 's' : '' }} :
                       <code class="ignored">{{ p.ignored.slice(0, 3).join(' · ') }}{{ p.ignored.length > 3 ? ' …' : '' }}</code></li>
                   }
                 </ul>
@@ -89,6 +89,7 @@ const short = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 
     .file { justify-self: start; cursor: pointer; }
     .facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.88rem; }
     .warn { color: var(--warning); }
+    li app-icon { vertical-align: -0.15em; --icon: 1em; }
     .ignored { font-size: 0.75rem; overflow-wrap: anywhere; }
     .effect { margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--radius); background: var(--accent-soft); font-size: 0.95rem; }
   `,

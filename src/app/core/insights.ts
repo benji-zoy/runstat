@@ -1,3 +1,4 @@
+import type { IconName } from '../ui/icon';
 import { Activity } from './models';
 import { addDays, isoDay, parseDay, startOfDay, startOfWeek } from './stats';
 import { haversineKm } from './equivalences';
@@ -43,12 +44,12 @@ export function weekdayStats(acts: Activity[]): { day: string; count: number; km
 }
 
 export const DAYTIMES = [
-  { key: 'aube', label: 'Aube', icon: '🌅', range: '5 h – 8 h', from: 5, to: 8 },
-  { key: 'matin', label: 'Matin', icon: '☀️', range: '8 h – 12 h', from: 8, to: 12 },
-  { key: 'midi', label: 'Midi', icon: '🥪', range: '12 h – 14 h', from: 12, to: 14 },
-  { key: 'aprem', label: 'Après-midi', icon: '🌤️', range: '14 h – 18 h', from: 14, to: 18 },
-  { key: 'soir', label: 'Soirée', icon: '🌆', range: '18 h – 22 h', from: 18, to: 22 },
-  { key: 'nuit', label: 'Nuit', icon: '🌙', range: '22 h – 5 h', from: 22, to: 29 },
+  { key: 'aube', label: 'Aube', range: '5 h – 8 h', from: 5, to: 8 },
+  { key: 'matin', label: 'Matin', range: '8 h – 12 h', from: 8, to: 12 },
+  { key: 'midi', label: 'Midi', range: '12 h – 14 h', from: 12, to: 14 },
+  { key: 'aprem', label: 'Après-midi', range: '14 h – 18 h', from: 14, to: 18 },
+  { key: 'soir', label: 'Soirée', range: '18 h – 22 h', from: 18, to: 22 },
+  { key: 'nuit', label: 'Nuit', range: '22 h – 5 h', from: 22, to: 29 },
 ];
 
 export function daytimeStats(acts: Activity[]) {
@@ -133,7 +134,7 @@ export function runnerProfile(acts: Activity[]): { title: string; traits: string
     title: `${kind} ${moment[dt.key]}`,
     traits: [
       `${wd.day} est ton jour préféré (${wd.count} sorties)`,
-      `${dt.icon} ${Math.round((dt.count / acts.length) * 100)} % de tes sorties partent ${when[dt.key]}`,
+      `${Math.round((dt.count / acts.length) * 100)} % de tes sorties partent ${when[dt.key]}`,
       `${avgKm.toFixed(1).replace('.', ',')} km par sortie en moyenne`,
     ],
   };
@@ -189,7 +190,7 @@ export function activeDays(acts: Activity[]): number {
 
 export interface RecordCategory {
   key: string;
-  icon: string;
+  icon: IconName;
   label: string;
   /** Plus grand = meilleur */
   score: (a: Activity) => number | null;
@@ -352,26 +353,26 @@ export function pmc(acts: Activity[], today: Date): PmcDay[] {
 
 export interface Milestone {
   date: string;
-  icon: string;
+  icon: IconName;
   label: string;
 }
 
 export function milestones(acts: Activity[]): Milestone[] {
   const out: Milestone[] = [];
   if (!acts.length) return out;
-  out.push({ date: acts[0].date, icon: '🎬', label: 'Première sortie enregistrée' });
+  out.push({ date: acts[0].date, icon: 'flag', label: 'Première sortie enregistrée' });
 
-  const firstOver = (km: number, icon: string, label: string) => {
+  const firstOver = (km: number, icon: IconName, label: string) => {
     const a = acts.find((x) => x.distanceKm >= km);
     if (a) out.push({ date: a.date, icon, label });
   };
-  firstOver(10, '🔟', 'Premier 10 km');
-  firstOver(21.0975, '🥈', 'Premier semi-marathon (distance)');
-  firstOver(30, '💪', 'Première sortie de 30 km');
-  firstOver(42.195, '🏅', 'Premier marathon (distance)');
+  firstOver(10, 'hash', 'Premier 10 km');
+  firstOver(21.0975, 'medal', 'Premier semi-marathon (distance)');
+  firstOver(30, 'dumbbell', 'Première sortie de 30 km');
+  firstOver(42.195, 'medal', 'Premier marathon (distance)');
 
   const firstTrail = acts.find((a) => a.kind === 'trail');
-  if (firstTrail) out.push({ date: firstTrail.date, icon: '⛰️', label: 'Premier trail' });
+  if (firstTrail) out.push({ date: firstTrail.date, icon: 'altitude', label: 'Premier trail' });
 
   let km = 0;
   const kmSteps = [100, 500, 1000, 2000, 3000, 4000, 5000, 7500, 10000];
@@ -386,15 +387,15 @@ export function milestones(acts: Activity[]): Milestone[] {
     count++;
     elev += a.elevGain ?? 0;
     while (i < kmSteps.length && km >= kmSteps[i]) {
-      out.push({ date: a.date, icon: '📏', label: `${kmSteps[i].toLocaleString('fr-FR')} km au compteur` });
+      out.push({ date: a.date, icon: 'ruler', label: `${kmSteps[i].toLocaleString('fr-FR')} km au compteur` });
       i++;
     }
     while (j < countSteps.length && count >= countSteps[j]) {
-      out.push({ date: a.date, icon: '🔢', label: `${countSteps[j]}e sortie` });
+      out.push({ date: a.date, icon: 'hash', label: `${countSteps[j]}e sortie` });
       j++;
     }
     while (elev >= everest * 8849) {
-      out.push({ date: a.date, icon: '🏔️', label: everest === 1 ? 'Un Everest de D+ cumulé' : `${everest} Everest de D+ cumulés` });
+      out.push({ date: a.date, icon: 'altitude', label: everest === 1 ? 'Un Everest de D+ cumulé' : `${everest} Everest de D+ cumulés` });
       everest++;
     }
   }
@@ -406,10 +407,10 @@ export function milestones(acts: Activity[]): Milestone[] {
     const after = before + a.distanceKm;
     months.set(m, after);
     if (before < 100 && after >= 100 && !out.some((o) => o.label === 'Premier mois à 100 km')) {
-      out.push({ date: a.date, icon: '📆', label: 'Premier mois à 100 km' });
+      out.push({ date: a.date, icon: 'calendar', label: 'Premier mois à 100 km' });
     }
     if (before < 200 && after >= 200 && !out.some((o) => o.label === 'Premier mois à 200 km')) {
-      out.push({ date: a.date, icon: '📆', label: 'Premier mois à 200 km' });
+      out.push({ date: a.date, icon: 'calendar', label: 'Premier mois à 200 km' });
     }
   }
   return out.sort((a, b) => b.date.localeCompare(a.date));

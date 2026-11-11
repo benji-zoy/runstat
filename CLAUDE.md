@@ -492,7 +492,7 @@ d'entraînement (`/courses/:id`, assistant à part, voir Plan d'entraînement), 
 
 ## Coût des conditions (fiche d'une sortie et Aujourd'hui, `src/app/core/conditions.ts`, `ui/conditions-card.ts`)
 
-Façon « rapport Enduraw » : altitude 🗻, dénivelé 🚠, température 🔥, vent 💨 en % (négatif = coût) face à des conditions standard
+Façon « rapport Enduraw » : altitude, dénivelé, température, vent en % (négatif = coût ; icônes au trait `altitude` / `elevation` / `heat` / `wind` de `ui/icon.ts` à l'écran, émojis 🗻 🚠 🔥 💨 gardés seulement dans le texte de « Copier le rapport », qui part vers Strava / COROS) face à des conditions standard
 (plat, niveau de la mer, 12 °C, sans vent) ; temps standard = durée × Π(1 + %). Calculé pour toutes les sorties (hors tapis).
 Altitude : Wehrlin & Hallén (−6,3 % VO₂max/1000 m au-dessus de 300 m) × 0,55 (Mexico 1968) moins le gain d'air, `fit.altMean` sinon
 `startAlt` (API elevation d'Open-Meteo, `data-raw/weather/elevation.json`). Dénivelé : `gapDistance` Minetti, sinon D+/D− Coros
@@ -548,6 +548,8 @@ sexCount, category, catRank, catCount, label?, source?, timing?, fetchedAt, note
 de l'athlète (son nom, jamais écrit dans le dépôt), écrire le fichier, puis `npm run data`.
 
 ## Interface
+
+Pas d'émoji dans l'interface : icônes au trait de `ui/icon.ts` (badges, jalons, moments forts, fiches). Exceptions voulues : `core/equivalences.ts` et le récap (les aliments, monuments et films y sont le contenu), textes copiés ou exportés (rapport de conditions, export IA).
 
 Quatre espaces (`TABS` dans `app.routes.ts`, icônes au trait `ui/icon.ts`) et l'avatar « Moi » ; barre latérale sur ordinateur (≥ 1024 px),
 barre du haut sur tablette, barre du bas au pouce sur téléphone (`app.html`, `app.scss`) :

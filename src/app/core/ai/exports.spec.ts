@@ -98,7 +98,7 @@ describe('export pour une IA', () => {
       adjustments: [...base.adjustments, { label: 'Récupération', pct: 1.5, note: 'VFC sous ta base' }],
       readiness: [...base.readiness, { label: 'Récupération', value: 'VFC basse, 6 h 10', target: 'base, 7 h', score: 0.4, projected: 0.4, weight: 10, advice: sleep }],
       advice: [...base.advice, sleep],
-      plan: { ...base.plan, blocks: [...base.plan.blocks.filter((b) => b.title !== 'Les derniers jours'), { icon: '🍝', title: 'Les derniers jours', items: ['Recharge : soit 490 à 700 g par jour.'], withoutWeight: ['Recharge : 7 à 10 g par kg et par jour.'] }] },
+      plan: { ...base.plan, blocks: [...base.plan.blocks.filter((b) => b.title !== 'Les derniers jours'), { title: 'Les derniers jours', items: ['Recharge : soit 490 à 700 g par jour.'], withoutWeight: ['Recharge : 7 à 10 g par kg et par jour.'] }] },
     } as typeof base;
     const shared = goalExport(e, input, full).markdown;
     expect(shared).toContain(sleep);
