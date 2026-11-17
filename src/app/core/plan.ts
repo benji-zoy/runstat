@@ -5,7 +5,7 @@ import { addDays, isoDay, parseDay, startOfWeek } from './stats';
 
 /**
  * Plan d'entraînement importé (rendu par une IA, voir src/engine/plan/plan.ts) et calendrier COROS réunis : c'est ce que
- * l'indice de confiance projette jusqu'au jour J et ce qu'affiche « Séance du jour ». Le calendrier COROS est prioritaire :
+ * l'indice de préparation projette jusqu'au jour J et ce qu'affiche « Séance du jour ». Le calendrier COROS est prioritaire :
  * une semaine qui a au moins une séance COROS ne prend que celles-là ; les autres semaines prennent le plan importé.
  */
 
@@ -135,7 +135,7 @@ export function planOf(goal: Goal, goals: Goal[], cycles: Cycle[] = []): PlanSes
   return cycles.flatMap((c) => cycleSessions(c, goals));
 }
 
-/** Calendrier projeté pour un objectif (indice de confiance) */
+/** Calendrier projeté pour un objectif (indice de préparation) */
 export function goalPlanned(goal: Goal, goals: Goal[], planned: PlannedCalendar | null | undefined, rates: LoadRates, ref: Date, cycles: Cycle[] = []): PlannedCalendar | null {
   return mergeCalendars(planned, planOf(goal, goals, cycles), rates, ref);
 }

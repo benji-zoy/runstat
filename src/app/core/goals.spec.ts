@@ -1,7 +1,7 @@
 import { Activity, Athlete, Goal } from './models';
 import {
-  chance, chanceVerdict, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT,
-  evaluateGoal, ultraModel, projectedTsb, goalCalendar,
+  chance, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT,
+  evaluateGoal, ultraModel, targetVerdict, readinessVerdict, oddsWords, projectedTsb, goalCalendar,
 } from './goals';
 import { PlannedCalendar, PlannedSession } from './models';
 import { classifyAll, kmEffortOf } from './science';
@@ -111,17 +111,28 @@ describe('modèles', () => {
     expect(daySd('ultra', 80)).toBeGreaterThan(daySd('trail', 30));
   });
 
-  it('dit « hors de portée » sous 10 % de chances, « ambitieux » de 10 à 25 %', () => {
-    expect(chanceVerdict(0.04).label).toBe('Hors de portée');
-    expect(chanceVerdict(0.15).label).toBe('Ambitieux');
-    expect(chanceVerdict(0.3).label).toBe('Jouable');
-    expect(chanceVerdict(0.6).label).toBe('Probable');
-    expect(chanceVerdict(0.8).label).toBe('Très probable');
+  it('situe l\'objectif face au niveau : le chrono médian est « à ton niveau »', () => {
+    expect(targetVerdict(chance(100, 100, 0.04)).label).toBe('À ton niveau');
+    expect(targetVerdict(0.04).label).toBe('Hors de portée');
+    expect(targetVerdict(0.15).label).toBe('Au-delà de ton niveau');
+    expect(targetVerdict(0.3).label).toBe('À ton niveau');
+    expect(targetVerdict(0.69).label).toBe('À ton niveau');
+    expect(targetVerdict(0.8).label).toBe('Avec de la marge');
+    expect(readinessVerdict(85).label).toBe('Prêt');
+    expect(readinessVerdict(30).label).toBe('Insuffisant');
+  });
+
+  it('dit les chances en mots', () => {
+    expect(oddsWords(0.5)).toBe('1 chance sur 2');
+    expect(oddsWords(0.48)).toBe('1 chance sur 2');
+    expect(oddsWords(0.76)).toBe('3 chances sur 4');
+    expect(oddsWords(0.6)).toBe('60 % de chances');
+    expect(oddsWords(0.995)).toBe('quasi certain');
   });
 });
 
 describe('évaluation', () => {
-  it('donne une probabilité pour un chrono et un indice de préparation pour finir', () => {
+  it('donne un indice de préparation, et pour un chrono sa probabilité face au niveau', () => {
     const acts: Activity[] = [];
     for (let i = 0; i < 60; i++) {
       const d = new Date(2026, 7, 1 + i);
@@ -137,13 +148,16 @@ describe('évaluation', () => {
     expect(e.models.map((m) => m.label)).toContain('VDOT de Daniels');
     expect(e.probability).toBeGreaterThan(0);
     expect(e.probability).toBeLessThan(1);
-    expect(e.index).toBe(Math.round(e.probability! * 100));
+    // L'indice est la préparation, la probabilité situe l'objectif face au niveau
+    expect(e.index).toBe(Math.round(e.readinessScore * 100));
+    expect(e.targetVerdict).toEqual(targetVerdict(e.probability!));
     expect(e.low).toBeLessThan(e.predicted);
     expect(e.high).toBeGreaterThan(e.predicted);
 
     const finish: Goal = { id: 'f', name: 'Finir', date: '2026-12-01', distanceKm: 30, kind: 'road' };
     const f = evaluateGoal(finish, goalContext(finish, acts, types, ath, today, {}, null), today, acts)!;
     expect(f.probability).toBeNull();
+    expect(f.targetVerdict).toBeNull();
     expect(f.index).toBe(Math.round(f.readinessScore * 100));
   });
 });

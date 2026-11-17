@@ -28,7 +28,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
   template: `
     <header class="page-head">
       <h1>Courses</h1>
-      <p class="lede">Indice de confiance calculé sur tes données, mis à jour à chaque synchro. Touche une course pour son détail.</p>
+      <p class="lede">Ton niveau et ton indice de préparation, calculés sur tes données, mis à jour à chaque synchro. Touche une course pour son détail.</p>
       @if (entries.available()) {
         <div class="add">
           <button type="button" class="btn small" (click)="resultForm.declare()"><app-icon name="flag" />Course passée</button>
@@ -52,14 +52,14 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
             </div>
             <span class="muted small">{{ fmt(e.goal.date) }} · {{ km(e) }}{{ mainOf(e.goal.parent) ? ' · préparation de ' + mainOf(e.goal.parent) : '' }}{{ e.goal.plan?.sessions?.length ? ' · plan importé' : '' }}</span>
             <div class="figures">
-              <div><span class="v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">chrono probable</span></div>
+              <div><span class="v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">ton niveau</span></div>
               <div>
-                <span class="v tone"><span [appCountUp]="'' + e.index"></span><small>{{ e.probability !== null ? ' %' : '/100' }}</small></span>
-                <span class="muted small">{{ e.probability !== null ? 'sous ' + clock(e.goal.targetSec!) : 'préparation' }}</span>
+                <span class="v tone"><span [appCountUp]="'' + e.index"></span><small>/100</small></span>
+                <span class="muted small">préparation</span>
               </div>
             </div>
             <div class="progress" aria-hidden="true"><span [style.width.%]="e.index"></span></div>
-            <span class="verdict">{{ e.verdict.label }} <app-icon name="arrow" /></span>
+            <span class="verdict">{{ e.verdict.label }}@if (e.targetVerdict; as t) {<span class="muted"> · objectif {{ clock(e.goal.targetSec!) }} {{ t.label.toLowerCase() }}</span>} <app-icon name="arrow" /></span>
           </a>
         } @empty {
           <div class="card empty">
@@ -150,11 +150,12 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
         <li><b>Jour J et probabilité</b> : la moyenne géométrique des modèles est corrigée par la fraîcheur projetée, la récupération
           (VFC, FC de repos), la météo (règle de Hadley), la nuit (simulée sur le profil) et la préparation spécifique. L'incertitude
           combine le désaccord entre modèles, la variabilité d'un jour de course (2 % sur 5 km à 4 % au marathon, 6 % en trail, 8 % en
-          ultra) et, en ultra, l'extrapolation au-delà de ta plus longue sortie : l'indice est la probabilité de passer sous le chrono
-          visé. Moins de 10 % : hors de portée ; 10 à 25 % : ambitieux ; 25 à 50 % : jouable ; 50 à 75 % : probable ; au-delà : très probable.</li>
+          ultra) et, en ultra, l'extrapolation au-delà de ta plus longue sortie. Le résultat est <b>ton niveau le jour J</b>, un chrono
+          médian : une chance sur deux de faire mieux. L'objectif est situé face à lui par sa probabilité : 70 % et plus, avec de la
+          marge ; 30 à 70 %, à ton niveau ; 10 à 30 %, au-delà de ton niveau ; moins de 10 %, hors de portée.</li>
         <li><b>Tracé GPX</b> (Modifier l'objectif) : le profil et les points de passage servent à la prédiction et aux temps de passage ;
           seul le profil est gardé, pas les coordonnées.</li>
-        <li><b>Objectif « finir »</b> : indice de préparation pondéré (volume, sortie la plus longue, D+, expérience en km-effort,
+        <li><b>Indice sur 100</b> : la préparation, pour tous les objectifs, pondérée (volume, sortie la plus longue, D+, expérience en km-effort,
           sorties de nuit, durabilité, régularité, récupération).</li>
         <li><b>Course de référence</b> : ta dernière course sur la même distance (moins de 2 ans) est un modèle à part entière, de poids 1,5
           (le plus spécifique). Son chrono, ramené à des conditions neutres (Hadley), donne ton niveau de ce jour-là ; il est projeté à

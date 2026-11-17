@@ -1,6 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import { ChartConfiguration } from 'chart.js';
-import { GoalEvaluation, chanceVerdict } from '../core/goals';
+import { GoalEvaluation, Tone, oddsWords, targetVerdict } from '../core/goals';
 import { courseProfile } from '../core/course';
 import { clock, fixed, num, pace } from '../core/format';
 import { parseDay } from '../core/stats';
@@ -33,34 +33,31 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
             <circle cx="60" cy="60" r="52" class="value" [attr.stroke-dasharray]="dash(e.index)" />
           </svg>
           <div class="gauge-text">
-            <span class="display big"><span [appCountUp]="'' + e.index"></span><small>{{ e.probability !== null ? '%' : '/100' }}</small></span>
+            <span class="display big"><span [appCountUp]="'' + e.index"></span><small>/100</small></span>
             <span class="verdict">{{ e.verdict.label }}</span>
           </div>
           <p class="gauge-caption">
-            @if (e.probability !== null) {
-              de chances de passer sous <b>{{ clock(g.targetSec!) }}</b> ({{ pace(g.targetSec! / g.distanceKm) }} /km)
-              @if (e.stretchProbability !== null) {
-                <br />{{ round(e.stretchProbability * 100) }} % sous <b>{{ clock(g.stretchSec!) }}</b> · {{ lower(chanceVerdict(e.stretchProbability).label) }}
-              }
-              @if (g.kind === 'trail') {
-                <br />préparation {{ round(e.readinessScore * 100) }}/100
-                @if ((e.daysLeft > 21 || e.plannedPrep) && e.readinessProjected > e.readinessScore + 0.01) {
-                  → <b>{{ round(e.readinessProjected * 100) }}</b> {{ e.plannedPrep ? 'avec ton calendrier' : 'si tu suis les conseils' }}
-                }
-              }
-            } @else {
-              indice de préparation pour finir
-              @if ((e.daysLeft > 21 || e.plannedPrep) && e.readinessProjected > e.readinessScore + 0.01) {
-                <br />→ <b>{{ round(e.readinessProjected * 100) }}/100</b> {{ e.plannedPrep ? 'avec les séances prévues' : 'si tu suis les conseils' }} d'ici l'affûtage
-              }
+            indice de préparation{{ e.probability === null ? ' pour finir' : '' }}
+            @if ((e.daysLeft > 21 || e.plannedPrep) && e.readinessProjected > e.readinessScore + 0.01) {
+              <br />→ <b>{{ round(e.readinessProjected * 100) }}/100</b> {{ e.plannedPrep ? 'avec les séances prévues' : 'si tu suis les conseils' }} d'ici l'affûtage
             }
           </p>
+          @if (e.targetVerdict; as t) {
+            <p class="target" [style.--tone]="toneOf(t.tone)">
+              Objectif <b>{{ clock(g.targetSec!) }}</b> ({{ pace(g.targetSec! / g.distanceKm) }} /km) · <span class="tv">{{ lower(t.label) }}</span>
+              <br /><span class="muted">{{ odds(e.probability!) }} de passer dessous ({{ round(e.probability! * 100) }} %)</span>
+              @if (e.stretchProbability !== null) {
+                <br />Sous <b>{{ clock(g.stretchSec!) }}</b> · <span class="tv">{{ lower(targetVerdict(e.stretchProbability).label) }}</span>
+                <span class="muted">· {{ odds(e.stretchProbability) }}</span>
+              }
+            </p>
+          }
         </div>
 
         <div class="prediction">
-          <span class="label">Chrono le plus probable</span>
+          <span class="label">Ton niveau le jour J</span>
           <span class="display pred">{{ clock(e.predicted) }}</span>
-          <span class="muted">{{ pace(e.predicted / g.distanceKm) }} /km · 8 chances sur 10 entre {{ clock(e.low) }} et {{ clock(e.high) }}</span>
+          <span class="muted">{{ pace(e.predicted / g.distanceKm) }} /km · une chance sur deux de faire mieux · 8 chances sur 10 entre {{ clock(e.low) }} et {{ clock(e.high) }}</span>
           <app-chart [config]="chart()" style="--chart-h: 170px" />
         </div>
       </div>
@@ -283,7 +280,7 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
                 }
               </p>
             }
-            <p>Probabilité : loi log-normale centrée sur le chrono le plus probable. Moins de 10 % : hors de portée ; 10 à 25 % : ambitieux ; 25 à 50 % : jouable ; 50 à 75 % : probable ; au-delà : très probable.</p>
+            <p>Ton niveau le jour J est le chrono médian : une chance sur deux de faire mieux. Viser pile ce chrono donne donc 50 %, c'est un objectif « à ton niveau » qui demande une bonne journée. Probabilité de l'objectif : loi log-normale centrée sur ce niveau. 70 % et plus : avec de la marge ; 30 à 70 % : à ton niveau ; 10 à 30 % : au-delà de ton niveau ; moins de 10 % : hors de portée. L'indice sur 100 est celui de la préparation, à part.</p>
           </details>
       }
 
@@ -377,6 +374,9 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
     .big small { font-size: 1.2rem; margin-left: 2px; }
     .verdict { font-weight: 600; color: var(--tone); }
     .gauge-caption { margin: 0; text-align: center; font-size: 0.85rem; color: var(--text-secondary); }
+    .target { margin: 0.2rem 0 0; text-align: center; font-size: 0.85rem; color: var(--text-secondary); }
+    .target b { color: var(--text-primary); }
+    .target .tv { font-weight: 600; color: var(--tone); }
     .prediction { display: grid; gap: 0.25rem; min-width: 0; }
     .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
     .pred { font-size: 2.6rem; }
@@ -452,7 +452,9 @@ export class GoalCardComponent {
   protected shortDate = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
   protected tone = (e: GoalEvaluation) => TONE[e.verdict.tone];
   protected dayLabel = (iso: string) => parseDay(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
-  protected readonly chanceVerdict = chanceVerdict;
+  protected readonly targetVerdict = targetVerdict;
+  protected readonly odds = oddsWords;
+  protected toneOf = (t: Tone) => TONE[t];
   protected lower = (s: string) => s.toLowerCase();
   protected signedGrade = (g: number) => `${g >= 0 ? '+' : '−'}${Math.abs(Math.round(g * 100))} %`;
   protected hm = (sec: number) => {

@@ -266,7 +266,7 @@ const read = (k: string) => {
                 </div>
                 @if (live(); as e) {
                   @if (e.probability !== null) {
-                    <p class="muted small">Objectif {{ clock(e.goal.targetSec!) }} : {{ num(e.probability * 100) }} % de chances aujourd'hui ({{ e.verdict.label.toLowerCase() }}).
+                    <p class="muted small">Objectif {{ clock(e.goal.targetSec!) }} : {{ e.targetVerdict!.label.toLowerCase() }} aujourd'hui ({{ num(e.probability * 100) }} % de chances).
                       {{ advisedAmbitious() ? 'Le mode ambitieux t’aide à combler l’écart.' : 'Le mode normal suffit pour le tenir.' }}</p>
                   }
                 } @else {

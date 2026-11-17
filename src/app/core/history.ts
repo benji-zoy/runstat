@@ -1,7 +1,7 @@
 /**
  * Historiques recalculés : ce que les modèles auraient prédit à une date passée, avec les seules données connues ce jour-là.
  * - Chrono estimé sur les distances de référence (5 km → marathon) : consensus des modèles de `roadModels`.
- * - Indice de confiance d'un objectif semaine après semaine (`evaluateGoal` rejoué à chaque date).
+ * - Indice de préparation d'un objectif semaine après semaine (`evaluateGoal` rejoué à chaque date).
  * La prédiction de la montre (Coros) n'est qu'un instantané du jour : elle est exclue des dates passées.
  */
 import { Activity, Athlete, Goal, Health } from './models';
@@ -65,7 +65,7 @@ export interface ConfidencePoint {
 }
 
 /**
- * Indice de confiance d'un objectif rejoué chaque semaine sur `weeks` semaines, jusqu'à aujourd'hui (ou la veille
+ * Indice de préparation d'un objectif rejoué chaque semaine sur `weeks` semaines, jusqu'à aujourd'hui (ou la veille
  * pour une course passée). Le dernier point est l'évaluation affichée (`current`).
  */
 export function confidenceHistory(

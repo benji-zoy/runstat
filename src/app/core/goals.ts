@@ -1,5 +1,5 @@
 /**
- * Indice de confiance pour les objectifs à venir (data-raw/goals.json), avec une méthode par catégorie :
+ * Niveau et indice de préparation pour les objectifs à venir (data-raw/goals.json), avec une méthode par catégorie :
  *
  * - Route (jusqu'au marathon) : consensus des modèles (VDOT, Riegel perso, course de référence projetée, vitesse
  *   critique, Tanda et Vickers au marathon), corrigé du profil du parcours (GPX, sinon D+ annoncé).
@@ -897,13 +897,33 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
 
 export type Tone = 'good' | 'neutral' | 'warning' | 'serious';
 
-/** Lecture d'une probabilité : sous 10 %, ce n'est plus ambitieux mais hors de portée */
-export function chanceVerdict(p: number): { label: string; tone: Tone } {
-  return p >= 0.75 ? { label: 'Très probable', tone: 'good' }
-    : p >= 0.5 ? { label: 'Probable', tone: 'good' }
-    : p >= 0.25 ? { label: 'Jouable', tone: 'warning' }
-    : p >= 0.1 ? { label: 'Ambitieux', tone: 'warning' }
+/**
+ * Objectif face au niveau : le chrono médian (ton niveau un jour ordinaire) donne 50 %. « À ton niveau » couvre
+ * ± ½ écart-type autour de lui (≈ 30-70 %), au-delà c'est de la marge ; sous 10 %, hors de portée.
+ */
+export function targetVerdict(p: number): { label: string; tone: Tone } {
+  return p >= 0.7 ? { label: 'Avec de la marge', tone: 'good' }
+    : p >= 0.3 ? { label: 'À ton niveau', tone: 'good' }
+    : p >= 0.1 ? { label: 'Au-delà de ton niveau', tone: 'warning' }
     : { label: 'Hors de portée', tone: 'serious' };
+}
+
+/** Lecture de l'indice de préparation (0-100) */
+export function readinessVerdict(index: number): { label: string; tone: Tone } {
+  return index >= 80 ? { label: 'Prêt', tone: 'good' }
+    : index >= 60 ? { label: 'En bonne voie', tone: 'good' }
+    : index >= 40 ? { label: 'À consolider', tone: 'warning' }
+    : { label: 'Insuffisant', tone: 'serious' };
+}
+
+/** Probabilité en mots : « 1 chance sur 2 », « 3 chances sur 4 »… */
+export function oddsWords(p: number): string {
+  const pct = Math.round(p * 100);
+  if (pct >= 99) return 'quasi certain';
+  if (pct <= 1) return 'quasi aucune chance';
+  const fr = [[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 5], [4, 5], [1, 10], [9, 10]] as const;
+  const [a, b] = fr.reduce((best, f) => Math.abs(f[0] / f[1] - p) < Math.abs(best[0] / best[1] - p) ? f : best);
+  return Math.abs(a / b - p) <= 0.04 ? `${a} chance${a > 1 ? 's' : ''} sur ${b}` : `${pct} % de chances`;
 }
 
 /** Parcours de l'objectif tel que le voient les modèles : tronçons, coût des pentes, usure, nuit */
@@ -982,7 +1002,7 @@ export interface GoalEvaluation {
   /** Consensus brut des modèles */
   base: number;
   adjustments: Adjustment[];
-  /** Temps le plus probable, ajustements compris */
+  /** Ton niveau le jour J : chrono médian (une chance sur deux de faire mieux), ajustements compris */
   predicted: number;
   sigma: number;
   /** Intervalle à 80 % */
@@ -1006,9 +1026,12 @@ export interface GoalEvaluation {
   calendar: GoalCalendar | null;
   /** Préparation projetée sur le calendrier (il couvre la fin de la préparation) */
   plannedPrep: boolean;
-  /** Indice affiché (0-100) : probabilité pour un chrono, préparation pour « finir » */
+  /** Indice de préparation affiché (0-100) : actuel, ou projeté sur le calendrier quand il couvre la préparation */
   index: number;
+  /** Lecture de l'indice de préparation */
   verdict: { label: string; tone: Tone };
+  /** Chrono visé face à ton niveau (null pour « finir ») */
+  targetVerdict: { label: string; tone: Tone } | null;
   advice: string[];
   /** Courses déjà faites sur la distance (trail : les plus proches en distance équivalent plat et en terrain) */
   raceRefs: RaceReference[];
@@ -1062,14 +1085,8 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
   const sigma = Math.hypot(uncertainty.models, uncertainty.day, uncertainty.extrapolation);
   const probability = goal.targetSec ? chance(goal.targetSec, predicted, sigma) : null;
   const stretchProbability = goal.stretchSec ? chance(goal.stretchSec, predicted, sigma) : null;
-  const index = Math.round(100 * (probability ?? (planned ? readinessProjected : readinessScore)));
-
-  const verdict: GoalEvaluation['verdict'] = probability !== null
-    ? chanceVerdict(probability)
-    : index >= 80 ? { label: 'Prêt', tone: 'good' }
-      : index >= 60 ? { label: 'En bonne voie', tone: 'good' }
-      : index >= 40 ? { label: 'À consolider', tone: 'warning' }
-      : { label: 'Insuffisant', tone: 'serious' };
+  const index = Math.round(100 * (planned ? readinessProjected : readinessScore));
+  const verdict = readinessVerdict(index);
 
   const advice: string[] = [];
   if (goal.targetSec) {
@@ -1096,7 +1113,8 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
     goal, daysLeft, ke, models, base: c.seconds, adjustments: adj, predicted, sigma,
     low: predicted * Math.exp(-1.2816 * sigma), high: predicted * Math.exp(1.2816 * sigma),
     probability, stretchProbability, uncertainty, category: course.category, method: METHODS[course.category],
-    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, calendar: ctx.calendar, plannedPrep: planned, index, verdict, advice, raceRefs,
+    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, calendar: ctx.calendar, plannedPrep: planned, index, verdict,
+    targetVerdict: probability !== null ? targetVerdict(probability) : null, advice, raceRefs,
     progression: goal.kind === 'road' && raceRefs.length ? progressionSince(raceRefs[0], ctx) : null,
     plan: racePlan({ goal, daysLeft, ke, predicted, probability, raceRefs, athlete: ctx.athlete, acts: ctx.acts, course }),
     result: race <= today ? goalResult(goal, all) : null,

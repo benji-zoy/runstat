@@ -412,8 +412,11 @@ même à moins de 3 semaines (`plannedPrep`). Liste et « au calendrier : … »
 Ajustements : fraîcheur projetée, VFC/FC repos, Hadley, nuit **simulée sur le profil** (crépuscule civil `nightWindow`, `nightCost` : +3 % roulant,
 +8 % descente raide, +2 % de 2 h à 6 h), préparation. Incertitude log-normale : dispersion des modèles ⊕ jour de course (`daySd` : 2 % sur 5 km
 → 4 % au marathon, 6 % trail, 8 % ultra) ⊕ extrapolation en ultra (4 % × ln(durée / plus longue sortie de l'année)) → probabilité.
-Libellés (`chanceVerdict`) : ≥ 75 % Très probable, ≥ 50 % Probable, ≥ 25 % Jouable, ≥ 10 % Ambitieux, sinon Hors de portée (aussi pour le
-chrono ambitieux d'une fourchette). Finir : indice de préparation pondéré.
+Le chrono prédit est le **niveau le jour J** (médian : une chance sur deux de faire mieux). L'indice affiché (`index`, sur 100) est
+toujours l'indice de préparation pondéré (projeté quand le calendrier couvre la préparation ; `readinessVerdict` : Prêt, En bonne voie,
+À consolider, Insuffisant), comme Campus Coach ; la probabilité situe à part l'objectif face au niveau (`targetVerdict`, aussi pour le
+chrono ambitieux d'une fourchette) : ≥ 70 % Avec de la marge, ≥ 30 % À ton niveau (± ½ écart-type autour du médian), ≥ 10 % Au-delà
+de ton niveau, sinon Hors de portée ; `oddsWords` la dit en mots (« 1 chance sur 2 »).
 Stratégie de course (`src/app/core/race-plan.ts`) : allures par tronçon et temps de passage, allure montre corrigée de
 l'écart GPS mesuré sur les courses de référence, cardio, ravitaillement, derniers jours, échauffement, tenue, leçons. En trail (et sur route
 avec un GPX), temps de passage par `fitTimeline` : la simulation (pente, usure, nuit, arrêts aux points de passage, plan d'allure sur route)

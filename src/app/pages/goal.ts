@@ -205,9 +205,9 @@ export class GoalPage {
     }
     out.push({
       id: 'confiance',
-      title: archived ? 'Indice jusqu\'à la veille' : 'Évolution de l\'indice',
-      value: `${e.index}${chance ? ' %' : '/100'}`,
-      note: e.verdict.label + (chance ? ` sous ${clock(g.targetSec!)}` : ' pour finir'),
+      title: archived ? 'Préparation jusqu\'à la veille' : 'Évolution de la préparation',
+      value: `${e.index}/100`,
+      note: `préparation · ${e.verdict.label.toLowerCase()}` + (e.targetVerdict ? `, objectif ${e.targetVerdict.label.toLowerCase()}` : ' pour finir'),
     });
     if (archived) {
       out.push({ id: 'chrono', title: 'Prédiction de la veille', value: clock(e.predicted), note: `8 chances sur 10 entre ${clock(e.low)} et ${clock(e.high)}` });

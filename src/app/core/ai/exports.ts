@@ -7,7 +7,7 @@
  * contiennent parfois un prénom ou un lieu), sauf le nom d'épreuve d'une course. La santé est facultative (`opts.health`).
  */
 import { Activity, Goal } from '../models';
-import { GoalEvaluation } from '../goals';
+import { GoalEvaluation, targetVerdict } from '../goals';
 import { RaceDebrief } from '../debrief';
 import { ConditionsReport } from '../conditions';
 import { RunnerMatrix } from '../matrix';
@@ -397,11 +397,11 @@ function goalFacts(doc: MdDoc, g: Goal, e: GoalEvaluation): void {
 function evaluationSection(doc: MdDoc, e: GoalEvaluation, opts: AiOptions, withModels: boolean): void {
   doc.h(2, 'Évaluation de RunStat').use('prediction');
   doc.facts([
-    ['Chrono le plus probable', clock(e.predicted)],
+    ['Niveau le jour J (chrono médian : une chance sur deux de faire mieux)', clock(e.predicted)],
     ['Intervalle à 80 %', `${clock(e.low)} – ${clock(e.high)}`],
-    ['Probabilité de passer sous l\'objectif', e.probability !== null ? `${n(e.probability * 100)} % (${e.verdict.label.toLowerCase()})` : null],
-    ['Probabilité du chrono ambitieux', e.stretchProbability !== null ? `${n(e.stretchProbability * 100)} %` : null],
-    ['Indice de préparation', `${n(e.readinessScore * 100)}/100 aujourd'hui, ${n(e.readinessProjected * 100)}/100 projeté${e.probability === null ? ` → ${e.verdict.label.toLowerCase()}` : ''}`],
+    ['Probabilité de passer sous l\'objectif', e.probability !== null ? `${n(e.probability * 100)} % (objectif ${e.targetVerdict!.label.toLowerCase()})` : null],
+    ['Probabilité du chrono ambitieux', e.stretchProbability !== null ? `${n(e.stretchProbability * 100)} % (${targetVerdict(e.stretchProbability).label.toLowerCase()})` : null],
+    ['Indice de préparation', `${n(e.readinessScore * 100)}/100 aujourd'hui, ${n(e.readinessProjected * 100)}/100 projeté → ${e.verdict.label.toLowerCase()}`],
     ['Incertitude (écart-type relatif)', `${n(e.sigma * 100, 1)} % (modèles ${n(e.uncertainty.models * 100, 1)} %, jour de course ${n(e.uncertainty.day * 100, 1)} %${e.uncertainty.extrapolation ? `, extrapolation ${n(e.uncertainty.extrapolation * 100, 1)} %` : ''})`],
   ]);
   doc.use('preparation');
@@ -499,7 +499,7 @@ function requestSection(doc: MdDoc, main: GoalEvaluation, r: PlanRequest): void 
   if (r.secondaries.length) {
     doc.h(2, 'Objectifs secondaires à intégrer au plan');
     doc.table(
-      ['Date', 'Épreuve', 'Distance', 'Dénivelé', 'Chrono visé', 'Chrono probable', 'Probabilité', 'Avant l\'objectif principal'],
+      ['Date', 'Épreuve', 'Distance', 'Dénivelé', 'Chrono visé', 'Niveau (médian)', 'Probabilité', 'Avant l\'objectif principal'],
       r.secondaries.map((s) => [
         s.goal.date, inline(s.goal.name), `${n(s.goal.distanceKm, 1)} km`, s.goal.elevGain ? `${n(s.goal.elevGain)} m D+` : null,
         s.goal.targetSec ? clock(s.goal.targetSec) : 'finir', clock(s.predicted), s.probability !== null ? `${n(s.probability * 100)} %` : null,
@@ -791,7 +791,7 @@ export function profileExport(input: AiInput, opts: AiOptions, matrix: RunnerMat
     doc.table(['Course', 'Date', 'Distance', 'Objectif', 'Prédiction / résultat'], [...upcoming, ...past].map((x) => [
       inline(x.goal.name), x.goal.date, `${n(x.goal.distanceKm, 1)} km${x.goal.elevGain ? `, ${n(x.goal.elevGain)} m D+` : ''}`,
       x.goal.targetSec ? clock(x.goal.targetSec) : 'finir',
-      x.result ? `résultat ${clock(x.goal.debrief?.chipSec ?? x.result.result?.officialSec ?? x.result.durationSec)}` : `${clock(x.predicted)} (${x.verdict.label.toLowerCase()})`,
+      x.result ? `résultat ${clock(x.goal.debrief?.chipSec ?? x.result.result?.officialSec ?? x.result.durationSec)}` : `niveau ${clock(x.predicted)}, préparation ${x.index}/100${x.targetVerdict ? `, objectif ${x.targetVerdict.label.toLowerCase()}` : ''}`,
     ]));
   }
   trainingSection(doc, input, opts, today);
