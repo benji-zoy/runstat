@@ -12,8 +12,8 @@ import { C, alpha } from '../ui/palette';
 const dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 
 /**
- * Évolution de l'indice de confiance d'un objectif : l'évaluation rejouée chaque semaine avec les données connues ce
- * jour-là (6 mois au plus avant la course), et le chrono probable sur un second axe.
+ * Évolution de l'indice de préparation d'un objectif : l'évaluation rejouée chaque semaine avec les données connues ce
+ * jour-là (6 mois au plus avant la course), et ton niveau (chrono médian) sur un second axe.
  */
 @Component({
   selector: 'app-confidence-history',
@@ -25,10 +25,10 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short'
       <p class="summary">
         @if (trend(); as t) {
           <b [class.up]="t.diff > 0" [class.down]="t.diff < 0">{{ t.diff > 0 ? '+' : t.diff < 0 ? '−' : '±' }}{{ Math.abs(t.diff) }} pts</b>
-          en {{ t.weeks }} semaines (de {{ t.from }} à {{ t.to }}{{ ev().probability !== null ? ' %' : '/100' }}) ;
+          en {{ t.weeks }} semaines (de {{ t.from }} à {{ t.to }}/100) ;
         }
-        depuis le {{ day(points()[0].date) }}, de {{ Math.round(points()[0].index) }} à {{ Math.round(points().at(-1)!.index) }}{{ ev().probability !== null ? ' %' : '/100' }}
-        · chrono probable {{ clock(points()[0].predicted) }} → <b>{{ clock(points().at(-1)!.predicted) }}</b>
+        depuis le {{ day(points()[0].date) }}, de {{ Math.round(points()[0].index) }} à {{ Math.round(points().at(-1)!.index) }}/100
+        · niveau {{ clock(points()[0].predicted) }} → <b>{{ clock(points().at(-1)!.predicted) }}</b>
       </p>
       <app-chart [config]="chart()" style="--chart-h: 240px" />
       <p class="muted small">Chaque point recalcule l'indice avec les seules sorties connues ce jour-là (sans la prédiction de la montre, qui n'est
@@ -71,13 +71,12 @@ export class ConfidenceHistoryComponent {
     const target = e.goal.targetSec ?? null;
     const lo = Math.min(...times, ...(target ? [target] : [])), hi = Math.max(...times, ...(target ? [target] : []));
     const step = timeStep(Math.max(60, (hi - lo) * 1.3));
-    const chance = e.probability !== null;
     return {
       type: 'line',
       data: {
         datasets: [
           {
-            label: chance ? 'Indice de confiance (%)' : 'Préparation (/100)',
+            label: 'Préparation (/100)',
             data: p.map((x, i) => ({ x: xs[i], y: x.index, daysLeft: x.daysLeft })),
             borderColor: C.accent,
             backgroundColor: alpha(C.accent, 0.15),
@@ -88,7 +87,7 @@ export class ConfidenceHistoryComponent {
             tension: 0.25,
           },
           {
-            label: 'Chrono probable',
+            label: 'Ton niveau',
             yAxisID: 'y1',
             data: p.map((x, i) => ({ x: xs[i], y: x.predicted, daysLeft: x.daysLeft })),
             borderColor: C.s1,
@@ -144,8 +143,8 @@ export class ConfidenceHistoryComponent {
                 return `${dayFmt.format(new Date(raw.x))} · ${'J-' + raw.daysLeft}`;
               },
               label: (c) => c.dataset.yAxisID === 'y1'
-                ? ` Chrono probable : ${clock((c.raw as { y: number }).y)}`
-                : ` ${chance ? 'Indice' : 'Préparation'} : ${(c.raw as { y: number }).y}${chance ? ' %' : '/100'}`,
+                ? ` Niveau : ${clock((c.raw as { y: number }).y)}`
+                : ` Préparation : ${(c.raw as { y: number }).y}/100`,
             },
           },
         },

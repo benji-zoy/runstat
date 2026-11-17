@@ -131,7 +131,7 @@ export class PlanImportComponent {
     if (!e || !m) return null;
     const next = this.sci.evaluate(e.goal, m);
     if (!next) return null;
-    const fmt = (x: GoalEvaluation) => `${x.index}${x.probability !== null ? ' %' : '/100'}`;
+    const fmt = (x: GoalEvaluation) => `${x.index}/100`;
     return { before: fmt(e), after: fmt(next) };
   });
 

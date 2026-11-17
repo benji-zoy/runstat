@@ -39,7 +39,7 @@ import { IconComponent } from '../ui/icon';
                       <p class="verdict">{{ e.goal.name }} · {{ e.daysLeft ? 'J-' + e.daysLeft : 'Jour J' }}</p>
                       <div class="race">
                         <span class="big">{{ clock(e.predicted) }}</span>
-                        <span class="muted">{{ e.probability !== null ? e.index + ' % sous ' + clock(e.goal.targetSec!) : 'préparation ' + e.index + '/100' }}</span>
+                        <span class="muted">préparation {{ e.index }}/100{{ e.targetVerdict ? ' · objectif ' + e.targetVerdict.label.toLowerCase() : '' }}</span>
                       </div>
                       <div class="progress" aria-hidden="true"><span [style.width.%]="e.index"></span></div>
                     } @else {

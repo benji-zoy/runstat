@@ -83,12 +83,8 @@ const DAY_MS = 86_400_000;
             </div>
           </div>
           <div class="race-stats">
-            <div><span class="display v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">chrono probable</span></div>
-            @if (e.probability !== null) {
-              <div><span class="display v"><span [appCountUp]="'' + e.index"></span><small> %</small></span><span class="muted small">sous {{ clock(e.goal.targetSec!) }}</span></div>
-            } @else {
-              <div><span class="display v"><span [appCountUp]="'' + e.index"></span><small>/100</small></span><span class="muted small">préparation</span></div>
-            }
+            <div><span class="display v" [appCountUp]="clock(e.predicted)"></span><span class="muted small">ton niveau</span></div>
+            <div><span class="display v"><span [appCountUp]="'' + e.index"></span><small>/100</small></span><span class="muted small">préparation</span></div>
           </div>
           <div class="progress" aria-hidden="true"><span [style.width.%]="e.index"></span></div>
         </a>
@@ -461,8 +457,8 @@ export class TodayPage {
     const g = this.nextGoal();
     if (g) {
       points.push(
-        `${g.goal.name} dans ${g.daysLeft} jour${g.daysLeft > 1 ? 's' : ''} : chrono probable ${clock(g.predicted)}` +
-          (g.probability !== null ? `, ${g.index} % de chances sous ${clock(g.goal.targetSec!)}.` : `, préparation ${g.index}/100.`),
+        `${g.goal.name} dans ${g.daysLeft} jour${g.daysLeft > 1 ? 's' : ''} : niveau ${clock(g.predicted)}, préparation ${g.index}/100` +
+          (g.targetVerdict ? `, objectif ${clock(g.goal.targetSec!)} ${g.targetVerdict.label.toLowerCase()}.` : '.'),
       );
     }
     const y = this.ytd();

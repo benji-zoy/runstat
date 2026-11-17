@@ -33,7 +33,7 @@ export class HistoryService {
     return this.read(dates.map((d) => [`p|${isoDay(d)}`, () => predictionPoint(acts, types, athlete, d)]));
   }
 
-  /** Indice de confiance d'un objectif semaine après semaine, terminé par l'évaluation affichée */
+  /** Indice de préparation d'un objectif semaine après semaine, terminé par l'évaluation affichée */
   confidence(e: GoalEvaluation): ConfidencePoint[] | null {
     const [acts, types, athlete, health] = this.fresh();
     const g = e.goal;

@@ -106,7 +106,7 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'num
         <button type="button" class="btn small danger del" (click)="remove()"><app-icon name="close" />Supprimer le plan</button>
       }
     } @else if (!inherited()) {
-      <p class="muted small">Pas encore de plan : « {{ t.cycle ? 'Préparer le cycle' : 'Préparer mon plan' }} avec une IA » prépare le texte à lui donner (volume, séances, intensité, renfo{{ t.cycle ? '' : ', courses de préparation' }}), puis importe sa réponse ici. {{ t.cycle ? 'Le suivi du cycle comparera ensuite le prévu et le fait.' : 'L’indice de confiance en tiendra compte.' }}</p>
+      <p class="muted small">Pas encore de plan : « {{ t.cycle ? 'Préparer le cycle' : 'Préparer mon plan' }} avec une IA » prépare le texte à lui donner (volume, séances, intensité, renfo{{ t.cycle ? '' : ', courses de préparation' }}), puis importe sa réponse ici. {{ t.cycle ? 'Le suivi du cycle comparera ensuite le prévu et le fait.' : 'L’indice de préparation en tiendra compte.' }}</p>
     }
   `,
   styles: `

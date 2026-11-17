@@ -82,7 +82,7 @@ describe('export pour une IA', () => {
     const e = evaluate(data.goals!.find((g) => g.id === 'marathon-test')!);
     const md = goalExport(e, input, full).markdown;
     expect(md).toContain('# Objectif : Marathon de Testville (2026-04-12)');
-    expect(md).toContain('Chrono le plus probable');
+    expect(md).toContain('Niveau le jour J');
     expect(md).toContain('### Modèles');
     expect(md).toContain('## Stratégie de course proposée par RunStat');
     expect(md).toContain('Chrono visé : 3:30:00');
