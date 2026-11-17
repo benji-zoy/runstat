@@ -486,6 +486,11 @@ details.method {
 }
 
 // Saisie (objectif, bilan, classement, réglages) : fenêtre <dialog>, plein écran en bas sur téléphone
+// Composants qui ne contiennent qu'une fenêtre fermée : hors de la mise en page, sinon chacun compte comme une ligne
+// des grilles de page (un écart de plus par fenêtre, un trou sous l'en-tête)
+app-account-form, app-ai-export-dialog, app-athlete-form, app-debrief-form, app-form-dialog, app-goal-form,
+app-plan-import, app-plan-wizard, app-result-form, app-users-form { display: contents; }
+
 dialog.sheet {
   width: min(640px, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);

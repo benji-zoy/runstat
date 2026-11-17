@@ -189,6 +189,13 @@ dialog:is(.sheet, .zoom-dialog) {
   animation: none;
 }
 
+// Barres toujours au-dessus pendant une transition : sans cela, la carte qui se transforme en en-tête de fiche
+// (groupe `hero`, plus loin dans le document) passe par-dessus la barre du haut quand la page est défilée.
+::view-transition-group(topbar),
+::view-transition-group(bottombar) {
+  z-index: 1;
+}
+
 @keyframes vt-out {
   to {
     opacity: 0;

@@ -28,7 +28,7 @@ import { clock } from './format';
 import { RacePlan, racePlan } from './race-plan';
 import { pmc } from './insights';
 import { Durability, durability, isTrailRun, kmLaps } from './durability';
-import { Segment, Waypoint, courseSegments, courseWaypoints, fitTimeline, nightWindow, simulate } from './course';
+import { Segment, Waypoint, courseSegments, courseWaypoints, fitTimeline, nightHours, nightWindow, runsAtNight, simulate } from './course';
 import { Terrain, activityEffortKm, personalTerrain, segmentsEffortKm } from './terrain';
 import { baselineSeries, hrvStatus, rhrStatus, sleepDebt } from './health';
 import { addDays, isoDay, parseDay } from './stats';
@@ -685,6 +685,9 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
   const deadline = addDays(race, -taperDays(goal));
   const weeksLeft = Math.max(0, Math.floor(daysBetween(ctx.ref, deadline) / 7));
   const items: ReadinessItem[] = [];
+  // Course de jour : ni sorties de nuit, ni frontale dans les conseils
+  const atNight = runsAtNight(goal, baseSec);
+  const lamp = atNight ? 'idéalement de nuit, avec le sac et la frontale' : 'avec le sac et le matériel de course';
   // Calendrier : séances prévues d'ici le début de l'affûtage, prises en compte seulement s'il va jusque-là
   const cal = ctx.calendar;
   const planUntil = (end: Date) => (cal?.sessions ?? []).filter((x) => parseDay(x.date) <= end);
@@ -731,9 +734,9 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
       weight: 25,
       advice: longest >= target ? null
         : usePlan && longPlanned < target
-          ? `Ton calendrier ne prévoit pas de sortie de ${hm(target)}${longPlan ? ` (la plus longue : ${hm(longPlan.durationSec!)}, ${nameDay(longPlan)})` : ''} : allonge-en une avant le ${shortDate(addDays(deadline, -7))}, idéalement de nuit, avec le sac et la frontale.`
+          ? `Ton calendrier ne prévoit pas de sortie de ${hm(target)}${longPlan ? ` (la plus longue : ${hm(longPlan.durationSec!)}, ${nameDay(longPlan)})` : ''} : allonge-en une avant le ${shortDate(addDays(deadline, -7))}, ${lamp}.`
         : usePlan ? null
-        : `Une sortie d'au moins ${hm(target)} (idéalement de nuit, avec le sac et la frontale) avant le ${shortDate(addDays(deadline, -7))}.`,
+        : `Une sortie d'au moins ${hm(target)} (${lamp}) avant le ${shortDate(addDays(deadline, -7))}.`,
     });
     const elev = window(42).reduce((s, a) => s + (a.elevGain ?? 0), 0) / 6;
     const elevTarget = 0.4 * (goal.elevGain ?? 0);
@@ -764,7 +767,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
     const nightScore = (n: number) => (n >= 2 ? 1 : n === 1 ? 0.6 : 0.2);
     // Séances de nuit prévues (d'après leur nom), jusqu'à la course : une sortie à la frontale reste utile pendant l'affûtage
     const nightPlanned = calendarCovers(cal, addDays(race, -7)) ? cal.sessions.filter((x) => NIGHT_NAME.test(x.name)).length : null;
-    items.push({
+    if (atNight) items.push({
       label: 'Sorties de nuit',
       value: `${night} (16 sem.)`,
       target: '2',
@@ -977,16 +980,6 @@ export function courseModel(goal: Goal, ctx: GoalContext): CourseModel {
     startMin,
     night: startMin !== null ? nightWindow(goal.date, goal.lat ?? 45, goal.lon ?? 3) : null,
   };
-}
-
-/** Heures passées de nuit entre le départ et l'arrivée */
-function nightHours(startMin: number, total: number, w: { dusk: number; dawn: number }): number {
-  let n = 0;
-  for (let t = 0; t < total; t += 300) {
-    const m = (((startMin + t / 60) % 1440) + 1440) % 1440;
-    if (m >= w.dusk || m < w.dawn) n += Math.min(300, total - t);
-  }
-  return n / 3600;
 }
 
 const clockMin = (min: number) => {

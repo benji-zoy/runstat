@@ -15,6 +15,7 @@ import { durability, durabilitySummary } from '../durability';
 import { bestEfforts, efficiency, kmEffort, wallAnalysis } from '../science';
 import { EFFORT_DISTANCES, WEEKDAYS, daytimeStats, notables, topEfforts, weekdayStats } from '../insights';
 import { isoDay, parseDay } from '../stats';
+import { currentWeekly } from '../plan';
 import { MdDoc, clock, dayLabel, hm, inline, n, pace, signedPct } from './md';
 import {
   AiInput, AiOptions, KIND_LABEL, RUN_HEAD, athleteSection, distLabel, healthSection, keySessions, levelSection, runRow, similarRuns,
@@ -542,6 +543,17 @@ function habitsLine(input: AiInput, ref: Date): string | null {
   return `Jours de sortie sur les 12 dernières semaines : ${days.join(', ')}.`;
 }
 
+/**
+ * Consigne de progression du volume : +10 % par semaine n'a pas de sens depuis un volume nul ou presque
+ * (10 % de 0 = 0) : reprise par la durée des sorties d'abord.
+ */
+export function volumeRule(weekly: number): string {
+  if (weekly < 5) {
+    return `je pars de presque rien (${n(weekly, 1)} km/semaine en moyenne sur les 6 dernières semaines), donc la règle des +10 % par semaine ne s'applique pas encore : reprends par la durée (3 sorties de 20 à 30 min, en alternant marche et course si besoin), allonge de 5 à 10 min par semaine, et seulement une fois à 15-20 km/semaine augmente le volume d'environ 10 % par semaine ; prévois une semaine plus légère toutes les 3 ou 4 semaines.`;
+  }
+  return 'augmente le volume prudemment (pas plus de 10 % par semaine en général) et prévois une semaine plus légère toutes les 3 ou 4 semaines.';
+}
+
 export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, r: PlanRequest): AiDoc {
   const doc = new MdDoc();
   const g = e.goal;
@@ -563,7 +575,7 @@ export function planExport(e: GoalEvaluation, input: AiInput, opts: AiOptions, r
   const prompt = [
     `Propose-moi un plan d'entraînement de ${weeksLeft} semaine${weeksLeft > 1 ? 's' : ''}, du ${start} jusqu'à la course (${g.date}), qui part de mon volume actuel et respecte mes choix.`,
     'Explique d\'abord en quelques lignes la logique du plan (phases, progression du volume, séances clés, affûtage), puis donne un tableau par semaine : jour, séance, durée ou distance, allure ou FC cible, but de la séance.',
-    'Utilise mes allures d\'entraînement et mes seuils de FC ; augmente le volume prudemment (pas plus de 10 % par semaine en général) et prévois une semaine plus légère toutes les 3 ou 4 semaines.',
+    `Utilise mes allures d'entraînement et mes seuils de FC ; ${volumeRule(currentWeekly(input.acts, input.today))}`,
     r.mode === 'ambitious'
       ? 'Mode ambitieux : jusqu\'à deux séances de qualité par semaine en période de développement, des blocs spécifiques un peu plus longs ; garde au moins un jour facile entre deux séances dures et ne dépasse pas mes choix de volume.'
       : 'Mode normal : une séance de qualité par semaine, deux au plus en période de développement.',
@@ -640,7 +652,7 @@ export function cycleExport(input: AiInput, opts: AiOptions, r: CycleRequest): A
     `Propose-moi un cycle d'entraînement de ${c.weeks} semaines, du ${c.start} au ${end}, sans course à préparer, qui part de mon volume actuel et respecte mes choix.`,
     c.focusPrompt,
     'Explique d\'abord en quelques lignes la logique du cycle (progression, séances clés, semaines allégées), puis donne un tableau par semaine : jour, séance, durée ou distance, allure ou FC cible, but de la séance.',
-    'Utilise mes allures d\'entraînement et mes seuils de FC.',
+    `Utilise mes allures d'entraînement et mes seuils de FC ; ${volumeRule(currentWeekly(input.acts, input.today))}`,
     r.mode === 'ambitious'
       ? 'Mode ambitieux : un peu plus de qualité et des blocs un peu plus durs, en gardant au moins un jour facile entre deux séances dures et sans dépasser mes choix de volume.'
       : 'Mode normal : une séance de qualité par semaine au plus, deux seulement si le but le demande.',

@@ -8,7 +8,7 @@ import { conditionsCost, personalCoefficients } from '../conditions';
 import { CAPABILITIES } from '../sources';
 import { parseDay } from '../stats';
 import { AiInput, AiOptions, age, trainingPaces } from './context';
-import { PlanRequest, cycleExport, terrainPrompt, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames } from './exports';
+import { PlanRequest, cycleExport, terrainPrompt, debriefExport, goalExport, planExport, profileExport, runExport, scrubNames, volumeRule } from './exports';
 import { parsePlanMarkdown, parseSteps } from '../../../engine/plan/plan';
 
 const data = snapshot as unknown as CorosData;
@@ -128,6 +128,10 @@ describe('export pour une IA', () => {
       checks: [{ level: 'warning', text: 'Trop proche' }],
     };
     const md = planExport(e, input, summary, request).markdown;
+    // Depuis un volume nul, pas de « +10 % » qui ne mène nulle part
+    expect(volumeRule(0)).toContain('reprends par la durée');
+    expect(volumeRule(0)).not.toContain('pas plus de 10 %');
+    expect(volumeRule(30)).toContain('pas plus de 10 %');
     expect(md).toContain('## Mes choix pour le plan');
     expect(md).toContain('Volume au plus fort du plan : 40 à 60 km/semaine');
     expect(md).toContain('Séances de course par semaine : 3 ou 4 selon la semaine et la phase');

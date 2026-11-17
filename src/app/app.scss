@@ -20,6 +20,9 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
+  // Calque composité à part : Safari sur iPhone peint sinon par-dessus, pendant le défilement, les cartes en cours
+  // d'animation (transformées) malgré le z-index de la barre collante
+  transform: translateZ(0);
 }
 
 .logo {

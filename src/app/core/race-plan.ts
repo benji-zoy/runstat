@@ -8,7 +8,7 @@
  */
 import type { CourseModel, RaceReference } from './goals';
 import { Activity, Athlete, Goal } from './models';
-import { Timeline, elevationBetween, fitTimeline, timeAt } from './course';
+import { Timeline, elevationBetween, fitTimeline, runsAtNight, timeAt } from './course';
 import { heatPenalty, kmEffort, wallAnalysis } from './science';
 import { clock, pace } from './format';
 import { addDays, parseDay } from './stats';
@@ -93,14 +93,14 @@ function bounds(D: number, startKm: number, finalFrom: number, finalKm: number):
 }
 
 /** Découpage de la course : départ prudent, croisière, final (route) ; quarts à fatigue croissante (trail) */
-export function pacingProfile(distanceKm: number, kind: Goal['kind']): { label: string; from: number; to: number; shift: number; tip: string }[] {
+export function pacingProfile(distanceKm: number, kind: Goal['kind'], night = false): { label: string; from: number; to: number; shift: number; tip: string }[] {
   const D = distanceKm;
   let parts: ProfilePart[];
   if (kind === 'trail') {
     parts = [
       { label: 'Départ', from: 0, to: 0.25 * D, shift: 0.92, tip: 'Très prudent : marche dès que ça monte, tu dois pouvoir parler. Les bouchons du début ne sont pas du temps perdu.' },
       { label: 'Installation', from: 0.25 * D, to: 0.5 * D, shift: 0.98, tip: 'Trouve ton rythme, mange et bois avant d\'avoir faim ou soif.' },
-      { label: 'Le dur', from: 0.5 * D, to: 0.75 * D, shift: 1.03, tip: 'Le passage difficile (souvent au plus froid de la nuit) : petits objectifs, de ravito en ravito.' },
+      { label: 'Le dur', from: 0.5 * D, to: 0.75 * D, shift: 1.03, tip: `Le passage difficile${night ? ' (souvent au plus froid de la nuit)' : ''} : petits objectifs, de ravito en ravito.` },
       { label: 'Final', from: 0.75 * D, to: D, shift: 1.07, tip: 'Quadriceps fatigués : petits pas rapides en descente, relance sur le plat.' },
     ];
   } else if (D <= 12) {
@@ -175,8 +175,8 @@ const hourLabel = (min: number) => {
 };
 
 /** Conseil d'un tronçon de trail selon sa place dans la course et son profil */
-function trailTip(from: number, to: number, D: number, gain: number, loss: number): string {
-  const parts = pacingProfile(D, 'trail');
+function trailTip(from: number, to: number, D: number, gain: number, loss: number, night: boolean): string {
+  const parts = pacingProfile(D, 'trail', night);
   const mid = (from + to) / 2;
   const tips = [parts.find((p) => mid < p.to)?.tip ?? parts.at(-1)!.tip];
   const len = Math.max(0.1, to - from);
@@ -221,12 +221,14 @@ export function racePlan(p: PlanInput): RacePlan {
   const race = parseDay(goal.date);
   const startMin = goal.startTime ? Number(goal.startTime.slice(0, 2)) * 60 + Number(goal.startTime.slice(3, 5)) : 9 * 60;
   const night = startMin >= 20 * 60 || startMin < 5 * 60;
+  // Une partie de la course de nuit (départ de nuit, ou arrivée prévue après le crépuscule) : frontale, froid de la nuit
+  const dark = night || runsAtNight(goal, Math.max(p.predicted, goal.targetSec ?? 0));
   const w = athlete.weightKg;
   const roadRefs = trail ? [] : p.raceRefs;
   const ref = roadRefs[0] ?? null;
 
   // Allure par tronçon et temps de passage : sur le profil (GPX, ou trail au dénivelé réparti), sinon plan d'allure route
-  const parts = pacingProfile(D, goal.kind);
+  const parts = pacingProfile(D, goal.kind, dark);
   let segments: PaceSegment[];
   let checkpoints: Checkpoint[];
   const c = p.course;
@@ -252,7 +254,7 @@ export function racePlan(p: PlanInput): RacePlan {
           target: t !== null ? t / len : null, realistic: r / len,
           targetSec: t, realisticSec: r,
           gain: Math.round(gain), loss: Math.round(loss),
-          tip: trailTip(a.km, b.km, D, gain, loss),
+          tip: trailTip(a.km, b.km, D, gain, loss, dark),
         };
       });
     } else {
@@ -333,7 +335,7 @@ export function racePlan(p: PlanInput): RacePlan {
     food.push(`Commence dès la 30e minute, puis toutes les 20 à 30 min, sans attendre la faim. Eau : ${water} par heure.`);
     if (hours > 3) food.push('Sodium : 300 à 600 mg par heure (boisson d\'effort ou pastilles de sel), davantage si tu transpires beaucoup.');
     if (hours > 6) food.push('Alterne sucré et salé dès la 3e heure (compote, bouillon, pain, fromage, soupe) : l\'estomac sature des gels.');
-    if (trail && night) food.push('La nuit, une boisson chaude à chaque ravito aide à garder la température.');
+    if (trail && dark) food.push('La nuit, une boisson chaude à chaque ravito aide à garder la température.');
   }
   const wall = [...p.acts].reverse().find((a) => a.distanceKm >= 40 && wallAnalysis(a)?.wall);
   if (wall && (D >= 30 || trail)) {
@@ -369,7 +371,7 @@ export function racePlan(p: PlanInput): RacePlan {
       days.push(`Affûtage à partir du ${shortDate(addDays(race, -taper))} : volume −30 % puis −50 %, en gardant de courtes séances à allure course.`);
     }
     days.push(`La nuit de J-2 compte plus que celle de la veille (souvent agitée) : couche-toi tôt dès ${dayLabel(addDays(race, -2))}.`);
-    days.push(`Prépare tout la veille : dossard, épingles, gels, tenue déjà portée, montre chargée${trail ? ', frontale et batteries de rechange, matériel obligatoire' : ''}.`);
+    days.push(`Prépare tout la veille : dossard, épingles, gels, tenue déjà portée, montre chargée${trail ? `, ${dark ? 'frontale et batteries de rechange, ' : ''}matériel obligatoire` : ''}.`);
     blocks.push({ title: 'Les derniers jours', items: [...weighed.map(([x]) => x), ...days], withoutWeight: [...weighed.map(([, x]) => x), ...days] });
   }
 
@@ -408,7 +410,7 @@ export function racePlan(p: PlanInput): RacePlan {
     cond.push(p.daysLeft > 15 ? 'Prévision météo disponible à J-15 (npm run weather puis npm run data).' : 'Pas encore de prévision : lance npm run weather puis npm run data.');
   }
   const month = race.getMonth();
-  if (trail && night && (month >= 9 || month <= 2)) {
+  if (trail && dark && (month >= 9 || month <= 2)) {
     cond.push('Nuit d\'automne ou d\'hiver : prévois du froid (proche de 0 °C sur les hauteurs) : couches techniques, gants, bonnet, veste imperméable, couverture de survie.');
   }
   blocks.push({ title: 'Conditions et tenue', items: cond });

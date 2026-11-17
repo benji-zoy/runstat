@@ -308,11 +308,10 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
               <span class="proj" [style.width.%]="r.projected * 100"></span>
               <span class="now" [style.width.%]="r.score * 100" [attr.data-tone]="r.score >= 0.95 ? 'good' : r.score >= 0.6 ? 'warning' : 'serious'"></span>
             </div>
-            <span class="ready-value">{{ r.value }} <small class="muted">/ {{ r.target }}</small>
-              @if (r.planned) {
-                <small class="planned">au calendrier : {{ r.planned }}</small>
-              }
-            </span>
+            <span class="ready-value">{{ r.value }} <small class="muted">/ {{ r.target }}</small></span>
+            @if (r.planned) {
+              <small class="planned">au calendrier : {{ r.planned }}</small>
+            }
           </div>
         }
         @if (e.daysLeft > 21 || e.plannedPrep) {
@@ -392,13 +391,16 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
     .adj p { grid-column: 1 / -1; margin: 0.15rem 0 0; font-size: 0.8rem; }
     .adj .slower { color: var(--serious); }
     .ready { display: grid; gap: 0.55rem; }
-    .ready-row { display: grid; grid-template-columns: 13rem minmax(0, 1fr) 15rem; gap: 0.8rem; align-items: center; font-size: 0.9rem; }
+    .ready-row { display: grid; grid-template-columns: 13rem minmax(0, 1fr) 15rem; gap: 0 0.8rem; align-items: center; font-size: 0.9rem; }
+    /* « au calendrier » sous la valeur, dans sa propre ligne : un texte long n'élargit plus la colonne des valeurs */
+    .ready-row .planned { grid-column: 3; color: var(--text-muted); }
     @media (max-width: 700px) {
-      .ready-row { grid-template-columns: minmax(0, 1fr) auto; }
+      .ready-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0.3rem; }
       .ready-row .bar { grid-column: 1 / -1; grid-row: 2; }
+      .ready-row .planned { grid-column: 1 / -1; grid-row: 3; }
+      .ready-value { text-align: right; }
     }
     .ready-value { font-variant-numeric: tabular-nums; }
-    .ready-value .planned { display: block; color: var(--text-muted); }
     .calendar { margin-top: 0.8rem; }
     .calendar td { white-space: normal; }
     .calendar td.num { white-space: nowrap; }
