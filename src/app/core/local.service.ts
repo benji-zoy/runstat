@@ -5,11 +5,12 @@ import { IndexedDbStore, indexedDbStorage } from '../../engine/storage/indexeddb
 import { exportEntries, zipStream } from '../../engine/archive/zip-writer';
 import type { KeyedStore, Storage } from '../../engine/storage/types';
 import type { ArchiveImport } from '../../engine/archive/strava-archive';
+import type { ExportImport } from '../../engine/archive/export-import';
 import { EntryError } from './entry-error';
 import type { CorosData } from './models';
 
 interface Job {
-  type: 'rebuild' | 'import';
+  type: 'rebuild' | 'import' | 'import-export';
   file?: File;
   onProgress?: (p: number) => void;
 }
@@ -133,6 +134,15 @@ export class LocalService {
   importArchive(file: File, onProgress?: (p: number) => void): Promise<{ imported: ArchiveImport; summary: string }> {
     void this.persist();
     return this.enqueue({ type: 'import', file, onProgress });
+  }
+
+  /**
+   * Export RunStat (NAS ou autre appareil) choisi sur l'appareil : data-raw/ repris (fichiers de même chemin remplacés, jetons
+   * de l'appareil gardés), puis reconstruit ; la sauvegarde automatique suit (onRebuilt).
+   */
+  importExport(file: File, onProgress?: (p: number) => void): Promise<{ imported: ExportImport; summary: string }> {
+    void this.persist();
+    return this.enqueue({ type: 'import-export', file, onProgress });
   }
 
   /** Un calcul à la fois (le worker écrit dans IndexedDB) */
