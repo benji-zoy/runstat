@@ -217,8 +217,14 @@ describe('calendrier des séances prévues', () => {
     expect(longest(withPlan).projected).toBeGreaterThan(longest(withPlan).score);
     expect(longest(withPlan).planned).toBe('2 h 30 (Sortie longue nocturne, le 8 nov.)');
     expect(longest(withPlan).advice).toMatch(/^Ton calendrier ne prévoit pas de sortie de/);
-    const night = withPlan.readiness.find((r) => r.label === 'Sorties de nuit')!;
-    expect(night.planned).toBe('1 séance de nuit');
+    // Course de jour (pas d'heure de départ, ≈ 7 h) : ni critère « Sorties de nuit », ni frontale dans les conseils
+    expect(withPlan.readiness.find((r) => r.label === 'Sorties de nuit')).toBeUndefined();
+    expect(longest(withPlan).advice).not.toMatch(/nuit|frontale/);
+    // Départ à 18 h fin novembre : arrivée de nuit, le critère revient avec la séance nocturne prévue
+    const evening: Goal = { ...goal, startTime: '18:00' };
+    const atNight = evaluateGoal(evening, goalContext(evening, acts, classifyAll(acts, ath), ath, today, {}, null, cal), today, acts)!;
+    expect(atNight.readiness.find((r) => r.label === 'Sorties de nuit')!.planned).toBe('1 séance de nuit');
+    expect(longest(atNight).advice).toMatch(/frontale/);
     expect(withPlan.calendar!.sessions.length).toBeGreaterThan(20);
     // Hors fenêtre de fraîcheur (> 21 jours) : seul l'ajustement « Préparation » dépend du calendrier
     expect(withPlan.adjustments.find((a) => a.label === 'Fraîcheur')).toBeUndefined();

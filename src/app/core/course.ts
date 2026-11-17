@@ -281,6 +281,26 @@ export function nightWindow(date: string, lat = 45, lon = 3): { dusk: number; da
   return { dusk: noon + 4 * h, dawn: noon - 4 * h };
 }
 
+/** Heures passées de nuit entre le départ (minutes) et l'arrivée (`total` secondes plus tard) */
+export function nightHours(startMin: number, total: number, w: { dusk: number; dawn: number }): number {
+  let n = 0;
+  for (let t = 0; t < total; t += 300) {
+    const m = (((startMin + t / 60) % 1440) + 1440) % 1440;
+    if (m >= w.dusk || m < w.dawn) n += Math.min(300, total - t);
+  }
+  return n / 3600;
+}
+
+/**
+ * La course passe-t-elle par la nuit (frontale) ? D'après l'heure de départ et le chrono prévu, avec 15 % de marge ;
+ * sans heure de départ, seulement au-delà de 12 h de course (une nuit est alors inévitable).
+ */
+export function runsAtNight(goal: { date: string; startTime?: string; lat?: number; lon?: number }, totalSec: number): boolean {
+  if (!goal.startTime) return totalSec > 12 * 3600;
+  const start = Number(goal.startTime.slice(0, 2)) * 60 + Number(goal.startTime.slice(3, 5));
+  return nightHours(start, totalSec * 1.15, nightWindow(goal.date, goal.lat ?? 45, goal.lon ?? 3)) > 0;
+}
+
 /**
  * Coût de la nuit sur un tronçon : +3 % sur le plat et les chemins roulants, +2 % en montée raide (on marche),
  * +8 % en descente raide (on voit mal où poser le pied), +2 % de plus au creux circadien (2 h – 6 h).

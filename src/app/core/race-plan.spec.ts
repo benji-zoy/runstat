@@ -78,6 +78,19 @@ describe('courses de référence', () => {
     expect(plan.blocks.map((b) => b.title)).toContain('Ravitaillement');
   });
 
+  it('ne parle de nuit et de frontale que si la course en passe par une', () => {
+    const text = (g: Goal, sec: number) => {
+      const plan = racePlan({ goal: g, daysLeft: 3, ke: 60, predicted: sec, probability: 0.5, raceRefs: [], athlete: ath, acts: [] });
+      return JSON.stringify([plan.segments, plan.blocks]);
+    };
+    const trail: Goal = { id: 't', name: 'Trail', date: '2026-06-14', startTime: '07:00', distanceKm: 45, elevGain: 2500, kind: 'trail' };
+    // (le conseil de sommeil « la nuit de J-2 » reste)
+    expect(text(trail, 8 * 3600)).not.toMatch(/frontale|froid de la nuit|La nuit, une boisson/);
+    // Même trail parti à 16 h en novembre : arrivée de nuit
+    expect(text({ ...trail, date: '2026-11-14', startTime: '16:00' }, 8 * 3600)).toMatch(/frontale/);
+    expect(pacingProfile(45, 'trail', true)[2].tip).toMatch(/nuit/);
+  });
+
   it('projette la référence avec le volume et l’allure d’entraînement depuis', () => {
     // 8 semaines avant le semi des Collines : 4 × 10 km/sem à 6:30 ; 8 dernières : 4 × 15 km/sem à 6:00
     const block = (end: Date, km: number, pace: number) =>
