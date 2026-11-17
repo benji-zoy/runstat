@@ -51,7 +51,9 @@ export function corosSections(s: PlanSession): unknown[] {
       if ('repeat' in p)
         return { intervalGroup: true, repeats: p.repeat, sets: p.steps.map((st, j) => section(st, j === 0 ? 2 : 3, zone)) };
       // Plusieurs étapes : la première échauffe, la dernière ramène au calme
-      const type = parts.length > 1 && i === 0 ? 1 : parts.length > 1 && i === parts.length - 1 ? 4 : 2;
+      // COROS refuse un échauffement ou un retour au calme de plus d'une heure : une étape aussi longue est du travail
+      const long = p.step.target.type === 'time' && p.step.target.sec > 3600;
+      const type = long ? 2 : parts.length > 1 && i === 0 ? 1 : parts.length > 1 && i === parts.length - 1 ? 4 : 2;
       return section(p.step, type, zone);
     });
   }
@@ -223,7 +225,10 @@ export async function pushPlanToCoros(client: CorosWriter, plan: TrainingPlan, g
     draft = corosDraft(plan, today);
     result = await client.callWriteTool('createTrainingPlan', corosCreateArgs(plan, goalName, draft));
   }
-  if (result?.isError) throw new Error(client.toolText(result).slice(0, 400) || 'refusé par COROS');
+  if (result?.isError || /^\W*COROS API error/i.test(client.toolText(result))) throw new Error(client.toolText(result).slice(0, 400) || 'refusé par COROS');
+  // COROS peut répondre sans erreur et ne rien créer : un plan créé se reconnaît à son « Plan ID » (la bibliothèque, elle, tarde à se mettre à jour)
+  if (!running?.start && !/Plan ID:\s*\d+/i.test(client.toolText(result)))
+    throw new Error(`COROS a répondu sans créer le plan « ${name} » : ${client.toolText(result).replace(/\s+/g, ' ').slice(0, 300) || 'réponse vide'}`);
   return {
     sentAt: now.toISOString(),
     start: running?.start ?? draft.start,

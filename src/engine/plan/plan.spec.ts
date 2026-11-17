@@ -25,6 +25,7 @@ une ligne de texte perdue
 \`\`\`
 `;
 
+const corosSessions_ = (steps: string) => corosSections({ date: '2027-01-03', kind: 'long', name: 'L', steps } as PlanSession);
 const session = (date: string, kind: PlanSession['kind'] = 'easy', extra: Partial<PlanSession> = {}): PlanSession => ({ date, kind, name: `S ${date}`, durationMin: 45, ...extra });
 
 describe('plan importé', () => {
@@ -207,7 +208,9 @@ Plans on this page: 2
     const client = {
       toolText: (r: any) => r.text,
       callTool: async (name: string, args: any) => (calls.push([name, args]), { text: library }),
-      callWriteTool: async (name: string, args: any) => (calls.push([name, args]), { text: 'ok' }),
+      callWriteTool: async (name: string, args: any) => (
+        calls.push([name, args]), name === 'createTrainingPlan' && (library = '1. RunStat · Marathon test [In progress] [mcp]\n   Plan ID: 77\n   Record role: execution\n   Editable via MCP: yes\n   Dates: 2026-11-11 to 2026-12-06\n'), { text: 'Training plan saved and running.\nPlan ID: 77' }
+      ),
     };
     const first = await pushPlanToCoros(client, plan, 'Marathon test', '2026-11-11', new Date('2026-11-11T09:00:00Z'));
     expect(first).toEqual({ sentAt: '2026-11-11T09:00:00.000Z', start: '2026-11-11', weeks: 5, sessions: 5 });
@@ -221,6 +224,17 @@ Plans on this page: 2
     const refused = { ...client, callWriteTool: async () => ({ isError: true, text: 'planStartDate out of range' }) };
     library = 'Plans on this page: 0';
     await expect(pushPlanToCoros(refused, plan, 'Marathon test', '2026-11-11')).rejects.toThrow(/out of range/);
+    // Erreur de validation renvoyée en texte simple, sans isError
+    const invalid = { ...client, callWriteTool: async () => ({ text: 'COROS API error: 1 validation error(s): bad' }) };
+    await expect(pushPlanToCoros(invalid, plan, 'Marathon test', '2026-11-11')).rejects.toThrow(/validation error/);
+    // Réponse sans erreur mais plan absent de la bibliothèque : échec signalé avec la réponse de COROS
+    const silent = { ...client, callWriteTool: async () => ({ text: 'queued' }) };
+    await expect(pushPlanToCoros(silent, plan, 'Marathon test', '2026-11-11')).rejects.toThrow(/sans créer.*queued/);
+  });
+
+  it('une première étape de plus d\'une heure n\'est pas un échauffement', () => {
+    const s = corosSessions_("1h20 @ FC 140-152 + 10' @ 4:40-4:45") as any[];
+    expect(s.map((x) => x.sectionType)).toEqual([2, 4]);
   });
 
   it('n’écrit chez COROS que les outils de plan, et jamais par callTool', async () => {
