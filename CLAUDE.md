@@ -269,7 +269,7 @@ Troisième zone : nginx `:82` (`127.0.0.1:8091`, cible de `tailscale funnel --bg
 seul : `/auth/`, `/backup/`, `/relay/` (tailles refusées par nginx avant toute authentification, IP du client = valeur la plus à droite
 de `X-Forwarded-For`, posée en `X-Real-IP` par un `map`, pas par `realip` qui passerait avant `allow/deny`). Variables :
 `RUNSTAT_APP_URL` (appli publique, liens d'invitation `…/rejoindre#nas=<RUNSTAT_PUBLIC_URL>&code=…`), `RUNSTAT_PUBLIC_URL` (adresse
-Funnel), `RUNSTAT_APP_ORIGINS` (CORS et origines WebAuthn ; défaut : origine de l'appli), `RUNSTAT_GOOGLE_REDIRECTS`
+Funnel ; les deux lues par `envUrl` : espaces retirés, « / » final pour l'appli), `RUNSTAT_APP_ORIGINS` (CORS et origines WebAuthn ; défaut : origine de l'appli), `RUNSTAT_GOOGLE_REDIRECTS`
 (défaut `<appli>connexion/google`), `RUNSTAT_BACKUP_QUOTA_MB` (1 Go). CORS = filtre (403 hors liste) ; la sécurité vient de
 l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
 - Comptes `mode: local` (sans login Tailscale, pas d'accès au tableau de bord). « Proches » › « Créer le lien d'invitation »

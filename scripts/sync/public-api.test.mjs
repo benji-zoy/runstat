@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { accountsLoader } from './accounts.mjs';
 import { AuthStore } from './auth-store.mjs';
 import { BackupStore, gcAllBackups } from './backup-store.mjs';
-import { createPublicApi, ipKey } from './public-api.mjs';
+import { createPublicApi, envUrl, ipKey } from './public-api.mjs';
 import { decodeCbor, verifyRegistration, WebAuthnError } from './webauthn.mjs';
 
 const APP = 'https://app.example';
@@ -631,4 +631,16 @@ test('révocation complète : passkeys, sessions, codes et identifiant WebAuthn 
   store.revokeAll('frank');
   assert.deepEqual(store.credentials('frank'), []);
   assert.equal(store.userOfHandle(before), null);
+});
+
+test('adresses de l’environnement : espaces retirés, « / » final selon l’usage', () => {
+  const app = envUrl('https://benji-zoy.github.io/runstat/ ', { dir: true });
+  assert.equal(app, 'https://benji-zoy.github.io/runstat/');
+  assert.equal(`${app}rejoindre`, 'https://benji-zoy.github.io/runstat/rejoindre');
+  assert.equal(envUrl(' https://benji-zoy.github.io/runstat', { dir: true }), 'https://benji-zoy.github.io/runstat/');
+  assert.equal(envUrl('https://nas.example.ts.net:8443/ '), 'https://nas.example.ts.net:8443');
+  assert.equal(envUrl('  '), null);
+  assert.equal(envUrl(undefined), null);
+  assert.throws(() => envUrl('benji-zoy.github.io/runstat/'), /adresse invalide/);
+  assert.throws(() => envUrl('ftp://exemple.fr/'), /http\(s\) attendue/);
 });

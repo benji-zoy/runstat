@@ -57,6 +57,25 @@ export function parseOrigins(value) {
 }
 
 /**
+ * Adresse lue dans l'environnement (RUNSTAT_APP_URL, RUNSTAT_PUBLIC_URL) : espaces autour retirés (une espace collée par
+ * le YAML de Container Manager coupait les liens d'invitation : « …/runstat/ rejoindre »), adresse http(s) vérifiée.
+ * `dir` : terminée par « / » (base de l'appli, à laquelle on ajoute des chemins) ; sinon sans « / » final (origine du NAS).
+ */
+export function envUrl(value, { dir = false } = {}) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`adresse invalide dans l'environnement : « ${raw} »`);
+  }
+  if (!/^https?:$/.test(url.protocol) || url.search || url.hash) throw new Error(`adresse http(s) attendue, sans ? ni # : « ${raw} »`);
+  const href = url.href.replace(/\/+$/, '');
+  return dir ? `${href}/` : href;
+}
+
+/**
  * Clé de limite d'une adresse : l'adresse entière en IPv4 (y compris « ::ffff:a.b.c.d »), le /64 en IPv6 (un client en
  * reçoit un entier : changer d'adresse dedans ne doit pas donner un nouveau budget). Autre chose : la valeur telle quelle.
  */

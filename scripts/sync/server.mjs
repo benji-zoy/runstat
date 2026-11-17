@@ -21,7 +21,7 @@ import { safeHandler } from './http-safe.mjs';
 import { RunQueue, jobs } from './queue.mjs';
 import { stravaConnectRoutes } from './strava-connect.mjs';
 import { oauthConnectRoutes } from './oauth-connect.mjs';
-import { createPublicApi, parseOrigins } from './public-api.mjs';
+import { createPublicApi, envUrl, parseOrigins } from './public-api.mjs';
 import { gcAllBackups } from './backup-store.mjs';
 
 const PORT = Number(process.env.SYNC_PORT ?? 8787);
@@ -30,8 +30,8 @@ const QUOTA_BYTES = Number(process.env.RUNSTAT_USER_QUOTA_MB ?? 2048) * 2 ** 20;
 const MAX_ARCHIVE = Number(process.env.SYNC_MAX_ARCHIVE_MB ?? 2048) * 2 ** 20;
 const schedule = !process.argv.includes('--no-schedule');
 // Accès public (Funnel) : adresse de l'appli publique (liens d'invitation), adresse publique du NAS, origines de l'appli
-const APP_URL = process.env.RUNSTAT_APP_URL || null;
-const PUBLIC_URL = process.env.RUNSTAT_PUBLIC_URL || null;
+const APP_URL = envUrl(process.env.RUNSTAT_APP_URL, { dir: true });
+const PUBLIC_URL = envUrl(process.env.RUNSTAT_PUBLIC_URL);
 const APP_ORIGINS = parseOrigins(process.env.RUNSTAT_APP_ORIGINS ?? (APP_URL ? new URL(APP_URL).origin : ''));
 const BACKUP_QUOTA = Number(process.env.RUNSTAT_BACKUP_QUOTA_MB ?? 1024) * 2 ** 20;
 /** Adresses de retour Google acceptées par le relais (page de connexion de l'appli publique) */
