@@ -62,13 +62,17 @@
         <p>Tes données restent sur cet appareil{{ account.state() ? ", sauvegardées chiffrées (illisibles pour le serveur)" : " : rien n'est envoyé à un serveur" }}.
           Ouvre les Réglages : renseigne ta FC et ta
           morphologie, choisis Strava, puis importe ton archive Strava (strava.com › Paramètres › Mon compte › Télécharger ton
-          archive). Le calcul se fait ici, en quelques minutes.</p>
+          archive). Le calcul se fait ici, en quelques minutes. Tu as déjà un export RunStat (celui du NAS) ? Importe-le plutôt
+          dans Compte et sauvegarde.</p>
       } @else {
         <p>Ton compte n'a pas encore de données. Ouvre les Réglages : renseigne ta FC et ta morphologie, choisis tes sources
           (COROS, Strava, santé), connecte-les, puis lance une synchro. Tes données restent dans ton dossier sur le NAS.</p>
       }
       @if (entries.available()) {
         <button type="button" class="btn primary" (click)="openForm('athlete')">Ouvrir les Réglages</button>
+        @if (local) {
+          <button type="button" class="btn" (click)="openForm('account')">Importer un export RunStat</button>
+        }
       }
     </section>
   } @else if (data()) {

@@ -311,7 +311,11 @@ l'invitation, de la passkey et du jeton de session (Bearer, sans cookie).
 - Page publique `/confidentialite` (`pages/privacy.ts`, les deux constructions ; liens dans le pied de page, l'accord de `/rejoindre` et
   « Mes données ») : ce qui va où selon le mode, tiers contactés, durées, droits. **À tenir à jour** quand un flux change.
 - Export (portabilité) : zip « stocké » du moteur (`src/engine/archive/zip-writer.ts`, `zipStream`, sans zip64 : 4 Gio et 65 535 fichiers
-  au plus), `data-raw/` sans `secrets/` ni fichiers techniques (`EXPORT_EXCLUDED`), `snapshot/`, `LISEZMOI.txt`. Hébergé :
+  au plus), `data-raw/` sans `secrets/` ni fichiers techniques (`EXPORT_EXCLUDED`), `snapshot/`, `LISEZMOI.txt`. Import sur l'appareil
+  (passage du NAS à l'appli publique) : Compte et sauvegarde › « Importer un export… » (`importRunstatExport` de
+  `src/engine/archive/export-import.ts`, worker `import-export`) : `LISEZMOI.txt` exigé, `data-raw/` seul, chemins vérifiés,
+  état de synchro, `raw/` et fichiers du poste ignorés (`SKIPPED`), même chemin remplacé, jetons de l'appareil gardés, puis `rebuild`
+  et sauvegarde. Hébergé :
   `GET /api/export` (en flux, Réglages › Mes données ; refusé en zone `lan` d'une instance à comptes : adresse Tailscale seulement) ; appareil : `LocalService.exportZip()` (Compte et sauvegarde › Mes données).
 - Suppression : proche hébergé, `DELETE /api/account { confirm: <id> }` (tailnet seulement, jamais le propriétaire ; dossier
   `users/<id>/` effacé, compte retiré de `users.json`, accès public révoqué, tâches en attente abandonnées, 409 pendant un run) ;

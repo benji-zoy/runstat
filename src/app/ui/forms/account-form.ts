@@ -1,6 +1,7 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AccountService, accountError } from '../../core/account.service';
+import { DataService } from '../../core/data.service';
 import { LocalService } from '../../core/local.service';
 import { passphraseProblem, suggestPassphrase } from '../../core/passphrase';
 import { IconComponent } from '../icon';
@@ -85,10 +86,18 @@ const when = (iso?: string) => (iso ? new Date(iso).toLocaleString('fr-FR', { da
           <h3 class="group">Mes données</h3>
           <div class="actions">
             <button type="button" class="btn" [disabled]="busy()" (click)="exportData()">Exporter mes données (zip)</button>
+            <button type="button" class="btn" [disabled]="busy()" (click)="importFile.click()">Importer un export…</button>
+            <input #importFile type="file" accept=".zip,application/zip" hidden (change)="importData($any($event.target))" />
             @if (!erasing()) {
               <button type="button" class="btn danger" (click)="erasing.set(true)">Tout effacer…</button>
             }
           </div>
+          @if (importing() !== null) {
+            <progress [value]="importing()" max="1" aria-label="Import de l’export"></progress>
+          }
+          <p class="hint">Importer un export RunStat (celui du NAS ou d'un autre appareil) : il est lu sur l'appareil ; les fichiers
+            qu'il contient remplacent ceux de même nom, le reste est gardé. Les connexions aux sources ne sont jamais exportées :
+            reconnecte-les ensuite dans Réglages.@if (account.state()) { La sauvegarde chiffrée suit toute seule.}</p>
           @if (erasing()) {
             <p class="hint">
               @if (account.state()) {
@@ -143,8 +152,11 @@ export class AccountFormComponent {
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
   protected readonly erasing = signal(false);
+  /** Progression de l'import d'un export (null : aucun) */
+  protected readonly importing = signal<number | null>(null);
   protected readonly confirmText = signal('');
   private readonly local = inject(LocalService);
+  private readonly data = inject(DataService);
   protected readonly suggest = suggestPassphrase;
   protected readonly problem = computed(() => passphraseProblem(this.next()));
   protected readonly host = computed(() => {
@@ -237,6 +249,24 @@ export class AccountFormComponent {
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
       return `Export prêt (${Math.max(1, Math.round(blob.size / 1024))} Ko).`;
+    });
+  }
+
+  /** Import d'un export RunStat (zip du NAS ou d'un autre appareil), lu sur l'appareil */
+  protected importData(input: HTMLInputElement): Promise<void> {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return Promise.resolve();
+    return this.run(async () => {
+      this.importing.set(0);
+      try {
+        const { imported } = await this.local.importExport(file, (p) => this.importing.set(p));
+        await this.data.reload();
+        const mo = Math.max(1, Math.round(imported.bytes / 2 ** 20));
+        return `Import terminé : ${imported.files} fichiers (${mo} Mo). Reconnecte tes sources dans Réglages pour la suite.`;
+      } finally {
+        this.importing.set(null);
+      }
     });
   }
 

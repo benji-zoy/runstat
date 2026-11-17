@@ -79,7 +79,8 @@ import { LOCAL_MODE } from '../core/runtime';
       <h2>Tes droits</h2>
       <ul>
         <li><b>Accès et portabilité</b> : « Exporter mes données » (zip lisible, sans les jetons) dans
-          {{ local ? 'Compte et sauvegarde (icône nuage)' : 'Réglages' }}.</li>
+          {{ local ? 'Compte et sauvegarde (icône nuage)' : 'Réglages' }}. Dans l'appli, « Importer un export » reprend un tel zip (du NAS
+          ou d'un autre appareil) : il est lu sur l'appareil, jamais envoyé.</li>
         <li><b>Effacement et retrait du consentement</b> : {{ local ? '« Tout effacer » dans Compte et sauvegarde (compte sur le NAS, puis données de l’appareil)' : '« Supprimer mon compte » dans Réglages' }}.</li>
         <li><b>Rectification</b> : Réglages, objectifs et classements se modifient dans l'appli.</li>
         <li>Pour toute autre demande, adresse-toi à la personne qui t'héberge. Tu peux aussi saisir la CNIL (cnil.fr).</li>
