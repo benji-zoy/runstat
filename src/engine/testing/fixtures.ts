@@ -42,10 +42,11 @@ import csvFr from '../../../scripts/sync/fixtures/strava/activities-fr.csv';
 import corosDaily from '../../../scripts/sync/fixtures/coros-health/daily.txt';
 import corosHrv from '../../../scripts/sync/fixtures/coros-health/hrv.txt';
 import corosRhr from '../../../scripts/sync/fixtures/coros-health/rhr.txt';
+import corosSchedule from '../../../scripts/sync/fixtures/coros-schedule/schedule.txt';
 
 const json = (v: unknown) => JSON.stringify(v);
 
-export { sortieFit, gpxExport, tcxExport, csvFr, corosDaily, corosHrv, corosRhr };
+export { sortieFit, gpxExport, tcxExport, csvFr, corosDaily, corosHrv, corosRhr, corosSchedule };
 
 /** Instance COROS + Google Health : 6 sorties (une avec FIT, une sans détail), classements, météo, objectifs */
 export const corosRaw = (): Record<string, FileData> => ({

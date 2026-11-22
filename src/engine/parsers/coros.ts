@@ -171,6 +171,12 @@ export interface PlannedFile {
 const SCHEDULE_META =
   /^(Standalone workout|Training plan|From training plan|Workout from|To view|To reschedule)\b|^(Plan ID|Plan name|Plan|idInPlan|Distance|Estimated Time|Duration|Load|Sport( type)?|Workout ID)\s*:/i;
 
+/** Champs qui font d'un bloc une séance : sans aucun d'eux, c'est une note ou une consigne de la réponse, pas une séance */
+const SCHEDULE_FIELD =
+  /^(Standalone workout|Training plan workout|From training plan)\b|^(Plan ID|idInPlan|Workout ID|Distance|Estimated Time|Duration|Load)\s*:|\(Plan ID\s*:/i;
+/** Ligne qui s'adresse à l'assistant (nom d'outil MCP, identifiants internes) : jamais un nom de séance */
+const SCHEDULE_NOTE = /\b(query|update|create|get|schedule|delete|upload|download)[A-Z]\w+|\bidInPlan\b|\bPlan ID\b|^(Note|Notes|Tip|Important)\s*:/;
+
 /** h:mm:ss ou mm:ss → secondes */
 const clockSec = (s: string | undefined): number | null => {
   const p = s?.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
@@ -181,6 +187,7 @@ const clockSec = (s: string | undefined): number | null => {
 /**
  * Calendrier texte de queryTrainingSchedule : blocs séparés par une ligne vide, chacun ouvert par la date
  * (« 2026-11-14 ») puis le nom de la séance ; un bloc sans date reprend la précédente (plusieurs séances le même jour).
+ * Le texte est une donnée : un bloc sans champ de séance (note, consigne destinée à l'assistant) est ignoré.
  */
 export function parseSchedule(text: string): PlannedSession[] {
   const out: PlannedSession[] = [];
@@ -192,7 +199,8 @@ export function parseSchedule(text: string): PlannedSession[] {
     if (head) (date = head[1]), lines.shift();
     if (!date || !lines.length) continue;
     const field = (name: string) => lines.find((l) => l.toLowerCase().startsWith(name.toLowerCase() + ':'))?.slice(name.length + 1).trim();
-    const name = lines.find((l) => !SCHEDULE_META.test(l) && !/^=+$/.test(l));
+    if (!lines.some((l) => SCHEDULE_FIELD.test(l))) continue;
+    const name = lines.find((l) => !SCHEDULE_META.test(l) && !SCHEDULE_NOTE.test(l) && !/^=+$/.test(l));
     const dist = field('Distance')?.match(/([\d.]+)\s*(km|m)\b/i);
     const load = field('Load')?.match(/[\d.]+/)?.[0];
     if (!name && !dist && !load) continue;
@@ -202,7 +210,7 @@ export function parseSchedule(text: string): PlannedSession[] {
       distanceKm: dist ? Math.round((dist[2].toLowerCase() === 'm' ? +dist[1] / 1000 : +dist[1]) * 100) / 100 : null,
       durationSec: clockSec(field('Estimated Time') ?? field('Duration')),
       load: load != null ? Math.round(+load) : null,
-      ...(lines.some((l) => /plan id|training plan/i.test(l) && !/^Standalone/i.test(l)) ? { fromPlan: true } : {}),
+      ...(lines.some((l) => /^(Plan ID\s*:|Training plan workout|From training plan)|\(Plan ID\s*:/i.test(l)) ? { fromPlan: true } : {}),
     });
   }
   return out;
