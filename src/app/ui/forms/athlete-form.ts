@@ -91,7 +91,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'nume
         @if (local && account.connected() && sync.available()) {
           <div class="field wide">Appareil de synchro
             <span class="hint">{{ device.isPrimary() ? 'Cet appareil synchronise tes sources et renouvelle les jetons ; tes autres appareils reçoivent les données par ta sauvegarde.'
-              : 'Synchro faite par ' + device.primary()?.name + ' : ici, les données arrivent par ta sauvegarde.' }}</span>
+              : 'Synchro faite par ' + device.primary()?.name + ' : ici, les données arrivent par ta sauvegarde. Si cet appareil-là n’a rien synchronisé depuis une heure, celui-ci prend le relais tout seul.' }}</span>
             @if (!device.isPrimary()) {
               <div class="upload">
                 <button type="button" class="btn" [disabled]="busy()" (click)="takeOver()">Devenir l’appareil principal</button>

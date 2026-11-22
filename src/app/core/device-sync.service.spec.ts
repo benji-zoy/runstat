@@ -67,6 +67,20 @@ describe('synchro sur l’appareil', () => {
     expect(await refresh()).toBe('acc');
   });
 
+  it('appareil secondaire : relit la sauvegarde, puis prend le relais seulement si le principal n’a rien synchronisé depuis une heure', async () => {
+    setup({ device: 'B' });
+    await raw.write(PRIMARY_FILE, JSON.stringify({ device: 'A', name: 'Téléphone', epoch: 3, since: '' }));
+    await raw.write('sync-state.json', JSON.stringify({ coros: { lastAttempt: new Date().toISOString() } }));
+    await device.reload();
+    expect(await device.syncNow()).toContain('synchronisées par Téléphone');
+    expect(calls).toEqual(['sync']);
+    expect(device.isPrimary()).toBe(false);
+    // Principal inactif depuis deux heures : cet appareil devient le principal (époque suivante, sauvegarde envoyée)
+    await raw.write('sync-state.json', JSON.stringify({ coros: { lastAttempt: new Date(Date.now() - 2 * 3600_000).toISOString() } }));
+    await device.syncNow().catch(() => undefined);
+    expect(JSON.parse((await raw.readText(PRIMARY_FILE))!)).toMatchObject({ device: 'B', epoch: 4 });
+  });
+
   it('sauvegarde verrouillée : pas de renouvellement (les autres appareils ne recevraient pas le nouveau jeton)', async () => {
     setup({ device: 'A' });
     state.update((s) => ({ ...s, keys: undefined }));
