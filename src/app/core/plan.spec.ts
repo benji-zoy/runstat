@@ -37,6 +37,17 @@ describe('plan importé et calendrier COROS', () => {
     expect(mergeCalendars(null, [], rates, ref)).toBeNull();
   });
 
+  it('reprend les étapes du plan pour les séances envoyées dans COROS', () => {
+    const steps = "15' Z2 + 3×(2 km @ 4:12-4:15 / 2' Z1) + 15' Z2";
+    const plan = [s('2026-11-13', 'quality', { name: 'Allure 10 km  3 × 2 km', steps }), s('2026-11-14', 'easy', { steps: "45' Z1" })];
+    const cal = coros(['2026-11-13', '2026-11-14']);
+    cal.sessions[0].name = 'Allure 10 km 3 × 2 km';
+    const m = mergeCalendars(cal, plan, rates, ref)!;
+    expect(m.sessions[0]).toMatchObject({ steps, kind: 'quality', fromPlan: true });
+    // Nom différent (séance ajoutée dans l'appli COROS) : rien de repris
+    expect(m.sessions[1].steps).toBeUndefined();
+  });
+
   it('un objectif secondaire suit le plan de son objectif principal', () => {
     const main: Goal = { id: 'main', name: 'Marathon', date: '2027-03-01', distanceKm: 42.195, kind: 'road', plan: { goalId: 'main', importedAt: '2026-11-11T00:00:00.000Z', sessions: [s('2026-11-20')] } };
     const prep: Goal = { id: 'prep', name: 'Semi', date: '2027-01-15', distanceKm: 21.1, kind: 'road', parent: 'main' };

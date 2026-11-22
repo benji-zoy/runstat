@@ -86,7 +86,14 @@ export function mergeCalendars(
   if (!own.length) return coros;
   const corosWeeks = new Set((coros?.sessions ?? []).map((s) => weekKey(s.date)));
   const kept = own.filter((s) => !corosWeeks.has(weekKey(s.date))).map((s) => toPlanned(s, rates));
-  const sessions = [...(coros?.sessions ?? []), ...kept].sort((a, b) => a.date.localeCompare(b.date));
+  // Séances envoyées dans COROS depuis ce plan (même jour, même nom) : COROS ne renvoie pas les étapes, reprises du plan
+  const key = (date: string, name: string) => `${date}|${name.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  const byKey = new Map(own.map((s) => [key(s.date, s.name), s]));
+  const fromCoros = (coros?.sessions ?? []).map((c) => {
+    const s = c.steps ? null : byKey.get(key(c.date, c.name));
+    return s?.steps ? { ...c, steps: s.steps, kind: c.kind ?? s.kind } : c;
+  });
+  const sessions = [...fromCoros, ...kept].sort((a, b) => a.date.localeCompare(b.date));
   const dates = sessions.map((s) => s.date);
   return {
     source: coros ? 'coros' : 'import',

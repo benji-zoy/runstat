@@ -29,6 +29,11 @@ describe('durabilité', () => {
     expect(d.onset).not.toBeNull();
   });
 
+  it('garde une sortie régulière finie par un km lancé, écarte une vraie fin rapide', () => {
+    expect(durability(run([...laps(17, 380, 155), ...laps(1, 324, 165)]))!.steady).toBe(true);
+    expect(durability(run([...laps(12, 380, 155), ...laps(6, 340, 165)]))!.steady).toBe(false);
+  });
+
   it('écarte les arrêts et compare les montées en trail', () => {
     const km = [
       ...Array.from({ length: 6 }, () => [1000, 600, 160, 120, 0, 400, 180, 120]),

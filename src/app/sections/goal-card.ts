@@ -51,6 +51,10 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
                 <span class="muted">· {{ odds(e.stretchProbability) }}</span>
               }
             </p>
+            @if (e.index >= 60 && e.probability! < 0.3) {
+              <p class="muted small gap-note">Pas de contradiction : l'indice mesure ta préparation, la probabilité ton niveau face au
+                chrono visé. Détail dans la partie Préparation.</p>
+            }
           }
         </div>
 
@@ -320,6 +324,36 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
             @if (e.plannedPrep) { avec les séances prévues, au début de l’affûtage } @else { atteignable avant l’affûtage }</p>
         }
       </div>
+      <details class="method">
+        <summary>Comment se calcule l'indice</summary>
+        <p>L'indice de préparation (sur 100) répond à une question : <b>as-tu fait l'entraînement qu'on attend pour cet objectif ?</b>
+          C'est la moyenne pondérée des critères ci-dessus, chacun noté de 0 à 100 % de sa cible et plafonné à 100 % : dépasser une
+          cible ne compense pas un critère en retard. 80 et plus : prêt ; 60 à 80 : en bonne voie ; 40 à 60 : à consolider ; sous 40 : insuffisant.</p>
+        <p>Il ne dit pas si le chrono visé est à ta portée : c'est le rôle de la <b>probabilité</b>, tirée de ton niveau le jour J (les
+          modèles de chrono, qui tiennent déjà compte de ton entraînement). Une préparation complète pour un objectif au-delà de ton
+          niveau donne donc un bon indice et une faible probabilité : tu as fait le travail, mais il ne suffit pas encore pour ce chrono.</p>
+        @if (g.targetSec) {
+          <p>L'ambition pèse sur les cibles : exigence = (chrono probable ÷ chrono visé)⁵, entre 0,75 et 1,5
+            (ici {{ fixed(e.demand.factor, 2) }}). D'après Tanda, doubler le volume ne fait gagner qu'environ 6 % : viser 5 % plus
+            vite que son niveau demande donc nettement plus. Volume, D+ et km à l'allure sont multipliés par l'exigence ; la sortie
+            longue et le bloc à l'allure, par sa racine. Expérience, durabilité, régularité et récupération ne dépendent pas du chrono visé.</p>
+        } @else {
+          <p>Objectif « finir » : cibles allégées (exigence 0,97 → × {{ fixed(e.demand.factor, 2) }}).</p>
+        }
+        <p>L'indice affiché est celui d'aujourd'hui, sauf quand le calendrier (COROS ou plan importé) va jusqu'au début de l'affûtage :
+          c'est alors ce qu'il vaudra avec les séances prévues. Seul ce que le calendrier dit vraiment est projeté : les volumes et
+          durées, et les allures des étapes d'un plan importé, même envoyé dans COROS (fourchette comptée si son milieu est au plus 5 s/km plus lent que l'allure cible). Le dénivelé, que le calendrier ne donne pas, est compté tel qu'aujourd'hui.
+          Sans calendrier, la barre claire montre ce qui est atteignable en suivant les conseils (volume +10 % par semaine au plus).</p>
+        <dl class="crit">
+          @for (r of e.readiness; track r.label) {
+            @if (r.explain) {
+              <dt>{{ r.label }} <small class="muted">· poids {{ r.weight }}</small></dt>
+              <dd>{{ r.explain }}</dd>
+            }
+          }
+        </dl>
+        <p class="muted small">Un indice sous 80 ralentit aussi un peu ton niveau le jour J (ajustement « Préparation », 3 % au plus).</p>
+      </details>
       @if (e.calendar?.sessions?.length) {
         <details class="method calendar">
           <summary>Séances prévues d'ici la course ({{ e.calendar!.sessions.length }})</summary>
@@ -412,6 +446,10 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
     .bar .now[data-tone='warning'] { background: var(--warning); }
     .bar .now[data-tone='serious'] { background: var(--serious); }
     .legend { margin: 0; font-size: 0.78rem; display: flex; align-items: center; gap: 0.4rem; }
+    .crit { margin: 0.6rem 0 0; display: grid; gap: 0.15rem; }
+    .crit dt { font-weight: 600; margin-top: 0.5rem; }
+    .crit dd { margin: 0; color: var(--text-muted); }
+    .gap-note { margin: 0.5rem 0 0; max-width: 34ch; }
     .sw { display: inline-block; width: 12px; height: 8px; border-radius: 3px; background: var(--warning); }
     .sw.proj { background: color-mix(in srgb, var(--good) 45%, var(--surface-3)); margin-left: 0.6rem; }
     .advice { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.4rem; color: var(--text-secondary); }
