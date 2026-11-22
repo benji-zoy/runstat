@@ -40,6 +40,8 @@ export class HeatMapComponent {
       if (!this.map) {
         this.map = L.map(this.el().nativeElement, { scrollWheelZoom: false, preferCanvas: true });
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          // L'appli publique n'envoie aucun Referer (meta no-referrer) ; OSM les exige : l'origine seule, sans le chemin.
+          referrerPolicy: 'strict-origin-when-cross-origin',
           attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
           maxZoom: 19,
           className: 'dark-tiles',

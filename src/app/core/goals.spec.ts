@@ -205,9 +205,12 @@ describe('calendrier des séances prévues', () => {
   });
 
   it('projette la préparation sur les séances prévues et le dit', () => {
-    const ctxOf = (planned: PlannedCalendar | null) => goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null, planned);
-    const without = evaluateGoal(goal, ctxOf(null), today, acts)!;
-    const withPlan = evaluateGoal(goal, ctxOf(cal), today, acts)!;
+    const ctxOf = (g: Goal, planned: PlannedCalendar | null) => goalContext(g, acts, classifyAll(acts, ath), ath, today, {}, null, planned);
+    // Objectif à ton niveau (les cibles de préparation ne sont ni allégées ni renforcées)
+    const level = { ...goal, targetSec: Math.round(evaluateGoal(goal, ctxOf(goal, null), today, acts)!.predicted) };
+    const without = evaluateGoal(level, ctxOf(level, null), today, acts)!;
+    const withPlan = evaluateGoal(level, ctxOf(level, cal), today, acts)!;
+    expect(withPlan.demand.factor).toBeCloseTo(1, 1);
     expect(without.plannedPrep).toBe(false);
     expect(withPlan.plannedPrep).toBe(true);
     const longest = (e: typeof withPlan) => e.readiness.find((r) => r.label === 'Sortie la plus longue')!;
@@ -220,13 +223,30 @@ describe('calendrier des séances prévues', () => {
     // Course de jour (pas d'heure de départ, ≈ 7 h) : ni critère « Sorties de nuit », ni frontale dans les conseils
     expect(withPlan.readiness.find((r) => r.label === 'Sorties de nuit')).toBeUndefined();
     expect(longest(withPlan).advice).not.toMatch(/nuit|frontale/);
+
     // Départ à 18 h fin novembre : arrivée de nuit, le critère revient avec la séance nocturne prévue
-    const evening: Goal = { ...goal, startTime: '18:00' };
+    const evening: Goal = { ...level, startTime: '18:00' };
     const atNight = evaluateGoal(evening, goalContext(evening, acts, classifyAll(acts, ath), ath, today, {}, null, cal), today, acts)!;
     expect(atNight.readiness.find((r) => r.label === 'Sorties de nuit')!.planned).toBe('1 séance de nuit');
     expect(longest(atNight).advice).toMatch(/frontale/);
     expect(withPlan.calendar!.sessions.length).toBeGreaterThan(20);
     // Hors fenêtre de fraîcheur (> 21 jours) : seul l'ajustement « Préparation » dépend du calendrier
     expect(withPlan.adjustments.find((a) => a.label === 'Fraîcheur')).toBeUndefined();
+  });
+
+  it('proportionne les cibles de préparation à l’objectif face au niveau', () => {
+    const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null, null);
+    const level = evaluateGoal(goal, ctx, today, acts)!.predicted;
+    const vol = (targetSec?: number) => {
+      const g = { ...goal, targetSec };
+      const e = evaluateGoal(g, goalContext(g, acts, classifyAll(acts, ath), ath, today, {}, null, null), today, acts)!;
+      return { target: parseFloat(e.readiness.find((r) => r.label === 'Volume')!.target), label: e.demand.label };
+    };
+    const easy = vol(level * 1.08), even = vol(level), hard = vol(level * 0.95), finish = vol(undefined);
+    expect(hard.target).toBeGreaterThan(even.target);
+    expect(even.target).toBeGreaterThan(finish.target);
+    expect(finish.target).toBeGreaterThan(easy.target);
+    expect(hard.label).toMatch(/plus rapide que ton niveau/);
+    expect(easy.label).toMatch(/sous ton niveau/);
   });
 });

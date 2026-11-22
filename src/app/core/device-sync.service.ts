@@ -38,6 +38,8 @@ interface PendingOAuth {
 
 const PENDING = 'runstat-oauth';
 const AUTO_SYNC_MS = 60 * 60_000;
+/** Relecture de la sauvegarde au retour sur l'appli (onglet de nouveau visible), au plus une fois par période */
+const PULL_MS = 2 * 60_000;
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const random = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 
@@ -83,11 +85,25 @@ export class DeviceSyncService {
 
   constructor() {
     if (!LOCAL_MODE) return;
-    // Au démarrage (compte lu) : état, puis synchro si la dernière date de plus d'une heure
+    // Au démarrage (compte lu) : sauvegarde relue (ce qu'ont apporté les autres appareils), état, puis synchro si la
+    // dernière date de plus d'une heure. Sans cette relecture, un appareil secondaire ne voyait jamais rien de neuf.
     effect(() => {
       if (!this.account.ready()) return;
-      untracked(() => void this.reload().then(() => this.autoSync()));
+      untracked(() => void this.refresh());
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && Date.now() - this.lastPull > PULL_MS) void this.refresh();
+    });
+  }
+
+  private lastPull = 0;
+
+  /** Relit la sauvegarde (tous les appareils), puis l'état local, puis synchro automatique si c'est le moment */
+  async refresh(): Promise<void> {
+    this.lastPull = Date.now();
+    if (this.account.unlocked() && this.account.state()?.token) await this.account.sync().catch(() => undefined);
+    await this.reload();
+    await this.autoSync();
   }
 
   /** Relit l'état, l'appareil principal et la présence des jetons (jamais leur contenu) */
@@ -109,12 +125,16 @@ export class DeviceSyncService {
     });
   }
 
-  private async autoSync(): Promise<void> {
-    if (!this.anyConnected() || !this.isPrimary() || (this.account.state() && !this.account.unlocked())) return;
-    const last = Object.values(this.state())
+  /** Date de la dernière tentative de synchro des sources, tous appareils confondus (sync-state.json suit la sauvegarde) */
+  private lastAttempt(): number {
+    return Object.values(this.state())
       .map((s) => (s && typeof s === 'object' && 'lastAttempt' in s ? Date.parse(String(s.lastAttempt)) : 0))
       .reduce((a, b) => Math.max(a, b), 0);
-    if (Date.now() - last > AUTO_SYNC_MS) await this.syncNow().catch(() => undefined);
+  }
+
+  private async autoSync(): Promise<void> {
+    if (!this.anyConnected() || (this.account.state() && !this.account.unlocked())) return;
+    if (Date.now() - this.lastAttempt() > AUTO_SYNC_MS) await this.syncNow().catch(() => undefined);
   }
 
   /** Jetons de la zone raw ; renouvellement sous verrou, réservé à l'appareil principal, sauvegarde aussitôt après */
@@ -181,7 +201,17 @@ export class DeviceSyncService {
       this.running.set(true);
       this.log.set([]);
       try {
-        if (!this.isPrimary()) throw new NotPrimary(`synchro faite par ${this.primary()!.name} (Réglages › Devenir l’appareil principal)`);
+        if (!this.isPrimary()) {
+          // Appareil secondaire : d'abord ce qu'a apporté l'appareil principal. S'il n'a rien synchronisé depuis une heure,
+          // cet appareil prend le relais (il devient le principal ; jetons relus avant tout renouvellement, envoyés après).
+          if (!this.account.unlocked() || !this.account.state()?.token) throw new NotPrimary('déverrouille ta sauvegarde (Compte et sauvegarde) avant de synchroniser');
+          await this.account.sync();
+          await this.reload();
+          if (!this.isPrimary()) {
+            if (Date.now() - this.lastAttempt() < AUTO_SYNC_MS) return `Données à jour (sources synchronisées par ${this.primary()!.name})`;
+            await this.claim();
+          }
+        }
         const c = await this.clients();
         const { sources } = await sourceSync(c.raw, c, { stage: false, log: (...m) => this.say(m) }).syncAll();
         await this.local.rebuild();

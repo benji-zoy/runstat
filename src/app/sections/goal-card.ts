@@ -300,6 +300,7 @@ export type GoalPart = 'chrono' | 'references' | 'strategie' | 'modeles' | 'ajus
       }
 
       @if (part() === 'preparation') {
+      @if (e.demand.label) { <p class="muted">Cibles adaptées : {{ e.demand.label }}.</p> }
       <div class="ready">
         @for (r of e.readiness; track r.label) {
           <div class="ready-row">

@@ -52,7 +52,7 @@ import { LOCAL_MODE } from '../core/runtime';
         <li><b>Garmin Connect</b> (activités, fichiers FIT, santé, poids) : lecture seule, avec ta clé personnelle ; dans l'appli
           publique, par le relais du NAS (voir plus haut).</li>
         <li><b>Open-Meteo</b> (météo de tes sorties et de tes courses) : coordonnées arrondies à 0,1° (environ 10 km) et dates.</li>
-        <li><b>OpenStreetMap</b> (fonds de carte) : ton adresse IP et la zone affichée.</li>
+        <li><b>OpenStreetMap</b> (fonds de carte) : ton adresse IP, la zone affichée et l’adresse du site (sans la page consultée).</li>
       </ul>
       <p>Chacun applique sa propre politique de confidentialité. RunStat n'écrit jamais chez eux.</p>
 

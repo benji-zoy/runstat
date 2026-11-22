@@ -677,7 +677,26 @@ const hm = (sec: number) => {
 const shortYear = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 const shortDate = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 
+/**
+ * Exigence de l'objectif face au niveau actuel : `ambition` = chrono probable / chrono visé (> 1 : objectif plus rapide que
+ * le niveau ; sans chrono visé, objectif « finir » : 0,97). Les cibles de préparation (volume, sortie longue, D+, km à
+ * l'allure) sont multipliées par `factor` = ambition⁵, borné à [0,75 ; 1,5] : d'après Tanda (marathon), doubler le volume
+ * ne fait gagner que ≈ 6 % ; viser 5 % au-dessus de son niveau demande donc nettement plus, viser en dessous, moins.
+ */
+export function goalDemand(goal: Goal, baseSec: number): { ambition: number; factor: number; label: string | null } {
+  const ambition = goal.targetSec && baseSec > 0 ? baseSec / goal.targetSec : 0.97;
+  const factor = Math.max(0.75, Math.min(1.5, Math.pow(ambition, 5)));
+  const pct = Math.round(Math.abs(ambition - 1) * 100);
+  const label = !goal.targetSec ? 'objectif « finir » : préparation un peu allégée'
+    : pct < 1 ? 'objectif à ton niveau actuel'
+    : ambition > 1 ? `objectif ≈ ${pct} % plus rapide que ton niveau actuel : préparation renforcée`
+    : `objectif ≈ ${pct} % sous ton niveau actuel : préparation allégée`;
+  return { ambition, factor, label };
+}
+
 function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: number): ReadinessItem[] {
+  // Cibles proportionnées à l'exigence de l'objectif (chrono visé face au niveau)
+  const { factor } = goalDemand(goal, baseSec);
   const race = parseDay(goal.date);
   const age = (a: Activity) => daysBetween(parseDay(a.date), ctx.ref);
   const window = (days: number) => ctx.acts.filter((a) => age(a) >= 0 && age(a) < days);
@@ -696,7 +715,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
   const nameDay = (x: PlannedSession) => `${x.name.replace(/\s+/g, ' ').trim()}, le ${shortDate(parseDay(x.date))}`;
 
   const weekly = window(42).reduce((s, a) => s + a.distanceKm, 0) / 6;
-  const volTarget = goal.kind === 'trail' ? Math.min(100, 0.75 * goal.distanceKm) : Math.min(80, Math.max(25, 1.7 * goal.distanceKm));
+  const volTarget = Math.round(factor * (goal.kind === 'trail' ? Math.min(100, 0.75 * goal.distanceKm) : Math.min(80, Math.max(25, 1.7 * goal.distanceKm))));
   const reachable = weekly * Math.pow(1.1, weeksLeft);
   // Volume des 6 semaines qui précèdent l'affûtage : sorties faites dans cette fenêtre + séances prévues
   const plannedWeekly = usePlan
@@ -721,7 +740,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
 
   if (goal.kind === 'trail') {
     const longest = window(112).reduce((m, a) => Math.max(m, a.durationSec), 0);
-    const target = Math.min(6 * 3600, 0.45 * baseSec);
+    const target = Math.min(6.5 * 3600, Math.sqrt(factor) * Math.min(6 * 3600, 0.45 * baseSec));
     const longPlan = beforeTaper.reduce<PlannedSession | null>((m, x) => ((x.durationSec ?? 0) > (m?.durationSec ?? 0) ? x : m), null);
     const longPlanned = Math.max(longest, longPlan?.durationSec ?? 0);
     items.push({
@@ -739,7 +758,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
         : `Une sortie d'au moins ${hm(target)} (${lamp}) avant le ${shortDate(addDays(deadline, -7))}.`,
     });
     const elev = window(42).reduce((s, a) => s + (a.elevGain ?? 0), 0) / 6;
-    const elevTarget = 0.4 * (goal.elevGain ?? 0);
+    const elevTarget = Math.round(factor * 0.4 * (goal.elevGain ?? 0));
     if (elevTarget > 0) {
       items.push({
         label: 'D+ hebdomadaire',
@@ -779,7 +798,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
     });
   } else {
     const longest = window(56).reduce((m, a) => Math.max(m, a.distanceKm), 0);
-    const target = Math.min(32, 0.9 * goal.distanceKm);
+    const target = Math.round(Math.min(35, goal.distanceKm, Math.sqrt(factor) * Math.min(32, 0.9 * goal.distanceKm)));
     const longPlan = beforeTaper.reduce<PlannedSession | null>((m, x) => ((x.distanceKm ?? 0) > (m?.distanceKm ?? 0) ? x : m), null);
     const longPlanned = Math.max(longest, longPlan?.distanceKm ?? 0);
     items.push({
@@ -798,7 +817,7 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
     if (goal.targetSec) {
       const pace = goal.targetSec / goal.distanceKm;
       const km = window(42).reduce((s, a) => s + (a.splits ?? []).filter((x) => x <= pace * 1.02).length, 0);
-      const target = Math.min(25, goal.distanceKm);
+      const target = Math.round(Math.min(35, factor * Math.min(25, goal.distanceKm)));
       items.push({
         label: 'Km à l\'allure cible (6 sem.)',
         value: `${km} km`,
@@ -1015,6 +1034,8 @@ export interface GoalEvaluation {
   readiness: ReadinessItem[];
   readinessScore: number;
   readinessProjected: number;
+  /** Exigence de l'objectif face au niveau, qui proportionne les cibles de préparation */
+  demand: ReturnType<typeof goalDemand>;
   /** Séances prévues d'ici la course (calendrier de la montre), null sans calendrier */
   calendar: GoalCalendar | null;
   /** Préparation projetée sur le calendrier (il couvre la fin de la préparation) */
@@ -1106,7 +1127,7 @@ export function evaluateGoal(goal: Goal, ctx: GoalContext, today: Date, all: Act
     goal, daysLeft, ke, models, base: c.seconds, adjustments: adj, predicted, sigma,
     low: predicted * Math.exp(-1.2816 * sigma), high: predicted * Math.exp(1.2816 * sigma),
     probability, stretchProbability, uncertainty, category: course.category, method: METHODS[course.category],
-    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, calendar: ctx.calendar, plannedPrep: planned, index, verdict,
+    effortKm: course.effortKm, course, readiness: items, readinessScore, readinessProjected, demand: goalDemand(goal, c.seconds), calendar: ctx.calendar, plannedPrep: planned, index, verdict,
     targetVerdict: probability !== null ? targetVerdict(probability) : null, advice, raceRefs,
     progression: goal.kind === 'road' && raceRefs.length ? progressionSince(raceRefs[0], ctx) : null,
     plan: racePlan({ goal, daysLeft, ke, predicted, probability, raceRefs, athlete: ctx.athlete, acts: ctx.acts, course }),

@@ -162,7 +162,9 @@ lit l'état de l'appareil : `sync-state.json`, présence des jetons). « Affiner
   appareil principal, il le devient ; un autre → `NotPrimary`, rien n'est envoyé au serveur de jetons) ; après, sauvegarde aussitôt.
   Sauvegarde verrouillée (phrase non saisie) ou session expirée : pas de renouvellement. Sans compte : appareil seul, direct. Synchros
   sous le verrou `runstat-sources` (un onglet à la fois). Réglages › « Devenir l'appareil principal » : époque suivante, sauvegarde.
-  Se connecter à une source depuis un appareil en fait l'appareil principal.
+  Se connecter à une source depuis un appareil en fait l'appareil principal. Tout appareil relit la sauvegarde à l'ouverture et au
+  retour sur l'onglet (2 min au plus, `DeviceSyncService.refresh`) ; un secondaire dont la synchro (bouton ou automatique) trouve le
+  principal inactif depuis plus d'une heure (`lastAttempt` de `sync-state.json`, qui suit la sauvegarde) devient le principal (`claim`).
 - OAuth depuis le navigateur, adresse de retour `<appli>connexion/<source>` (Réglages › « Connecter … », state + vérificateur PKCE dans
   `sessionStorage`, usage unique, code retiré de l'adresse) : COROS par enregistrement dynamique (client « RunStat (appli) ») et PKCE,
   échange direct ; Strava par l'appli de la personne (domaine de rappel : hôte de l'appli publique, `benji-zoy.github.io`), échange
@@ -413,6 +415,9 @@ Séances prévues (`planned`, calendrier de moins de 14 jours, `goalCalendar`) :
 si le calendrier va jusqu'au début de l'affûtage (à 7 jours près), la préparation projetée (volume des 6 semaines avant l'affûtage,
 sortie la plus longue, sorties de nuit d'après le nom) remplace l'hypothèse « tu suis les conseils » et sert à l'ajustement « Préparation »
 même à moins de 3 semaines (`plannedPrep`). Liste et « au calendrier : … » dans la partie Préparation de la fiche.
+Cibles de préparation (volume, sortie longue, D+, km à l'allure) proportionnées à l'objectif face au niveau (`goalDemand` :
+ambition = chrono probable / chrono visé, « finir » = 0,97 ; facteur ambition⁵ borné à [0,75 ; 1,5], d'après Tanda ; sortie longue × √facteur),
+dites en tête de la partie Préparation.
 Ajustements : fraîcheur projetée, VFC/FC repos, Hadley, nuit **simulée sur le profil** (crépuscule civil `nightWindow`, `nightCost` : +3 % roulant,
 +8 % descente raide, +2 % de 2 h à 6 h), préparation. Incertitude log-normale : dispersion des modèles ⊕ jour de course (`daySd` : 2 % sur 5 km
 → 4 % au marathon, 6 % trail, 8 % ultra) ⊕ extrapolation en ultra (4 % × ln(durée / plus longue sortie de l'année)) → probabilité.
