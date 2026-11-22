@@ -27,7 +27,8 @@ dernière erreur, ré-autorisation) ; réponses brutes : `data-raw/raw/<source>/
   (jetons dans un dossier de secrets : `nodeTokens` de `secrets.mjs`, `savedAt` = date du fichier ; zone raw = `NodeStore`).
   Pas de score de préparation, de score de sommeil ni de FC intraday par l'API.
 - **Calendrier COROS** (séances prévues : plans d'entraînement et séances isolées) : `queryTrainingSchedule` sur 120 jours
-  (`PLAN_DAYS`) à chaque synchro COROS, activités ou santé (`syncCorosPlan`, jamais bloquant), `parseSchedule` →
+  (`PLAN_DAYS`) à chaque synchro COROS, activités ou santé (`syncCorosPlan`, jamais bloquant), `parseSchedule` (blocs sans champ de séance ignorés :
+  notes et consignes de la réponse MCP) →
   `data-raw/planned.json` (`{ source, fetchedAt, from, to, sessions: [{ date, name, distanceKm, durationSec, load, fromPlan? }] }`,
   remplacé à chaque fois), recopié dans `planned` du snapshot quelle que soit la source d'activités. **Garmin : impossible**,
   la Personal API n'a aucun point d'accès calendrier ni séance planifiée (Swagger vérifié le 8 nov. 2026).

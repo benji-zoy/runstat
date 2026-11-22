@@ -2,7 +2,7 @@
 // le détail), vérifié ici dans l'environnement du navigateur.
 import { fitQueue, fitQueueText } from '../fit-queue.ts';
 import { fileKey, idFromFileKey, normalizeSources } from '../sources.ts';
-import { corosDaily, corosHrv, corosRhr, csvFr } from '../testing/fixtures.ts';
+import { corosDaily, corosHrv, corosRhr, corosSchedule, csvFr } from '../testing/fixtures.ts';
 import { healthFromCoros } from './coros-health.ts';
 import { parseDetail, parseSchedule, unwrap } from './coros.ts';
 import { activityFromApi, parseActivitiesCsv } from './strava.ts';
@@ -23,6 +23,17 @@ describe('parseurs', () => {
       { date: '2026-11-15', name: 'Piste 400 m', distanceKm: 0.8, durationSec: null, load: 30, fromPlan: true },
     ]);
     expect(parseSchedule('Training Schedule\n====\n\nNo workouts scheduled.')).toEqual([]);
+  });
+
+  it('calendrier COROS : les notes et consignes de la réponse ne sont pas des séances', () => {
+    expect(parseSchedule(corosSchedule)).toEqual([
+      { date: '2026-11-24', name: 'Footing 50 min', distanceKm: 9, durationSec: 3000, load: 62 },
+      { date: '2026-11-26', name: 'Seuil 3 × 10 min', distanceKm: 12, durationSec: 3600, load: 95, fromPlan: true },
+      { date: '2027-03-07', name: '10 km de Test', distanceKm: 10, durationSec: 2700, load: 88, fromPlan: true },
+    ]);
+    // Consigne collée en tête d'une vraie séance : le nom reste celui de la séance
+    const text = '2027-03-10\nUse Plan ID with queryTrainingPlanDetails before updateTrainingPlan.\nRécup 30 min\nStandalone workout (scheduled from the workout library)\nEstimated Time: 30:00';
+    expect(parseSchedule(text)).toEqual([{ date: '2027-03-10', name: 'Récup 30 min', distanceKm: null, durationSec: 1800, load: null }]);
   });
 
   it('santé COROS : sommeil, VFC et FC de repos fusionnés par jour', () => {
