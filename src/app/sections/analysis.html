@@ -354,7 +354,7 @@
     <summary>Méthode</summary>
     <p>Efficacité = vitesse ajustée à la pente / FC. On compare le dernier tiers de chaque sortie d'au moins une heure au premier
     (hors 10 premières minutes) : la « 4e dimension » de la performance d'endurance (Maunder 2021, Jones 2024).
-    {{ dur().runs.length }} sorties régulières analysées (fractionné, tempo et fins accélérées exclus).</p>
+    {{ dur().runs.length }} sorties régulières analysées (fractionné, tempo et fins accélérées exclus : dernier tiers plus rapide de 5 % en médiane ; un seul km lancé à la fin ne compte pas).</p>
   </details>
   <div class="grid three">
     @for (g of [{ key: 'Route', v: dur().road }, { key: 'Trail', v: dur().trail }]; track g.key) {

@@ -32,15 +32,43 @@ import { Segment, Waypoint, courseSegments, courseWaypoints, fitTimeline, nightH
 import { Terrain, activityEffortKm, personalTerrain, segmentsEffortKm } from './terrain';
 import { baselineSeries, hrvStatus, rhrStatus, sleepDebt } from './health';
 import { addDays, isoDay, parseDay } from './stats';
+import { Step, parseSteps } from '../../engine/plan/plan';
 
 const DAY_MS = 86_400_000;
 const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / DAY_MS);
 
 /**
- * Exposant de Riegel appliqué à la distance équivalent plat pour extrapoler un trail : la courbe des meilleures
- * vitesses en trail (≈ 21 km-effort/h sur 40 km-effort, 19 sur la SaintéLyon, 15,5 sur l'UTMB) donne ≈ 1,10
+ * Exposant de Riegel appliqué à la distance équivalent plat pour extrapoler un trail, selon la durée de l'effort. La courbe
+ * des meilleures vitesses en trail (≈ 21 km-effort/h sur 40 km-effort, 19 sur la SaintéLyon, 15,5 sur l'UTMB) donne ≈ 1,10
+ * jusqu'à 6 h environ (40 → SaintéLyon), mais ≈ 1,19 au-delà (SaintéLyon → UTMB, 6 → 20 h) : nuit, arrêts, gestion.
+ * D'où 1,10 jusqu'à 6 h, puis une hausse proportionnelle au logarithme de la durée jusqu'à 1,20 à 20 h, constant ensuite.
  */
 export const TRAIL_EXPONENT = 1.1;
+const ULTRA_EXPONENT = 1.2;
+
+/** Exposant local de Riegel à la durée `sec` */
+export function trailExponent(sec: number): number {
+  const h = sec / 3600;
+  if (h <= 6) return TRAIL_EXPONENT;
+  if (h >= 20) return ULTRA_EXPONENT;
+  return TRAIL_EXPONENT + (ULTRA_EXPONENT - TRAIL_EXPONENT) * Math.log(h / 6) / Math.log(20 / 6);
+}
+
+/**
+ * Temps sur `d2` d'après `t1` sur `d1` (mêmes unités), avec l'exposant qui suit la durée : d ln t / d ln d = k(t), intégré
+ * pas à pas (dans les deux sens). Sous 6 h de bout en bout, c'est Riegel avec k = 1,10. Un 160 km ramené à 80 km n'est plus
+ * extrapolé comme une course de 4 h : il garde sa valeur pour un objectif de même durée, sans fausser un plus court.
+ */
+export function trailTime(t1: number, d1: number, d2: number): number {
+  const steps = 48;
+  const dl = Math.log(d2 / d1) / steps;
+  let lt = Math.log(t1);
+  for (let i = 0; i < steps; i++) {
+    const mid = lt + (trailExponent(Math.exp(lt)) * dl) / 2;
+    lt += trailExponent(Math.exp(mid)) * dl;
+  }
+  return Math.exp(lt);
+}
 
 export type RaceCategory = 'road' | 'trail' | 'ultra';
 
@@ -479,7 +507,7 @@ export function ultraModel(goal: Goal, ctx: GoalContext, segs: Segment[] = cours
 }
 
 /**
- * Trail et ultra : chaque trail récent extrapolé à la distance équivalent plat de l'objectif (Riegel, k = 1,10), corrigé
+ * Trail et ultra : chaque trail récent extrapolé à la distance équivalent plat de l'objectif (Riegel, k = 1,10 jusqu'à 6 h puis jusqu'à 1,20 à 20 h, `trailTime`), corrigé
  * du progrès d'efficacité depuis, pondéré par sa fraîcheur, sa proximité, la ressemblance du terrain (dénivelé par km)
  * et le fait d'être une course ; puis ton niveau route actuel (VDOT) × ton coefficient trail mesuré sur ces sorties.
  */
@@ -498,7 +526,7 @@ export function trailModels(goal: Goal, ctx: GoalContext): Model[] {
         activity: a,
         eq,
         label: a.name,
-        seconds: a.durationSec * Math.pow(eqGoal / eq, TRAIL_EXPONENT) * (form?.factor ?? 1),
+        seconds: trailTime(a.durationSec, eq, eqGoal) * (form?.factor ?? 1),
         weight: Math.exp(-age / 180) * Math.exp(-Math.abs(Math.log(eqGoal / eq))) * sim * (isRaceLike(a, ctx) ? 1 : 0.4),
         note: `${fr(a.distanceKm, 1)} km, ${a.elevGain ?? 0} m D+ en ${hm(a.durationSec)} (${shortYear(parseDay(a.date))}, ${ageLabel(age)}) : `
           + `${fr(eq, 1)} km équivalent plat${sim < 0.7 ? `, terrain ${elevDensity(a.distanceKm, a.elevGain, a.elevLoss) > elevDensity(goal.distanceKm, goal.elevGain, goal.elevLoss) ? 'plus raide' : 'plus roulant'}` : ''}`
@@ -516,7 +544,7 @@ export function trailModels(goal: Goal, ctx: GoalContext): Model[] {
   if (recent && candidates.length) {
     const flatTime = (km: number) => km * 1000 <= 42195
       ? timeForVdot(recent.vdot, km * 1000)
-      : timeForVdot(recent.vdot, 42195) * Math.pow((km * 1000) / 42195, TRAIL_EXPONENT);
+      : trailTime(timeForVdot(recent.vdot, 42195), 42195, km * 1000);
     const used = candidates.slice(0, 6);
     const w = used.reduce((s, c) => s + c.weight, 0);
     const ratio = Math.exp(used.reduce((s, c) => s + c.weight * Math.log(c.activity.durationSec / flatTime(c.eq)), 0) / w);
@@ -533,7 +561,7 @@ export function trailModels(goal: Goal, ctx: GoalContext): Model[] {
   // Pas de trail récent : extrapolation depuis la route, majorée de 25 % pour le terrain
   const best = ctx.refs[0];
   return best
-    ? [{ label: 'Depuis la route', seconds: riegel(best.time, best.dist, eqGoal * 1000, TRAIL_EXPONENT) * 1.25, weight: 1, note: `${best.label}, ${fr(eqGoal)} km équivalent plat, +25 % pour le terrain (${ageLabel(daysBetween(parseDay(best.date), ctx.ref))})` }]
+    ? [{ label: 'Depuis la route', seconds: trailTime(best.time, best.dist, eqGoal * 1000) * 1.25, weight: 1, note: `${best.label}, ${fr(eqGoal)} km équivalent plat, +25 % pour le terrain (${ageLabel(daysBetween(parseDay(best.date), ctx.ref))})` }]
     : [];
 }
 
@@ -667,6 +695,8 @@ export interface ReadinessItem {
   planned?: string;
   weight: number;
   advice: string | null;
+  /** Ce que mesure le critère et d'où vient sa cible (affiché dans « Comment se calcule l'indice ») */
+  explain?: string;
 }
 
 const fr = (x: number, digits = 0) => x.toLocaleString('fr-FR', { maximumFractionDigits: digits });
@@ -694,6 +724,59 @@ export function goalDemand(goal: Goal, baseSec: number): { ambition: number; fac
   return { ambition, factor, label };
 }
 
+/**
+ * Trail : allure du chrono visé ramenée au plat (`pace`, s/km équivalent plat, par `cost`) et plus long bloc continu
+ * (minutes) tenu au moins à cette allure (2 % de marge comme sur route) dans les trails `acts`, chaque tour au km ramené
+ * au plat par sa pente nette. Trails seulement : à FC égale, le plat des sentiers est plus lent que la route.
+ */
+export function trailPaceBlock(goal: Goal, acts: Activity[], cost: (g: number) => number): { pace: number; minutes: number } {
+  const pace = goal.targetSec! / segmentsEffortKm(courseSegments(goal), cost);
+  let best = 0;
+  for (const a of acts) {
+    if (!isTrailRun(a)) continue;
+    let sec = 0;
+    for (const [d, t, , up, down] of a.km ?? []) {
+      if (d < 900 || !(t > 0)) continue; // tour partiel (fin de sortie, pause) : ni compté ni rompu
+      if (t / ((d / 1000) * cost(((up ?? 0) - (down ?? 0)) / d)) <= pace * 1.02) best = Math.max(best, (sec += t));
+      else sec = 0;
+    }
+  }
+  return { pace, minutes: Math.round(best / 60) };
+}
+
+/**
+ * Travail à l'allure prévu par les séances du plan importé (étapes au format court, « 6×(1000 m @ 4:10-4:15 / 2' Z1) ») :
+ * km courus au moins à `pace` (s/km, milieu de la fourchette, 5 s ou 2 % de marge) et plus long bloc continu (s). Le calendrier
+ * COROS ne donne pas les étapes : seules comptent ses séances envoyées depuis le plan (étapes reprises par `mergeCalendars`).
+ */
+export function plannedPaceWork(sessions: PlannedSession[], pace: number): { km: number; blockSec: number } {
+  let km = 0, blockSec = 0;
+  const atPace = (st: Step) => {
+    const it = st.intensity;
+    // Fourchette dont le milieu est au plus 5 s/km plus lent que l'allure cible (ou 2 % si c'est plus, pour les allures lentes)
+    if (it?.type !== 'pace' || (it.from + it.to) / 2 > pace + Math.max(5, 0.02 * pace)) return null;
+    const mid = (it.from + it.to) / 2;
+    return st.target.type === 'time' ? { sec: st.target.sec, km: st.target.sec / mid } : { sec: (st.target.m / 1000) * mid, km: st.target.m / 1000 };
+  };
+  for (const x of sessions) {
+    const parts = x.steps ? parseSteps(x.steps) : null;
+    let run = 0;
+    for (const part of parts ?? []) {
+      if ('step' in part) {
+        const w = atPace(part.step);
+        if (w) { km += w.km; blockSec = Math.max(blockSec, (run += w.sec)); } else run = 0;
+      } else {
+        for (const st of part.steps) {
+          const w = atPace(st);
+          if (w) { km += part.repeat * w.km; blockSec = Math.max(blockSec, w.sec); }
+        }
+        run = 0;
+      }
+    }
+  }
+  return { km: Math.round(km), blockSec };
+}
+
 function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: number): ReadinessItem[] {
   // Cibles proportionnées à l'exigence de l'objectif (chrono visé face au niveau)
   const { factor } = goalDemand(goal, baseSec);
@@ -712,6 +795,9 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
   const planUntil = (end: Date) => (cal?.sessions ?? []).filter((x) => parseDay(x.date) <= end);
   const usePlan = ctx.ref < deadline && calendarCovers(cal, deadline);
   const beforeTaper = usePlan ? planUntil(deadline) : [];
+  // Les 6 semaines qui précèdent l'affûtage : sorties déjà faites dans cette fenêtre et séances prévues d'ici là
+  const prepActs = ctx.acts.filter((a) => parseDay(a.date) > addDays(deadline, -42) && age(a) >= 0);
+  const prepPlan = beforeTaper.filter((x) => parseDay(x.date) > addDays(deadline, -42));
   const nameDay = (x: PlannedSession) => `${x.name.replace(/\s+/g, ' ').trim()}, le ${shortDate(parseDay(x.date))}`;
 
   const weekly = window(42).reduce((s, a) => s + a.distanceKm, 0) / 6;
@@ -765,7 +851,9 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
         value: `${fr(elev)} m/sem`,
         target: `${fr(elevTarget)} m/sem`,
         score: clamp(elev / elevTarget),
-        projected: weeksLeft >= 3 ? 1 : clamp(elev / elevTarget),
+        // Le calendrier ne donne pas le dénivelé des séances : avec lui, pas d'hypothèse, compté tel qu'aujourd'hui
+        projected: usePlan ? clamp(elev / elevTarget) : weeksLeft >= 3 ? 1 : clamp(elev / elevTarget),
+        ...(usePlan ? { planned: 'le calendrier ne dit pas le dénivelé : compté tel qu’aujourd’hui' } : {}),
         weight: 20,
         advice: elev >= elevTarget ? null : `Ajoute du dénivelé : côtes en semaine, trail le week-end, ≈ ${fr(elevTarget)} m/sem (et de la descente pour les quadriceps).`,
       });
@@ -782,6 +870,28 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
       weight: 15,
       advice: ratio >= 0.75 ? null : `Ton plus gros effort (${best?.name}) ne fait que ${Math.round(ratio * 100)} % de la course : pars plus lentement que tu ne le penses, la gestion (allure, ravitaillement) comptera double.`,
     });
+    // Allure : les critères ci-dessus ne disent que la quantité d'endurance, pas si tu tiens le rythme du chrono visé.
+    // Plus long bloc continu sur sentier à cette allure (ramenée au plat par ta courbe vitesse / pente) sur 6 semaines,
+    // face à 30 % de la durée visée (90 min au plus) × √(exigence) : l'ambition y pèse plus que sur le volume
+    if (goal.targetSec) {
+      const block = trailPaceBlock(goal, window(42), ctx.terrain.cost);
+      const target = Math.round(Math.min(90, (0.3 * goal.targetSec) / 60) * Math.sqrt(factor));
+      // Plan importé : étapes prévues à l'allure moyenne du chrono visé (allure réelle sur sentier, pas ramenée au plat)
+      const planBlock = usePlan
+        ? Math.max(trailPaceBlock(goal, prepActs, ctx.terrain.cost).minutes, Math.round(plannedPaceWork(prepPlan, goal.targetSec / goal.distanceKm).blockSec / 60))
+        : null;
+      items.push({
+        label: 'Bloc à l\'allure cible (trail, 6 sem.)',
+        value: `${block.minutes} min`,
+        target: `${target} min à ${paceStr(block.pace)} /km éq. plat`,
+        score: clamp(block.minutes / target),
+        projected: planBlock !== null ? clamp(planBlock / target) : weeksLeft >= 2 ? 1 : clamp(block.minutes / target),
+        ...(planBlock !== null ? { planned: planBlock ? `bloc de ${planBlock} min au plus long` : 'aucune séance prévue n’indique cette allure' } : {}),
+        weight: raceCategory(goal) === 'ultra' ? 5 : 20,
+        advice: block.minutes >= target || (planBlock ?? 0) >= target || !weeksLeft ? null
+          : `Le chrono visé demande ${paceStr(block.pace)} /km en équivalent plat, ton plus long bloc sur sentier à ce rythme fait ${block.minutes} min : des blocs en tempo sur parcours vallonné, à allonger vers ${target} min avant le ${shortDate(deadline)}.`,
+      });
+    }
     const night = window(112).filter((a) => a.start && (new Date(a.start * 1000).getHours() >= 20 || new Date(a.start * 1000).getHours() < 5)).length;
     const nightScore = (n: number) => (n >= 2 ? 1 : n === 1 ? 0.6 : 0.2);
     // Séances de nuit prévues (d'après leur nom), jusqu'à la course : une sortie à la frontale reste utile pendant l'affûtage
@@ -818,14 +928,18 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
       const pace = goal.targetSec / goal.distanceKm;
       const km = window(42).reduce((s, a) => s + (a.splits ?? []).filter((x) => x <= pace * 1.02).length, 0);
       const target = Math.round(Math.min(35, factor * Math.min(25, goal.distanceKm)));
+      const planKm = usePlan
+        ? prepActs.reduce((s, a) => s + (a.splits ?? []).filter((x) => x <= pace * 1.02).length, 0) + plannedPaceWork(prepPlan, pace).km
+        : null;
       items.push({
         label: 'Km à l\'allure cible (6 sem.)',
         value: `${km} km`,
         target: `${fr(target)} km`,
         score: clamp(km / target),
-        projected: weeksLeft >= 2 ? 1 : clamp(km / target),
+        projected: planKm !== null ? clamp(planKm / target) : weeksLeft >= 2 ? 1 : clamp(km / target),
+        ...(planKm !== null ? { planned: planKm ? `≈ ${planKm} km à l’allure sur les 6 semaines avant le ${shortDate(deadline)}` : 'aucune séance prévue n’indique cette allure' } : {}),
         weight: 25,
-        advice: km >= target ? null : weeksLeft >= 1 ? `Des blocs à l'allure cible (ex. 3 × 3 km) pour l'ancrer avant le ${shortDate(deadline)}.` : null,
+        advice: km >= target || (planKm ?? 0) >= target ? null : weeksLeft >= 1 ? `Des blocs à l'allure cible (ex. 3 × 3 km) pour l'ancrer avant le ${shortDate(deadline)}.` : null,
       });
     }
   }
@@ -910,7 +1024,23 @@ function readiness(goal: Goal, ctx: GoalContext, baseSec: number, daysLeft: numb
       advice: sleepScore < 0.95 ? 'Le sommeil des derniers jours est court : priorité aux nuits de 7 h et plus d\'ici la course.' : null,
     });
   }
-  return items;
+  const amb = factor === 1 ? '' : `, puis × ${fr(factor, 2)} (exigence de l'objectif)`;
+  const explain = (label: string): string => {
+    if (label === 'Volume') return `Kilomètres par semaine sur les 6 dernières semaines. Cible : ${goal.kind === 'trail' ? '0,75 × la distance de la course, 100 km au plus' : '1,7 × la distance de la course, entre 25 et 80 km'}${amb}.`;
+    if (label === 'Sortie la plus longue') return goal.kind === 'trail'
+      ? `Durée de ta plus longue sortie sur 16 semaines. Cible : 45 % du chrono probable, 6 h au plus${factor === 1 ? '' : `, × ${fr(Math.sqrt(factor), 2)} (racine de l'exigence)`}, 6 h 30 au plus.`
+      : `Distance de ta plus longue sortie sur 8 semaines. Cible : 90 % de la distance, 32 km au plus${factor === 1 ? '' : `, × ${fr(Math.sqrt(factor), 2)} (racine de l'exigence)`}.`;
+    if (label === 'D+ hebdomadaire') return `Dénivelé positif par semaine sur 6 semaines. Cible : 40 % du D+ de la course${amb}.`;
+    if (label === 'Expérience') return 'Ton plus gros effort en km-effort (distance + D+/100 + D−/300) face à la course. Cible : 75 % de son km-effort. Ne dépend pas du chrono visé.';
+    if (label.startsWith('Bloc')) return `Le plus long passage continu sur sentier (tours au km enchaînés) tenu au rythme du chrono visé, sur 6 semaines. Chaque km est ramené au plat par ta courbe vitesse / pente, la même que les modèles de chrono ; la route ne compte pas (plus rapide qu'un sentier à effort égal). Cible : 30 % de la durée visée, 90 min au plus${factor === 1 ? '' : `, × ${fr(Math.sqrt(factor), 2)} (racine de l'exigence)`}. C'est le seul critère trail qui mesure l'allure : les autres disent la quantité d'endurance.`;
+    if (label === 'Sorties de nuit') return 'Sorties commencées entre 20 h et 5 h sur 16 semaines, quand la course passe la nuit. Cible : 2.';
+    if (label.startsWith('Km à l')) return `Kilomètres complets courus au moins à l'allure du chrono visé (2 % de marge) sur 6 semaines. Cible : la distance de la course, 25 km au plus${amb}, 35 km au plus.`;
+    if (label.startsWith('Durabilité')) return 'Perte d\'efficacité (vitesse / FC) entre le début et la fin de tes 5 dernières sorties longues régulières et comparables. Tolérance : 2,5 % par heure de sortie, seul l\'excédent est pénalisé.';
+    if (label === 'Régularité') return 'Semaines avec au moins 3 sorties parmi les 8 dernières. Cible : 7.';
+    if (label === 'Récupération') return 'VFC et FC de repos face à ta base, et sommeil moyen des derniers jours. Cible : base, 7 h.';
+    return '';
+  };
+  return items.map((i) => ({ ...i, explain: explain(i.label) }));
 }
 
 // ---------------------------------------------------------------------------

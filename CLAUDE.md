@@ -405,7 +405,8 @@ Une méthode par catégorie (`raceCategory` : ultra dès 60 km-effort ou 45 km, 
   VDOT actualisé par l'EF, vitesse critique à poids 0,5, Tanda et Vickers au marathon), ajustement « Profil du parcours » (GPX ou D+).
 - Trail : distance **équivalent plat** avec ta courbe vitesse / pente (`core/terrain.ts` : base Minetti en montée, GAP révisé de Strava en
   descente, corrigée par tranche de pente de `fit.terrain` sur 12 mois, vitesse ramenée à la FC du plat, rapprochée de la base sous 30 min
-  de données ; remplace le km-effort, qui surestime les parcours roulants). Modèles : chaque trail récent extrapolé (Riegel k = 1,10, ½ gain
+  de données ; remplace le km-effort, qui surestime les parcours roulants). Modèles : chaque trail récent extrapolé (`trailTime` : Riegel dont l'exposant suit la durée, 1,10 jusqu'à 6 h puis jusqu'à 1,20 à 20 h, d'après
+  les meilleures vitesses 40 km-effort → SaintéLyon → UTMB ; aussi pour le plat au-delà du marathon du coefficient trail ; ½ gain
   d'EF depuis, poids = fraîcheur × proximité × ressemblance du dénivelé par km × course), et « Niveau route × coefficient trail » (VDOT
   actuel sur le plat × rapport mesuré sur ces trails).
 - Ultra : les mêmes, plus `ultraModel` = simulation tronçon par tronçon (`simulate`) à la vitesse sur le plat tenue à la FC LT1 (tours plats des
@@ -418,7 +419,14 @@ sortie la plus longue, sorties de nuit d'après le nom) remplace l'hypothèse «
 même à moins de 3 semaines (`plannedPrep`). Liste et « au calendrier : … » dans la partie Préparation de la fiche.
 Cibles de préparation (volume, sortie longue, D+, km à l'allure) proportionnées à l'objectif face au niveau (`goalDemand` :
 ambition = chrono probable / chrono visé, « finir » = 0,97 ; facteur ambition⁵ borné à [0,75 ; 1,5], d'après Tanda ; sortie longue × √facteur),
-dites en tête de la partie Préparation.
+dites en tête de la partie Préparation. En trail avec un chrono visé, « Bloc à l'allure cible » (`trailPaceBlock`) : plus long bloc
+continu sur sentier (tours au km, chacun ramené au plat par la courbe vitesse / pente ; route exclue, plus rapide à effort égal) au
+rythme du chrono visé sur 6 semaines, face à 30 % de la durée visée (90 min au plus) × √facteur ; poids 20, 5 en ultra. Sans lui,
+une préparation d'ultra remplissait toutes les cibles d'un trail court visé au-delà du niveau (indice 97, 10 % de chances).
+Projection sur le calendrier : seul ce qu'il dit est projeté (volumes, durées, nuit d'après le nom ; allures des étapes d'un plan
+importé par `plannedPaceWork`) ; km et bloc à l'allure sans étapes, et D+ (jamais donné), comptés tels qu'aujourd'hui, et dit sous le
+critère. Chaque critère porte `explain` (ce qu'il mesure, d'où vient sa cible), affiché avec le lien indice / probabilité dans
+« Comment se calcule l'indice » (partie Préparation de `sections/goal-card.ts`).
 Ajustements : fraîcheur projetée, VFC/FC repos, Hadley, nuit **simulée sur le profil** (crépuscule civil `nightWindow`, `nightCost` : +3 % roulant,
 +8 % descente raide, +2 % de 2 h à 6 h), préparation. Incertitude log-normale : dispersion des modèles ⊕ jour de course (`daySd` : 2 % sur 5 km
 → 4 % au marathon, 6 % trail, 8 % ultra) ⊕ extrapolation en ultra (4 % × ln(durée / plus longue sortie de l'année)) → probabilité.

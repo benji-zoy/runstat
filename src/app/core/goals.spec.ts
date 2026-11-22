@@ -1,7 +1,8 @@
 import { Activity, Athlete, Goal } from './models';
 import {
-  chance, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT,
+  chance, consensus, csTime, daySd, freshnessPct, goalContext, normalCdf, raceCategory, trailModels, TRAIL_EXPONENT, trailExponent, trailTime,
   evaluateGoal, ultraModel, targetVerdict, readinessVerdict, oddsWords, projectedTsb, goalCalendar,
+  trailPaceBlock, plannedPaceWork,
 } from './goals';
 import { PlannedCalendar, PlannedSession } from './models';
 import { classifyAll, kmEffortOf } from './science';
@@ -68,7 +69,20 @@ describe('modèles', () => {
     const [m] = trailModels(goal, ctx);
     // Sans FIT, la courbe de pente est la courbe commune et les profils sont synthétiques
     const eq = (km: number, up: number, down: number) => segmentsEffortKm(courseSegments({ distanceKm: km, elevGain: up, elevLoss: down, kind: 'trail' }), priorCost);
-    expect(m.seconds).toBeCloseTo(4 * 3600 * Math.pow(eq(50, 1500, 1500) / eq(30, 1000, 900), TRAIL_EXPONENT), 3);
+    expect(m.seconds).toBeCloseTo(trailTime(4 * 3600, eq(30, 1000, 900), eq(50, 1500, 1500)), 3);
+  });
+
+  it('fait grandir l’exposant de Riegel avec la durée de l’effort', () => {
+    expect(trailExponent(3 * 3600)).toBe(TRAIL_EXPONENT);
+    expect(trailExponent(11 * 3600)).toBeGreaterThan(1.14);
+    expect(trailExponent(30 * 3600)).toBe(1.2);
+    // Sous 6 h de bout en bout : Riegel à 1,10
+    expect(trailTime(2 * 3600, 20, 40)).toBeCloseTo(2 * 3600 * Math.pow(2, TRAIL_EXPONENT), 0);
+    // Un 160 km de 26 h ramené à la moitié : plus rapide qu'avec 1,10 partout, et l'aller-retour revient au départ
+    const half = trailTime(26 * 3600, 230, 115);
+    expect(half).toBeLessThan(26 * 3600 * Math.pow(0.5, TRAIL_EXPONENT));
+    expect(half).toBeGreaterThan(26 * 3600 * Math.pow(0.5, 1.2));
+    expect(trailTime(half, 115, 230)).toBeCloseTo(26 * 3600, -2);
   });
 
   it('compte moins un parcours roulant que le km-effort, plus un parcours raide', () => {
@@ -234,6 +248,24 @@ describe('calendrier des séances prévues', () => {
     expect(withPlan.adjustments.find((a) => a.label === 'Fraîcheur')).toBeUndefined();
   });
 
+  it('ne suppose pas l’allure ni le dénivelé que le calendrier ne dit pas', () => {
+    const ctxOf = (g: Goal, planned: PlannedCalendar | null) => goalContext(g, acts, classifyAll(acts, ath), ath, today, {}, null, planned);
+    const item = (e: ReturnType<typeof evaluateGoal>, start: string) => e!.readiness.find((r) => r.label.startsWith(start))!;
+    const coros = evaluateGoal(goal, ctxOf(goal, cal), today, acts)!;
+    expect(coros.plannedPrep).toBe(true);
+    // Calendrier COROS sans étapes : bloc et D+ comptés tels qu'aujourd'hui, et dit
+    expect(item(coros, 'Bloc').projected).toBe(item(coros, 'Bloc').score);
+    expect(item(coros, 'Bloc').planned).toMatch(/aucune séance/);
+    expect(item(coros, 'D+').projected).toBe(item(coros, 'D+').score);
+    // Plan importé avec un bloc à l'allure du chrono visé : projeté
+    const p = Math.round(goal.targetSec! / goal.distanceKm);
+    const tempo = `20' Z1 + 75' @ ${Math.floor((p - 10) / 60)}:${String((p - 10) % 60).padStart(2, '0')}-${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')} + 10' Z1`;
+    const withSteps: PlannedCalendar = { ...cal, sessions: [...cal.sessions, { ...session('2026-11-01', 18, 6300, 150, 'Tempo'), imported: true, steps: tempo }] };
+    const imported = evaluateGoal(goal, ctxOf(goal, withSteps), today, acts)!;
+    expect(item(imported, 'Bloc').projected).toBeGreaterThan(item(coros, 'Bloc').projected);
+    expect(item(imported, 'Bloc').planned).toBe('bloc de 75 min au plus long');
+  });
+
   it('proportionne les cibles de préparation à l’objectif face au niveau', () => {
     const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null, null);
     const level = evaluateGoal(goal, ctx, today, acts)!.predicted;
@@ -248,5 +280,58 @@ describe('calendrier des séances prévues', () => {
     expect(finish.target).toBeGreaterThan(easy.target);
     expect(hard.label).toMatch(/plus rapide que ton niveau/);
     expect(easy.label).toMatch(/sous ton niveau/);
+  });
+
+  it('demande en trail un bloc à l’allure cible, plus long quand l’objectif dépasse le niveau', () => {
+    const ctx = goalContext(goal, acts, classifyAll(acts, ath), ath, today, {}, null, null);
+    const level = evaluateGoal(goal, ctx, today, acts)!.predicted;
+    const block = (targetSec?: number) => {
+      const g = { ...goal, targetSec };
+      return evaluateGoal(g, goalContext(g, acts, classifyAll(acts, ath), ath, today, {}, null, null), today, acts)!
+        .readiness.find((r) => r.label.startsWith("Bloc à l'allure cible"));
+    };
+    const hard = block(level * 0.92)!, even = block(level)!;
+    expect(parseFloat(hard.target)).toBeGreaterThan(parseFloat(even.target));
+    // Sorties sans tours au km : aucun bloc mesuré
+    expect(hard.value).toBe('0 min');
+    expect(hard.score).toBe(0);
+    expect(block(undefined)).toBeUndefined();
+  });
+});
+
+describe('travail à l’allure prévu par un plan importé', () => {
+  const s = (steps?: string): PlannedSession => ({ date: '2027-03-01', name: 'Séance', distanceKm: 12, durationSec: 3600, load: 80, steps });
+  it('compte les km et le plus long bloc à l’allure ou plus vite', () => {
+    const r = plannedPaceWork([s("15' Z1 + 6×(1000 m @ 4:10-4:15 / 2' Z1) + 10' Z1"), s("10' Z1 + 3 km @ 4:05-4:15 + 2 km @ 4:10-4:12 + 10' Z1"), s(), s('20 min @ 5:00-5:10')], 255);
+    expect(r.km).toBe(6 + 3 + 2);
+    // 3 km à 4:10 puis 2 km à 4:11 enchaînés
+    expect(r.blockSec).toBeCloseTo(3 * 250 + 2 * 251, 6);
+  });
+
+  it('compte une fourchette dont le milieu reste à 5 s de l’allure cible', () => {
+    expect(plannedPaceWork([s('2 km @ 4:14-4:20')], 252).km).toBe(2); // milieu 4:17 = cible + 5 s
+    expect(plannedPaceWork([s('2 km @ 4:15-4:21')], 252).km).toBe(0); // milieu 4:18
+  });
+});
+
+describe('bloc à l’allure cible en trail', () => {
+  const goal: Goal = { id: 'q', name: 'Trail', date: '2027-04-25', distanceKm: 28, elevGain: 1500, elevLoss: 1500, kind: 'trail', targetSec: 4 * 3600 };
+  const pace = 4 * 3600 / segmentsEffortKm(courseSegments(goal), priorCost);
+  const lap = (sec: number, up = 0, down = 0, d = 1000) => [d, sec, 150, up, down, 0, 0, 0];
+
+  it('mesure le plus long bloc continu, chaque km ramené au plat par sa pente', () => {
+    const trail = run('2027-03-01', 12, 5000, {
+      kind: 'trail', elevGain: 400,
+      km: [lap(pace * 0.95), lap(pace * 0.95), lap(pace * 1.3), lap(pace * 0.9), lap(pace * 1.4, 100), lap(200, 0, 0, 500), lap(pace * 0.97), lap(pace * 1.1)],
+    });
+    const r = trailPaceBlock(goal, [trail], priorCost);
+    expect(r.pace).toBeCloseTo(pace, 6);
+    // 4e km, montée de 10 % à 1,4 × l'allure (coût ≈ 1,5 : dans l'allure), tour partiel ignoré, 7e km
+    expect(r.minutes).toBe(Math.round((pace * (0.9 + 1.4 + 0.97)) / 60));
+  });
+
+  it('ignore la route, plus rapide que les sentiers à effort égal', () => {
+    const road = run('2027-03-02', 15, 4000, { km: Array.from({ length: 15 }, () => lap(pace * 0.8)) });
+    expect(trailPaceBlock(goal, [road], priorCost).minutes).toBe(0);
   });
 });

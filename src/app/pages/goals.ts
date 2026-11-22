@@ -144,7 +144,7 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeri
         <li><b>Objectif chrono, une méthode par type de course</b>. Route : plusieurs modèles prédisent le temps (Coros, VDOT de Daniels,
           Riegel avec ton exposant pondéré, VDOT actualisé par ta progression d'efficacité, vitesse critique, Tanda et Vickers au marathon),
           corrigés du profil du parcours. Trail : tes trails récents ramenés en distance équivalent plat avec ta courbe vitesse / pente
-          (mesurée sur tes FIT à FC égale), extrapolés (Riegel, exposant 1,10) et pondérés par la ressemblance du terrain, plus ton niveau
+          (mesurée sur tes FIT à FC égale), extrapolés (Riegel, exposant 1,10 jusqu'à 6 h d'effort, puis plus fort jusqu'à 1,20 à 20 h : nuit, arrêts et gestion pèsent sur les longues courses) et pondérés par la ressemblance du terrain, plus ton niveau
           route actuel multiplié par ton coefficient trail. Ultra (dès 60 km-effort) : en plus, une simulation tronçon par tronçon à ta FC
           d'endurance, avec ton usure par heure et les ravitaillements.</li>
         <li><b>Jour J et probabilité</b> : la moyenne géométrique des modèles est corrigée par la fraîcheur projetée, la récupération

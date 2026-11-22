@@ -70,7 +70,8 @@ export interface Durability {
   cadence: [number, number] | null;
   /** Efficacité relative (1 = référence) sur 3 km glissants, par temps écoulé (s) */
   profile: { t: number; rel: number }[];
-  /** Allure régulière : une fin nettement plus rapide (progressif, fin à allure course) fausse la comparaison */
+  /** Allure régulière : une fin nettement plus rapide (progressif, fin à allure course) fausse la comparaison ; médiane du
+   * dernier tiers face au premier (≥ 0,95), pour qu'un seul km lancé à la fin ne compte pas */
   steady: boolean;
 }
 
@@ -154,7 +155,8 @@ export function durability(a: Activity): Durability | null {
     descent: half(descents, speed),
     cadence: cadFirst.length && cadLast.length ? [tw(cadFirst, (l) => l.cad), tw(cadLast, (l) => l.cad)] : null,
     profile,
-    steady: tw(last, (l) => l.gap) / tw(first, (l) => l.gap) >= 0.95,
+    // Médianes : un dernier km lancé ne suffit pas à écarter une sortie régulière, une vraie fin rapide (plusieurs km) si
+    steady: median(last.map((l) => l.gap)) / median(first.map((l) => l.gap)) >= 0.95,
   };
 }
 
